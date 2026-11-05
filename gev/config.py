@@ -28,3 +28,16 @@ def public_url() -> str:
     """URL the Desktop/Webapp pane frames: GODSEYE_PUBLIC_URL (e.g. a tailnet address when the
     Webapp runs in a browser on another machine), else the API base."""
     return os.environ.get("GODSEYE_PUBLIC_URL", "").rstrip("/") or api_base()
+
+
+def patched() -> dict:
+    """Which optional upstream features (patches/) the God's Eye View checkout has."""
+    root = checkout()
+
+    def has(rel: str, needle: str) -> bool:
+        try:
+            return needle in (root / rel).read_text(errors="ignore")
+        except Exception:
+            return False
+    return {"fullUi": bool(root) and has("src/app/embed.js", "GEV_EMBED_FULL_UI"),
+            "hud": bool(root) and has("server/providers/openai/hud-summary.js", "GEV_HUD_SUMMARY_BASE_URL")}

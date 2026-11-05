@@ -152,3 +152,22 @@ def test_live_relay_unpicked_command_reports_no_pane(monkeypatch):
     monkeypatch.setattr(live, "PICKUP_S", 0.2)
     r = live.Relay(); r.last_poll = time.monotonic()
     assert r.submit("zoom_to_globe", {}, wait=5)["error"] == "no_pane"
+
+
+def test_panel_inject_adds_guest_scripts_and_flag():
+    from gev import panel_inject
+    out = panel_inject.prepare("<html><head><title>x</title></head></html>", full_ui=True)
+    assert out.index("<base") < out.index("<title>")
+    assert "GEV_EMBED_FULL_UI" in out and "CESIUM_WORKERS" in out and "hermes-gev:run" in out
+    assert "GEV_EMBED_FULL_UI" not in panel_inject.prepare("<head></head>", full_ui=False)
+
+
+def test_patch_detection(tmp_path, monkeypatch):
+    from gev import config
+    monkeypatch.setenv("GODSEYE_HOME", str(tmp_path))
+    (tmp_path / "src/app").mkdir(parents=True)
+    (tmp_path / "src/app/embed.js").write_text("export const x = 1")
+    monkeypatch.setattr(config, "checkout", lambda: tmp_path)
+    assert config.patched() == {"fullUi": False, "hud": False}
+    (tmp_path / "src/app/embed.js").write_text("globalThis.GEV_EMBED_FULL_UI")
+    assert config.patched()["fullUi"] is True

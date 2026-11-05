@@ -28,5 +28,5 @@ WantedBy=default.target
 UNIT
 systemctl --user daemon-reload
 systemctl --user enable --now gods-eye-view.service
-loginctl enable-linger "$(id -un)" 2>/dev/null || echo "run: sudo loginctl enable-linger $(id -un)  (survive reboot without login)"
+loginctl enable-linger "$(id -un)" 2>/dev/null || echo "optional: ask an administrator to enable lingering for $(id -un) (loginctl enable-linger) so the service survives reboots without a login"
 echo "installed $UNIT"

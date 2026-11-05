@@ -40,7 +40,8 @@ async def status():
     except Exception:
         pass
     return {"apiBase": config.api_base(), "frameUrl": config.public_url(), "appUp": up, "hudBridge": bridge._server is not None,
-            "checkout": config.checkout() is not None, "node": config.node_bin() is not None}
+            "checkout": config.checkout() is not None, "node": config.node_bin() is not None,
+            "patched": config.patched()}
 
 
 @router.post("/hud")
@@ -59,11 +60,13 @@ PANEL_TOOLS = {"panel_request", "show_in_gods_eye_view"}
 
 
 @router.get("/panel")
-async def panel():
+async def panel(fullUi: bool = True):
     import asyncio
+    from gev import panel_inject
     result = await asyncio.to_thread(mcp_client.client().read_resource, GLOBE_PANEL_URI)
     item = (result or {}).get("contents", [{}])[0]
-    return {"html": item.get("text", ""), "mimeType": item.get("mimeType")}
+    html = item.get("text", "")
+    return {"html": panel_inject.prepare(html, full_ui=fullUi) if html else "", "mimeType": item.get("mimeType")}
 
 
 @router.post("/tool")

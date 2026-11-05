@@ -1,0 +1,389 @@
+From bc014d30d9f875cd0c330f4e5f8da0746649d312 Mon Sep 17 00:00:00 2001
+From: mojomast <mojomast@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 20:34:25 -0500
+Subject: [PATCH 1/4] HUD summary: optional OpenAI-compatible endpoint
+ (GEV_HUD_SUMMARY_BASE_URL)
+
+---
+ .env.example                                  |   6 +
+ .../hud-summary-compatible-endpoint.md        |   4 +
+ .../openai/hud-summary-compat.test.mjs        | 142 ++++++++++++++++++
+ server/providers/openai/hud-summary.js        | 100 +++++++++++-
+ 4 files changed, 250 insertions(+), 2 deletions(-)
+ create mode 100644 changelog.d/hud-summary-compatible-endpoint.md
+ create mode 100644 server/providers/openai/hud-summary-compat.test.mjs
+
+diff --git a/.env.example b/.env.example
+index b3de4ce..c77ad68 100644
+--- a/.env.example
++++ b/.env.example
+@@ -90,6 +90,12 @@ OPENAI_REALTIME_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
+ # keep them while debugging; delete the log when you are done.
+ GEV_VOICE_LOG_CONTENT=
+ OPENAI_HUD_SUMMARY_MODEL=gpt-5-nano
++# Optional: send HUD summaries to any OpenAI-compatible chat completions
++# server instead of OpenAI (base URL ending before /chat/completions, e.g.
++# http://127.0.0.1:8791/v1). Unset keeps the OpenAI-or-keyless behavior.
++GEV_HUD_SUMMARY_BASE_URL=
++GEV_HUD_SUMMARY_API_KEY=
++GEV_HUD_SUMMARY_MODEL=
+ # Optional: Gemini Live voice, selected in the GEV MIC provider chooser.
+ # Server-only key. Do not prefix with VITE_. Provider Settings can save it.
+ GEMINI_API_KEY=
+diff --git a/changelog.d/hud-summary-compatible-endpoint.md b/changelog.d/hud-summary-compatible-endpoint.md
+new file mode 100644
+index 0000000..972f14c
+--- /dev/null
++++ b/changelog.d/hud-summary-compatible-endpoint.md
+@@ -0,0 +1,4 @@
++- The HUD summary can use any OpenAI-compatible chat completions server
++  instead of OpenAI: set `GEV_HUD_SUMMARY_BASE_URL` (optional
++  `GEV_HUD_SUMMARY_API_KEY`, `GEV_HUD_SUMMARY_MODEL`). Unset keeps the
++  OpenAI-or-keyless behavior.
+diff --git a/server/providers/openai/hud-summary-compat.test.mjs b/server/providers/openai/hud-summary-compat.test.mjs
+new file mode 100644
+index 0000000..d98931d
+--- /dev/null
++++ b/server/providers/openai/hud-summary-compat.test.mjs
+@@ -0,0 +1,142 @@
++import assert from 'node:assert/strict';
++import { createServer } from 'node:http';
++import { test } from 'node:test';
++import {
++  handleHudSummary,
++  hudSummaryCompatBody,
++  hudSummaryCompatTarget,
++} from './hud-summary.js';
++
++test('compat target is off unless a http(s) base URL is set', () => {
++  assert.equal(hudSummaryCompatTarget({}), null);
++  assert.equal(
++    hudSummaryCompatTarget({ GEV_HUD_SUMMARY_BASE_URL: 'file:///x' }),
++    null,
++  );
++  assert.equal(
++    hudSummaryCompatTarget({ GEV_HUD_SUMMARY_BASE_URL: 'nope' }),
++    null,
++  );
++  assert.deepEqual(
++    hudSummaryCompatTarget({
++      GEV_HUD_SUMMARY_BASE_URL: 'http://127.0.0.1:9/v1/',
++      GEV_HUD_SUMMARY_MODEL: 'm',
++    }),
++    {
++      endpoint: 'http://127.0.0.1:9/v1/chat/completions',
++      apiKey: null,
++      model: 'm',
++    },
++  );
++});
++
++test('compat body carries upstream instructions and the context', () => {
++  const body = hudSummaryCompatBody({ locale: 'en', place: 'San Diego' }, 'm');
++  assert.equal(body.messages[0].role, 'system');
++  assert.match(body.messages[1].content, /San Diego/);
++  assert.equal(body.response_format.type, 'json_schema');
++});
++
++function fakeRes() {
++  return {
++    statusCode: 0,
++    headers: {},
++    body: '',
++    setHeader(k, v) {
++      this.headers[k] = v;
++    },
++    end(b) {
++      this.body = b;
++      this.done();
++    },
++  };
++}
++
++function fakeReq(method, url, body) {
++  const chunks = body ? [Buffer.from(body)] : [];
++  return Object.assign(
++    (async function* () {
++      yield* chunks;
++    })(),
++    {
++      method,
++      url,
++      headers: { host: 'localhost' },
++      socket: { remoteAddress: '127.0.0.1' },
++      on(event, fn) {
++        if (event === 'data') chunks.forEach(fn);
++        if (event === 'end') fn();
++        return this;
++      },
++    },
++  );
++}
++
++async function call(req) {
++  const res = fakeRes();
++  await new Promise((done) => {
++    res.done = done;
++    handleHudSummary(req, res);
++  });
++  return { status: res.statusCode, json: JSON.parse(res.body) };
++}
++
++test('HUD summary uses the compatible server when configured', async () => {
++  let seen = null;
++  const server = createServer((req, res) => {
++    let raw = '';
++    req.on('data', (c) => (raw += c));
++    req.on('end', () => {
++      seen = {
++        auth: req.headers.authorization,
++        url: req.url,
++        body: JSON.parse(raw),
++      };
++      res.setHeader('Content-Type', 'application/json');
++      res.end(
++        JSON.stringify({
++          choices: [
++            {
++              message: {
++                content:
++                  '{"summary":"Busy San Diego skies","feedState":"nominal"}',
++              },
++            },
++          ],
++        }),
++      );
++    });
++  });
++  await new Promise((r) => server.listen(0, '127.0.0.1', r));
++  const saved = { ...process.env };
++  process.env.GEV_HUD_SUMMARY_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
++  process.env.GEV_HUD_SUMMARY_API_KEY = 'test-token';
++  delete process.env.OPENAI_API_KEY;
++  try {
++    const status = await call(fakeReq('GET', '/status'));
++    assert.equal(status.json.configured, true);
++    const out = await call(
++      fakeReq('POST', '/', JSON.stringify({ locale: 'en' })),
++    );
++    assert.equal(out.status, 200);
++    assert.equal(out.json.summary, 'Busy San Diego skies');
++    assert.equal(out.json.feedState, 'nominal');
++    assert.equal(seen.url, '/v1/chat/completions');
++    assert.equal(seen.auth, 'Bearer test-token');
++  } finally {
++    process.env = saved;
++    server.close();
++  }
++});
++
++test('unset keeps the keyless response', async () => {
++  const saved = { ...process.env };
++  delete process.env.GEV_HUD_SUMMARY_BASE_URL;
++  delete process.env.OPENAI_API_KEY;
++  try {
++    const status = await call(fakeReq('GET', '/status'));
++    assert.equal(status.json.configured, false);
++  } finally {
++    process.env = saved;
++  }
++});
+diff --git a/server/providers/openai/hud-summary.js b/server/providers/openai/hud-summary.js
+index a95de17..ab1ca15 100644
+--- a/server/providers/openai/hud-summary.js
++++ b/server/providers/openai/hud-summary.js
+@@ -25,6 +25,77 @@ function extractOpenAiResponseText(data) {
+     .trim();
+ }
+ 
++/**
++ * Optional OpenAI-compatible HUD backend (any `/v1/chat/completions` server,
++ * e.g. a local model or an agent's inference bridge). Off unless
++ * GEV_HUD_SUMMARY_BASE_URL is set; then the HUD uses it instead of OpenAI.
++ * GEV_HUD_SUMMARY_API_KEY (optional) is sent as a bearer token and
++ * GEV_HUD_SUMMARY_MODEL (optional) names the model.
++ */
++export function hudSummaryCompatTarget(env = process.env) {
++  const raw = String(env.GEV_HUD_SUMMARY_BASE_URL ?? '').trim();
++  if (!raw) return null;
++  let url;
++  try {
++    url = new URL(raw);
++  } catch {
++    return null;
++  }
++  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
++  return {
++    endpoint: `${url.href.replace(/\/+$/, '')}/chat/completions`,
++    apiKey: String(env.GEV_HUD_SUMMARY_API_KEY ?? '').trim() || null,
++    model: String(env.GEV_HUD_SUMMARY_MODEL ?? '').trim() || 'default',
++  };
++}
++
++/** Request body for an OpenAI-compatible chat completions HUD call. */
++export function hudSummaryCompatBody(context, model) {
++  return {
++    model,
++    n: 1,
++    stream: false,
++    max_tokens: 200,
++    messages: [
++      {
++        role: 'system',
++        content: `${hudSummaryInstructions(context?.locale)}\nReply with JSON only: {"summary": string, "feedState": string|null}.`,
++      },
++      { role: 'user', content: hudSummaryInput(context) },
++    ],
++    response_format: {
++      type: 'json_schema',
++      json_schema: {
++        name: HUD_SUMMARY_RESPONSE_FORMAT.name,
++        strict: HUD_SUMMARY_RESPONSE_FORMAT.strict,
++        schema: HUD_SUMMARY_RESPONSE_FORMAT.schema,
++      },
++    },
++  };
++}
++
++function extractChatCompletionText(data) {
++  const text = data?.choices?.[0]?.message?.content;
++  if (typeof text !== 'string') return '';
++  return text
++    .trim()
++    .replace(/^```(?:json)?\s*/i, '')
++    .replace(/\s*```$/, '');
++}
++
++async function compatHudSummary(target, context) {
++  const response = await fetch(target.endpoint, {
++    method: 'POST',
++    headers: {
++      'Content-Type': 'application/json',
++      ...(target.apiKey ? { Authorization: `Bearer ${target.apiKey}` } : {}),
++    },
++    body: JSON.stringify(hudSummaryCompatBody(context, target.model)),
++  });
++  const data = await response.json().catch(() => ({}));
++  return { response, text: extractChatCompletionText(data) };
++}
++
+ /** Parse the summary and normalize the canonical feed state. */
+ function parseHudSummaryReply(text, locale) {
+   let reply = null;
+@@ -88,7 +159,9 @@ async function handleHudSummary(req, res) {
+     res.setHeader('Cache-Control', 'no-store');
+     res.end(
+       JSON.stringify({
+-        configured: !keylessHudSummaryResponse(process.env.OPENAI_API_KEY),
++        configured:
++          Boolean(hudSummaryCompatTarget()) ||
++          !keylessHudSummaryResponse(process.env.OPENAI_API_KEY),
+       }),
+     );
+     return;
+@@ -100,8 +173,9 @@ async function handleHudSummary(req, res) {
+     return;
+   }
+ 
++  const compat = hudSummaryCompatTarget();
+   const apiKey = process.env.OPENAI_API_KEY;
+-  const keyless = keylessHudSummaryResponse(apiKey);
++  const keyless = compat ? null : keylessHudSummaryResponse(apiKey);
+   if (keyless) {
+     res.statusCode = keyless.statusCode;
+     res.setHeader('Content-Type', 'application/json; charset=utf-8');
+@@ -118,6 +192,28 @@ async function handleHudSummary(req, res) {
+   try {
+     const body = await readRequestBody(req, 64 * 1024);
+     const context = JSON.parse(body || '{}');
++    if (compat) {
++      const { response, text } = await compatHudSummary(compat, context);
++      const { summary, feedState } = parseHudSummaryReply(
++        text,
++        context?.locale,
++      );
++      res.statusCode = response.ok && summary ? 200 : response.status || 502;
++      res.setHeader('Content-Type', 'application/json; charset=utf-8');
++      res.setHeader('Cache-Control', 'no-store');
++      if (!response.ok)
++        console.warn(
++          `[hud-summary] compatible upstream HTTP ${response.status}`,
++        );
++      res.end(
++        JSON.stringify({
++          summary: summary || null,
++          feedState,
++          error: response.ok ? null : 'HUD summary request failed',
++        }),
++      );
++      return;
++    }
+     const response = await fetch('https://api.openai.com/v1/responses', {
+       method: 'POST',
+       headers: {
+-- 
+2.47.3
+
+From e7580e040aff2d08eb6ad1bdc3593c7c4a256681 Mon Sep 17 00:00:00 2001
+From: mojomast <mojomast@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 22:35:17 -0500
+Subject: [PATCH 2/4] docs: note GEV_HUD_SUMMARY_BASE_URL in CURRENT-STATE
+
+---
+ docs/CURRENT-STATE.md | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/docs/CURRENT-STATE.md b/docs/CURRENT-STATE.md
+index f124494..a8644d5 100644
+--- a/docs/CURRENT-STATE.md
++++ b/docs/CURRENT-STATE.md
+@@ -5626,6 +5626,7 @@ and unreachable upstream (502/504) separately from road geometry.
+ ### AI HUD Summary (June 2026)
+ 
+ - HUD `SUMMARY` readout requests a five-word intelligence-style summary from `/api/openai/hud-summary` (model `OPENAI_HUD_SUMMARY_MODEL`, default `gpt-5-nano`, minimal reasoning).
++- `GEV_HUD_SUMMARY_BASE_URL` (optional `GEV_HUD_SUMMARY_API_KEY`, `GEV_HUD_SUMMARY_MODEL`) sends the same summary request to any OpenAI-compatible `/chat/completions` server instead; unset keeps the OpenAI-or-keyless behavior.
+ - Input: place/street/nearby-place labels, enabled layers and `feedProvenance`, with layer names as the user sees them; outside English the narration note and per-layer state ids are left out (`overall` carries the state). No model call without a place, street or nearby-place label: the deterministic line is shown.
+ - Language: the HUD sends `locale` (part of the dedupe signature); the proxy keeps a shipped locale, English otherwise. Switching language in place drops the reply and aborts the request in flight, so the next tick asks again.
+ - Reply: `{summary, feedState}` (`text.format` JSON schema, `feedState` a snapshot state or null). A view that is not nominal needs the matching `feedState`. The HUD adds its own translated tag, state first and layer names last (`STALE | … | LIVE FLIGHTS`), so the warning is never clipped. Outside English a reply falls back when it carries a feed-state id, a translated layer's English name or id, only Latin letters in a non-Latin language, or, with every feed healthy, the UNAVAILABLE word. `get_hud_caption` uses the same check and tag order, in English, and returns `feedState`.
+-- 
+2.47.3
+
+From 621b7c71e1343a760f6ea5c6fde5bca1ccbfe9fb Mon Sep 17 00:00:00 2001
+From: mojomast <mojomast@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 22:36:08 -0500
+Subject: [PATCH 3/4] changelog: name fragment for #1571
+
+---
+ ...atible-endpoint.md => 1571-hud-summary-compatible-endpoint.md} | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+ rename changelog.d/{hud-summary-compatible-endpoint.md => 1571-hud-summary-compatible-endpoint.md} (100%)
+
+diff --git a/changelog.d/hud-summary-compatible-endpoint.md b/changelog.d/1571-hud-summary-compatible-endpoint.md
+similarity index 100%
+rename from changelog.d/hud-summary-compatible-endpoint.md
+rename to changelog.d/1571-hud-summary-compatible-endpoint.md
+-- 
+2.47.3
+
+From 1ef5c850c457ccc223c1b0bf3c49b72e60beb4b3 Mon Sep 17 00:00:00 2001
+From: mojomast <mojomast@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 22:36:19 -0500
+Subject: [PATCH 4/4] changelog: credit #1571
+
+---
+ changelog.d/1571-hud-summary-compatible-endpoint.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/changelog.d/1571-hud-summary-compatible-endpoint.md b/changelog.d/1571-hud-summary-compatible-endpoint.md
+index 972f14c..34df070 100644
+--- a/changelog.d/1571-hud-summary-compatible-endpoint.md
++++ b/changelog.d/1571-hud-summary-compatible-endpoint.md
+@@ -1,4 +1,4 @@
+ - The HUD summary can use any OpenAI-compatible chat completions server
+   instead of OpenAI: set `GEV_HUD_SUMMARY_BASE_URL` (optional
+   `GEV_HUD_SUMMARY_API_KEY`, `GEV_HUD_SUMMARY_MODEL`). Unset keeps the
+-  OpenAI-or-keyless behavior.
++  OpenAI-or-keyless behavior (mojomast, #1571).
+-- 
+2.47.3
+
