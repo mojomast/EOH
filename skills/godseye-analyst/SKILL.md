@@ -41,6 +41,11 @@ of tools:
   retry once. `godseye_live_panes` lists panes with their last-poll age.
 - Only set `fanout: true` on a live tool when the user explicitly wants every open pane changed.
 
+## Filters, clusters and watches
+
+- Pins from `godseye_find_places` carry `tags`. Use `godseye_live_filter_pins` to narrow them, e.g. `{categories:["ramen"], open_now:true}`. Read `action:"state"` before you claim something is open. `open:null` means the hours are unknown, so say that rather than guessing. `{clear:true}` resets the filters.
+- Create a watch (`godseye_watch_create`) only when the user asks to watch an area. Report any `key_missing` or `KEY_MISSING` feed plainly. Never delete a watch without asking; `godseye_watch_delete` needs `confirm:true`.
+- When the turn context has "[EOH watch alert]" lines, tell the user about them briefly. The new items are already pinned.
 ## "This", "here", measure, reach, compare
 
 - Deixis = context first. Whenever the user says **this, here, around here, that building, what

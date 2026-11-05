@@ -108,6 +108,14 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
         ctx.rest('/live/drawer', { method: 'POST', body: { pane: paneId, pin: ok ? { latitude: pin.latitude, longitude: pin.longitude, label: String(pin.label ?? '').slice(0, 120) } : null } }).catch(() => {})
         return true
       }
+      if (event.data?.type === 'hermes-gev:filters') {  // a filter chip was toggled: persist it with the scene
+        const f = event.data.detail?.filters
+        if (f && typeof f === 'object') ctx.rest('/live/filters', { method: 'POST', body: { pane: paneId, filters: {
+          categories: (Array.isArray(f.categories) ? f.categories : []).slice(0, 16).map((c) => String(c).slice(0, 40)),
+          min_rating: Number.isFinite(f.min_rating) ? f.min_rating : null, open_now: Boolean(f.open_now),
+          include_unknown: f.include_unknown !== false, cluster: f.cluster !== false } } }).catch(() => {})
+        return true
+      }
       if (event.data?.type === 'hermes-gev:ask') {  // "Ask Hermes" in the pane: see askHermes()
         askHermes(ctx, event.data.prompt).then((r) => { try { win.postMessage({ type: 'hermes-gev:ask-result', ...r }, '*') } catch {} })
         return true

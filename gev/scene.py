@@ -88,6 +88,29 @@ class SceneStore:
             sc["updated"] = time.time()
             self._save()
 
+    FILTER_KEYS = ("categories", "min_rating", "open_now", "include_unknown", "cluster")
+
+    @classmethod
+    def _filters(cls, sc: dict, args: dict, result: dict) -> bool:
+        """Keep the pane's pin filters (categories / min_rating / open_now / cluster) in the scene."""
+        if str((args or {}).get("action") or "set") in ("state", "expand"):
+            return False
+        f = result.get("filters") if isinstance(result.get("filters"), dict) else None
+        if f is None:
+            return False
+        f = {k: f.get(k) for k in cls.FILTER_KEYS if k in f}
+        default = {"categories": [], "min_rating": None, "open_now": False, "include_unknown": True, "cluster": True}
+        sc["filters"] = None if all(f.get(k, v) == v for k, v in default.items()) else f
+        return True
+
+    def note_filters(self, key: str | None, filters: dict | None) -> None:
+        """The user toggled a filter chip in the pane (reported by the pane)."""
+        with self.lock:
+            sc = self.scene(key)
+            self._filters(sc, {"action": "set"}, {"filters": filters if isinstance(filters, dict) else {}})
+            sc["updated"] = time.time()
+            self._save()
+
     # -- recording -----------------------------------------------------------------------------
     def record(self, key: str | None, name: str, args: dict, res: dict) -> None:
         if not isinstance(res, dict) or not res.get("ok"):
@@ -103,6 +126,8 @@ class SceneStore:
                 sc["drawer"] = None
             elif name == "hermes_pin_drawer":
                 changed = self._drawer(sc, args, result)
+            elif name == "hermes_pin_filter":
+                changed = self._filters(sc, args, result)
             elif name == "hermes_draw":
                 changed = self._shape(sc, args or {}, result)
             elif name == "hermes_caption":
@@ -180,6 +205,7 @@ class SceneStore:
         with self.lock:
             sc = self.scene(key)
             return {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
+                    "filters": sc.get("filters"),
                     "annotations": [{"id": a["id"], "type": a["spec"].get("type", "pin"),
                                      "label": a["spec"].get("label") or a["spec"].get("target"),
                                      "latitude": a["spec"].get("latitude"), "longitude": a["spec"].get("longitude")}
@@ -274,9 +300,11 @@ class SceneStore:
                                                   "rangeM": cam.get("heightM")}))
             specs = [a["spec"] for a in sc["annotations"]]
             if redraw_only or clear:
-                cmds.append(("clear_annotations", {}))
+                cmds.append(("clear_annotations", {}))  # filters stay; re-applied after the redraw
             for i in range(0, len(specs), 24):
                 cmds.append(("annotate_map", {"annotations": specs[i:i + 24], "persist": True}))
+            if sc.get("filters") and specs:
+                cmds.append(("hermes_pin_filter", dict(sc["filters"])))
             dr = sc.get("drawer")
             if dr and specs:
                 cmds.append(("hermes_pin_drawer", {"action": "open", "latitude": dr["latitude"],
