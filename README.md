@@ -208,7 +208,7 @@ You can open the globe without the ship and fire keys. Doctor will still list th
 | `GODSEYE_VALHALLA_URL` | `https://valhalla1.openstreetmap.de` | Isochrones |
 | `GODSEYE_OSRM_URL` | `https://routing.openstreetmap.de` | Routes, and the isochrone fallback |
 | `GODSEYE_WAYBACK_CONFIG` | Esri's Wayback config JSON | Historical imagery release list |
-| `GODSEYE_HTTP_USER_AGENT` | a `hermes-godseye/0.2` UA with this repo's URL | User-Agent for Nominatim, Overpass, and research |
+| `GODSEYE_HTTP_USER_AGENT` | a `hermes-godseye/0.2.0` UA with this repo's URL | User-Agent for Nominatim, Overpass, and research |
 | `GODSEYE_BIND` | `127.0.0.1` | Listen address for `install-service.sh` only |
 | `GODSEYE_NODE_DIR` | `~/.local/node24` | Node directory for `install-service.sh` only |
 

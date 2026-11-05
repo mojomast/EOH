@@ -27,7 +27,7 @@ from pathlib import Path
 
 USER_AGENT = os.environ.get(
     "GODSEYE_HTTP_USER_AGENT",
-    "hermes-godseye/0.2 (+https://github.com/mojomast/hermes-godseye; Eye Of Hermes research)")
+    "hermes-godseye/0.2.0 (+https://github.com/mojomast/hermes-godseye; Eye Of Hermes research)")
 TIMEOUT_S = 12.0
 GAP_S = 0.4
 MAX_HTTP_PER_PIN = 4
