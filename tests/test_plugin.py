@@ -267,10 +267,14 @@ def test_relay_http_query_routing(tmp_path):
 def test_register_extras_command_skill_state():
     ctx = Ctx2()
     hermes_tools.register_tools(ctx)
-    for name in ("godseye_brief_and_show", "godseye_doctor", "godseye_share_link", "godseye_home", "godseye_live_panes"):
+    for name in ("godseye_doctor", "godseye_view", "godseye_query", "godseye_investigation_export"):
         assert name in ctx.tools
+    for name in ("godseye_brief_and_show", "godseye_share_link", "godseye_home", "godseye_live_panes",
+                 "godseye_live_fly_to_location"):
+        assert name not in ctx.tools
     assert "gev" in ctx.commands and "godseye-analyst" in ctx.skills
-    assert "fanout" in ctx.tools["godseye_live_fly_to_location"]["schema"]["parameters"]["properties"]
+    assert "fanout" in ctx.tools["godseye_view"]["schema"]["parameters"]["properties"]
+    assert "fanout" in ctx.tools["godseye_live_set_layer_visibility"]["schema"]["parameters"]["properties"]
     import yaml
     provided = set(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert set(ctx.tools) == provided
@@ -279,14 +283,16 @@ def test_register_extras_command_skill_state():
 def test_register_extras_degrades_without_new_apis():
     ctx = FakeCtx()  # no register_command / register_skill / state
     done = hermes_tools.register_extras(ctx)
-    assert done == {"tools": list(hermes_tools.EXTRA_TOOLS), "command": False, "skill": False, "state": False,
+    from gev import router
+    visible = [name for name in hermes_tools.EXTRA_TOOLS if not router.absorbed(name)]
+    assert done == {"tools": visible, "command": False, "skill": False, "state": False,
                     "watch": {"hook": False, "inject": False}}
 
 
 def test_skill_has_policy_and_frontmatter():
     text = (ROOT / "skills/godseye-analyst/SKILL.md").read_text()
     assert text.startswith("---\nname: godseye-analyst")
-    assert "Public assets and events only" in text and "no_pane" in text and "godseye_brief_and_show" in text
+    assert "Public assets and events only" in text and "no_pane" in text and "brief_and_show" in text
 
 
 def _brief_result():

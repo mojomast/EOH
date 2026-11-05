@@ -75,7 +75,7 @@ def test_nominatim_fallback_when_all_overpass_down(monkeypatch):
 def test_remediation_texts():
     assert "rangeM <= 15000" in poi.remediate("osm_query", {"code": "AREA_TOO_LARGE"})["remediation"]
     t = poi.remediate("osm_query", {"code": "OVERPASS_NOT_CONFIGURED"})["remediation"]
-    assert "OVERPASS_UPSTREAMS=" in t and "godseye_find_places" in t
+    assert "OVERPASS_UPSTREAMS=" in t and "op=find_places" in t
 
 
 def test_resolve_area_degrades(monkeypatch):

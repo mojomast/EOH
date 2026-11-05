@@ -194,7 +194,11 @@ function listen() {
 function loadPuppeteer() {
   const installed = path.join(HERE, 'node_modules', 'puppeteer-core', 'package.json')
   if (!fs.existsSync(installed)) {
-    const result = spawnSync('npm', ['install', '--no-fund', '--no-audit'], { cwd: HERE, stdio: 'inherit' })
+    const result = spawnSync('npm', ['install', '--no-fund', '--no-audit'], {
+      cwd: HERE,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    })
+    if (result.stdout) process.stderr.write(result.stdout)
     if (result.status !== 0) process.exit(result.status || 1)
   }
   return createRequire(path.join(HERE, 'package.json'))('puppeteer-core')

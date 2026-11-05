@@ -530,7 +530,7 @@ class Relay:
                 pane.inflight.discard(cid)
                 return {"ok": False, "error": "timeout", "code": "timeout",
                         "message": "The Eye Of Hermes (EOH) pane did not answer in time.",
-                        "fix": "Retry this call once. If it times out again, call godseye_live_panes and godseye_doctor before changing arguments."}
+                        "fix": "Retry this call once. If it times out again, call godseye_view op=panes and godseye_doctor before changing arguments."}
             self.cond.wait(max(0.05, min(pickup if queued else deadline, deadline) - now))
         return self.results.pop(cid)
 
