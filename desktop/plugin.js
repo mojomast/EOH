@@ -304,7 +304,7 @@ function GlobePane({ ctx }) {
         })
         : src && homeView !== undefined
         ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "Eye Of Hermes (EOH)", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
-        : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading God\u2019s Eye View…' })
+        : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading Eye Of Hermes (EOH)…' })
     ]
   })
 }

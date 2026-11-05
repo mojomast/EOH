@@ -3,6 +3,7 @@
 ## 0.2.0 (unreleased)
 
 ### Changed
+- Pane branding: the panel header, loader, page title, status line and open button now say Eye Of Hermes (EOH) (gev/panel_brand.js, re-applied by a MutationObserver when the app re-renders); the header tooltip credits God's Eye View. Pane status messages and the pane loading text use the new name.
 - Renamed the user-facing title to **Eye Of Hermes (EOH)** (pane title, plugin description, `/gev` help, skill, README). Plugin id `godseye`, tool names, `/gev`, routes and repo name are unchanged.
 
 ### Added
