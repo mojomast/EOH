@@ -1,7 +1,7 @@
 name: godseye
 version: "0.2.0"
 description: >-
-  God's Eye View inside Hermes: registers the God's Eye View public-data tools
+  Eye Of Hermes (EOH), built on God's Eye View: registers the God's Eye View public-data tools
   (aircraft, ships, satellites, quakes, fires, weather, infrastructure) as
   godseye_* tools backed by its MCP server, adds a live globe pane to Hermes
   Desktop and the Webapp that Hermes can drive and read (godseye_live_* tools),

@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🌐 hermes-godseye
+# 🌐 Eye Of Hermes (EOH)
 
-**[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) inside [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
+**Eye Of Hermes (EOH)** (repo `hermes-godseye`, plugin id `godseye`): **[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) inside [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
 A live 3D globe of public aircraft, ships, satellites, hazards and weather in a Hermes pane, which Hermes can control and answer questions about. Inference comes from your Hermes model, not OpenAI.
 
 [Install](#install) · [Features](#features) · [New in v0.2](#new-in-v02) · [Try it](#try-it) · [Architecture](#architecture) · [Config](#configuration) · [Troubleshooting](#troubleshooting)

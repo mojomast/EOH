@@ -1,4 +1,4 @@
-// God's Eye View pane for Hermes Desktop and the Webapp. Plain ESM, no build step.
+// Eye Of Hermes (EOH) pane (built on God's Eye View) for Hermes Desktop and the Webapp. Plain ESM, no build step.
 //
 // The pane is an MCP Apps host for God's Eye View's own globe panel (the same panel Claude and
 // ChatGPT show). The panel runs inside the SDK's SandboxedFrame (opaque origin, scripts only) and
@@ -291,7 +291,7 @@ function GlobePane({ ctx }) {
           ]
         })
         : src && homeView !== undefined
-        ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "God's Eye View", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
+        ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "Eye Of Hermes (EOH)", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
         : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading God\u2019s Eye View…' })
     ]
   })
@@ -299,13 +299,13 @@ function GlobePane({ ctx }) {
 
 export default {
   id: 'godseye',
-  name: "God's Eye View",
+  name: "Eye Of Hermes (EOH)",
   defaultEnabled: false,
   register(ctx) {
     ctx.register({
       id: 'globe',
       area: 'panes',
-      title: "God's Eye View",
+      title: "Eye Of Hermes (EOH)",
       // Keep-alive: the pane host is never remounted or moved when the layout changes (e.g. the
       // window crosses the narrow breakpoint), so the frame and its WebGL context survive resizes.
       // Pane ids are stable per chat session (see stablePaneId); labels show in the chrome + godseye_live_panes.

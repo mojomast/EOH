@@ -43,7 +43,7 @@ LIVE_SNAPSHOT = Path(__file__).with_name("live_tools_snapshot.json")
 LIVE_PREFIX = "godseye_live_"
 
 SYSTEM_PROMPT = (
-    "God's Eye View (live 3D globe of public aircraft, ships, satellites, hazards and weather) "
+    "Eye Of Hermes (EOH), built on God's Eye View (live 3D globe of public aircraft, ships, satellites, hazards and weather) "
     "may be open in the user's Hermes pane. godseye_live_* tools act on that live globe: "
     "godseye_live_get_current_view_state / godseye_live_get_entity_context answer 'what am I looking "
     "at'; godseye_live_analyst_query counts or lists what is loaded (e.g. flights in view); "
@@ -58,7 +58,7 @@ def load_live_catalog() -> list[dict]:
     return json.loads(LIVE_SNAPSHOT.read_text())
 
 
-FANOUT_PROP = {"type": "boolean", "description": "Send to EVERY open God's Eye View pane instead of only the "
+FANOUT_PROP = {"type": "boolean", "description": "Send to EVERY open EOH pane instead of only the "
                "pane next to this chat (default false; only when the user asks for all panes)."}
 
 
@@ -127,7 +127,7 @@ def make_live_handler(name: str):
 def register_tools(ctx) -> None:
     for tool in load_live_catalog():
         name = LIVE_PREFIX + tool["name"]
-        desc = f"[Live globe in the open God's Eye View pane] {tool.get('description', '')}\n\n{policy.POLICY}"
+        desc = f"[Live globe in the open EOH pane] {tool.get('description', '')}\n\n{policy.POLICY}"
         ctx.register_tool(
             name=name, toolset=TOOLSET,
             schema={"name": name, "description": desc[:4000],
@@ -170,7 +170,7 @@ SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "godseye-analyst
 EXTRA_TOOLS = {
     "godseye_brief_and_show": (
         "Brief a place AND show it on the live globe in one step: runs situation_brief (or "
-        "military_awareness when the question is about military activity), flies the open God's Eye View "
+        "military_awareness when the question is about military activity), flies the open EOH "
         "pane there, turns on the brief's layers, pins the top hits and sets a caption line. Returns the "
         "brief text plus what was shown; if no pane is open it still returns the brief and says so.",
         {"type": "object", "properties": {
@@ -183,7 +183,7 @@ EXTRA_TOOLS = {
             "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."}}},
         "🛰️"),
     "godseye_doctor": (
-        "Health check for God's Eye View in Hermes: Node 24, upstream checkout, app on :4173, upstream "
+        "Health check for Eye Of Hermes (EOH): Node 24, upstream checkout, app on :4173, upstream "
         "patches, live relay, connected panes, per-provider key presence (CESIUM_ION_TOKEN, "
         "GOOGLE_MAPS_API_KEY, MAPILLARY_CLIENT_TOKEN, AISSTREAM_API_KEY, FIRMS_MAP_KEY) in the env file "
         "and panel bundle (values never printed), active map stack, layer feed states from "
@@ -272,7 +272,7 @@ EXTRA_TOOLS = {
         {"type": "object", "properties": {"name": {"type": "string"}, "city": {"type": "string"}},
          "required": ["name"]}, "🧾"),
     "godseye_live_panes": (
-        "List God's Eye View panes (id, optional label, bound chat sessions, last-poll age, busy). "
+        "List Eye Of Hermes (EOH) panes (id, optional label, bound chat sessions, last-poll age, busy). "
         "Stale closed records are pruned automatically; pass prune=true to force a prune now. "
         "Pass label (and optional pane_id) to name the pane bound to this chat. One pane per "
         "session by default; pane ids stay stable across remounts.",
@@ -370,7 +370,7 @@ def register_extras(ctx) -> dict:
         done["tools"].append(name)
     if hasattr(ctx, "register_command"):
         try:
-            ctx.register_command("gev", composer.gev_command, description="God's Eye View: fly, layers, status, brief, home, share, doctor",
+            ctx.register_command("gev", composer.gev_command, description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor",
                                  args_hint="<fly|layers|status|brief|home|share|doctor> [args]")
             done["command"] = True
         except Exception:
@@ -378,7 +378,7 @@ def register_extras(ctx) -> dict:
     if hasattr(ctx, "register_skill") and (SKILL_DIR / "SKILL.md").is_file():
         try:
             ctx.register_skill("godseye-analyst", SKILL_DIR / "SKILL.md",
-                               description="God's Eye View analyst playbook: data vs live tools, pane guidance, policy, examples.")
+                               description="Eye Of Hermes (EOH) analyst playbook: data vs live tools, pane guidance, policy, examples.")
             done["skill"] = True
         except Exception:
             pass

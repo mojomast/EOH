@@ -2,6 +2,9 @@
 
 ## 0.2.0 (unreleased)
 
+### Changed
+- Renamed the user-facing title to **Eye Of Hermes (EOH)** (pane title, plugin description, `/gev` help, skill, README). Plugin id `godseye`, tool names, `/gev`, routes and repo name are unchanged.
+
 ### Added
 - `godseye_find_places`: keyless POI search ("ramen restaurants in Montreal"). Category/cuisine-in-bbox via Overpass (configured endpoint first, then overpass.kumi.systems, overpass.private.coffee, overpass-api.de; 20 s per request, 45 s total, per-endpoint circuit breaker), name/address lookup and a keyword fallback via Nominatim (descriptive User-Agent, 1.2 s pacing, 1 h cache). Returns lat/lon, name, address, website, opening hours; `pin:true` pins up to 24 via annotate_map.
 - `godseye_poi_details` (best effort): OSM record, website, menu URL if linked, and verbatim price snippets from the venue's site. Prices are never invented.
