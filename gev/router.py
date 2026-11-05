@@ -5,8 +5,9 @@ and calls the same handler the old name used (``make_live_handler``,
 ``make_handler``, ``extra_handler``, or the HUD closure). The old names are
 not registered. ``dispatch_legacy`` is the only entry that still accepts them.
 
-``godseye_nav`` reserves ``op=timeline`` for the Wayback slider. It is not in
-the op enum and it is not registered.
+``godseye_nav`` ``op=timeline`` is the Wayback and event-history slider. The
+sub-action is an argument named ``timeline`` (set, play, step, stop, state,
+list_dates), the same way ``op=measure`` takes ``measure``.
 
 ``CATALOG`` is the full mapping. ``docs/COMPOSABLE-TOOLS.md`` mirrors it.
 """
@@ -174,6 +175,8 @@ CATALOG: tuple[Target, ...] = (
     _t("godseye_live_fly_route", "godseye_nav", "fly_route", "live", "B",
        "dolly along an existing route; not a camera fly"),
     _t("godseye_live_compare", "godseye_nav", "compare", "extra", "B", "Wayback or imagery swipe"),
+    _t("godseye_timeline", "godseye_nav", "timeline", "extra", "B",
+       "argument timeline is set, play, step, stop, state, or list_dates"),
     # --- godseye_track ---
     _t("godseye_live_track_entity", "godseye_track", "track", "live", "B", "follow one entity"),
     _t("godseye_live_stop_tracking", "godseye_track", "stop", "live", "B", "stop following"),
@@ -285,10 +288,8 @@ _BLURB = {
 }
 
 
-# The Wayback/history slider lands as godseye_nav op=timeline (or one self-contained
-# tool). It is not registered and is not in the op enum. Add the catalog row beside
-# compare when that work merges.
-RESERVED_OPS = {"godseye_nav": ("timeline",)}
+# Ops named here are rejected with unknown_op until a catalog row exists.
+RESERVED_OPS: dict[str, tuple[str, ...]] = {}
 
 _HUD = None
 
@@ -494,11 +495,14 @@ def _prepare_generic(spec: Target, args: dict):
     """Whitelist, required, and enum checks from the legacy schema.
 
     ``godseye_nav`` ``op=measure`` takes the old inner ``op`` as ``measure``
-    and puts it back before the handler sees it.
+    and puts it back before the handler sees it. ``op=timeline`` does the same
+    with the argument ``timeline`` (set, play, step, stop, state, list_dates).
     """
     args = dict(args)
     if spec.composable == "godseye_nav" and spec.op == "measure" and "measure" in args:
         args["op"] = args.pop("measure")
+    if spec.composable == "godseye_nav" and spec.op == "timeline" and "timeline" in args:
+        args["op"] = args.pop("timeline")
     if "style" in args and args["style"] is not None:
         mapped = canonical_style(args["style"])
         if not mapped:
@@ -891,6 +895,8 @@ def _merge_prop(dst: dict, src: dict) -> None:
 def _public_key(spec: Target, key: str) -> str | None:
     if spec.composable == "godseye_nav" and spec.op == "measure" and key == "op":
         return "measure"
+    if spec.composable == "godseye_nav" and spec.op == "timeline" and key == "op":
+        return "timeline"
     if key == "op":
         return None
     return key
@@ -1074,7 +1080,10 @@ _LEADS = {
         "One op per call. CCTV and ALPR are public or mapped cameras, not a way to identify a person."
     ),
     "godseye_annotate": "Pins, drawings, filters, and pin drawers on the open pane. One op per call.",
-    "godseye_nav": "Measure, isochrone, fly a drawn route, or compare imagery. One op per call.",
+    "godseye_nav": (
+        "Measure, isochrone, fly a drawn route, compare imagery, or scrub the time slider. "
+        "op=timeline takes argument timeline: set, play, step, stop, state, or list_dates. One op per call."
+    ),
     "godseye_track": "Follow an entity, frame overhead traffic, or open the cockpit. One op per call.",
     "godseye_scene": "Save, load, export, restore, tour, or play back a scene. One op per call.",
     "godseye_watch": "Create, list, pause, or delete a watch. One op per call. list check=<id> runs one watch now.",
@@ -1096,7 +1105,7 @@ def register_composable(ctx) -> None:
         ("godseye_layers", generic_schema("godseye_layers"), "Layers, style, and panels", "🗂️"),
         ("godseye_feeds", generic_schema("godseye_feeds"), "Public feeds and mapped cameras", "📡"),
         ("godseye_annotate", generic_schema("godseye_annotate"), "Pins, drawings, and drawers", "📍"),
-        ("godseye_nav", generic_schema("godseye_nav"), "Measure, reach, and compare", "📏"),
+        ("godseye_nav", generic_schema("godseye_nav"), "Measure, reach, compare, and the time slider", "📏"),
         ("godseye_track", generic_schema("godseye_track"), "Follow and frame entities", "✈️"),
         ("godseye_scene", generic_schema("godseye_scene"), "Scenes, tours, and export", "🎬"),
         ("godseye_watch", generic_schema("godseye_watch"), "Watches", "👀"),

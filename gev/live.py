@@ -447,6 +447,15 @@ class Relay:
         with self.cond:
             return self.gl_notices.pop(str(session_id), [])
 
+    def timeline_event(self, body: dict) -> dict:
+        """The user moved the time slider. Merge the playhead; keep saved releases and events."""
+        pane = self.panes.get(str(body.get("pane") or ""))
+        if not pane:
+            return {"ok": False, "error": "unknown pane"}
+        tl = body.get("timeline") if isinstance(body.get("timeline"), dict) else {}
+        self.scenes.note_timeline(pane.last_session or self.scene_key(None, pane), tl, replace=False)
+        return {"ok": True}
+
     def filters_event(self, body: dict) -> dict:
         """The user toggled a pin filter chip in the pane: keep it in the scene."""
         pane = self.panes.get(str(body.get("pane") or ""))
@@ -461,6 +470,16 @@ class Relay:
         op, sid = body.get("op"), body.get("session_id")
         targets = self.targets(sid, body.get("pane_id"))
         key = self.scene_key(sid, targets[0] if targets else None)
+        if op == "timeline":
+            if body.get("clear") or isinstance(body.get("timeline"), dict):
+                self.scenes.note_timeline(key, None if body.get("clear") else body.get("timeline"),
+                                          replace=bool(body.get("replace", True)))
+            tl = None
+            with self.scenes.lock:
+                tl = self.scenes.scene(key).get("timeline")
+            from .timeline import public_timeline, visible_at
+            return {"ok": True, "timeline": public_timeline(tl), "visible": visible_at(tl) if tl else None,
+                    "stored": tl}
         if op == "list":
             return self.scenes.list(key)
         if op == "delete":
@@ -591,6 +610,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.panes_op(body))
             if self.path == "/filters":
                 return self._send(200, relay.filters_event(body))
+            if self.path == "/timeline":
+                return self._send(200, relay.timeline_event(body))
             if self.path == "/drawer":
                 return self._send(200, relay.drawer_event(body))
             if self.path == "/state":

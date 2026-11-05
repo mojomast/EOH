@@ -79,6 +79,7 @@ def scene_snapshot(scene_store, session_key: str | None, *, notes: str | None = 
         "views": views or [],
         "meta": meta or {},
         "shapes": shapes,
+        "timeline": sc.get("timeline") if isinstance(sc.get("timeline"), dict) else None,
     }
 
 
@@ -187,6 +188,12 @@ def render_markdown(data: dict, *, screenshot_note: str | None = None) -> str:
                   f"pitch `{cam.get('pitchDeg')}` heading `{cam.get('headingDeg')}`", ""]
     if data.get("caption"):
         lines += [f"**Caption:** {data['caption']}", ""]
+    tl = data.get("timeline") if isinstance(data.get("timeline"), dict) else None
+    if tl and tl.get("mode"):
+        lines += ["## Timeline", "",
+                  f"- Mode: `{tl.get('mode')}`",
+                  f"- Window: `{tl.get('from')}` to `{tl.get('to')}`",
+                  f"- Playhead: `{tl.get('at')}`", ""]
     if screenshot_note:
         lines += ["## Map screenshot", "", screenshot_note, ""]
     pins = data.get("pins") or [a for a in data.get("annotations") or []

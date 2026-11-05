@@ -26,6 +26,7 @@ REQUIRED = (
     "usgs_quakes",
     "firms_csv",
     "opensky_states",
+    "wayback_config",
 )
 
 _active: contextvars.ContextVar[frozenset] = contextvars.ContextVar("godseye_cassettes", default=frozenset())

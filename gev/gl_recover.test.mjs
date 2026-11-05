@@ -57,6 +57,16 @@ test('restore commands put the camera, pins, layers, and drawer back', () => {
   assert.equal(state.pins.some((p) => p.label === 'old'), false)
 })
 
+test('restore commands put a saved time slider back, paused', () => {
+  const applied = GL.applyRestoreCommands({}, [
+    ['hermes_timeline', { action: 'set', mode: 'wayback', from: '2016-07-13', to: '2023-12-07', at: '2020-04-08', playing: true, transition: 'swipe', index: 2 }]
+  ])
+  assert.equal(applied.timeline.mode, 'wayback')
+  assert.equal(applied.timeline.at, '2020-04-08')
+  assert.equal(applied.timeline.playing, false)
+  assert.equal(applied.timeline.transition, 'swipe')
+})
+
 test('intentional dispose loses the context before destroy and ignores a later loss', () => {
   const order = []
   const viewer = { canvas: { id: 'c' }, epoch: 1 }

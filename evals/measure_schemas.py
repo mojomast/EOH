@@ -3,10 +3,11 @@
 
 "after" is every schema registered for the model (eleven composable tools).
 
-"baseline" rebuilds the 82-tool catalog this change replaces: phase A names
-stay unregistered, phase B names are registered again, and only godseye_view
-and godseye_query are added. Those two schemas include show, state, terrain,
-and features, so this baseline is a little larger than origin/feat/v0.2.
+"baseline" rebuilds the pre-composable catalog: phase A names stay
+unregistered, phase B names are registered again, and only godseye_view
+and godseye_query are added. The slider's absorbed name is one of those
+phase B tools, so the baseline count is 83. view and query also include
+show, state, terrain, and features.
 The pull request records the feat/v0.2 measurement separately.
 
 Token counts use tiktoken (o200k_base and cl100k_base). No network. No secrets.

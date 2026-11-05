@@ -61,6 +61,7 @@ SYSTEM_PROMPT = (
     "Eye Of Hermes (EOH) is a live 3D globe of public aircraft, ships, satellites, hazards and weather. "
     "Tools: godseye_view, godseye_query, godseye_layers, godseye_feeds, godseye_annotate, godseye_nav, "
     "godseye_track, godseye_scene, godseye_watch, godseye_capture, godseye_admin. Each takes op. "
+    "godseye_nav op=timeline is the time slider (argument timeline: set, play, step, stop, state, list_dates). "
     "Trust the EOH map line (pane, camera, layers, pins, drawer) and [EOH watch alert] lines. "
     "Call godseye_view op=state only when that line is missing; detail=full for the raw camera. "
     "Large tools default to detail=concise; pass detail=full for full objects or images. "
@@ -507,6 +508,27 @@ EXTRA_TOOLS = {
             "left": {"type": "string", "default": "wayback:2014", "description": "Left side (before)."},
             "right": {"type": "string", "default": "current", "description": "Right side (after)."},
             "position": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5}}}, "🪞"),
+    "godseye_timeline": (
+        "Time slider on the EOH pane. op=set arms it. mode=wayback scrubs Esri World Imagery Wayback "
+        "release dates over the current view (transition swipe or fade). mode=events shows USGS quakes and "
+        "NASA FIRMS fires, plus stored watch alerts, as pins that appear when the playhead reaches them; "
+        "from/to default to the last 7 days, and area is [south,west,north,east] or the open view. "
+        "date moves the playhead (YYYY-MM-DD). op=play, step (by is 1 or -1), and stop drive it. "
+        "op=state reads the date and what is visible. op=list_dates lists Wayback release dates (cached). "
+        "Imagery is for viewing only. The slider is saved with the scene and with investigations.",
+        {"type": "object", "properties": {
+            "op": {"type": "string", "enum": ["set", "play", "step", "stop", "state", "list_dates"], "default": "state"},
+            "mode": {"type": "string", "enum": ["wayback", "events"]},
+            "from": {"type": "string", "description": "Window start, YYYY-MM-DD."},
+            "to": {"type": "string", "description": "Window end, YYYY-MM-DD."},
+            "date": {"type": "string", "description": "Playhead date, YYYY-MM-DD."},
+            "transition": {"type": "string", "enum": ["swipe", "fade"], "default": "swipe"},
+            "by": {"type": "integer", "minimum": -24, "maximum": 24, "default": 1,
+                   "description": "op=step. Positive moves forward."},
+            "feeds": {"type": "array", "items": {"type": "string", "enum": ["earthquakes", "fires"]},
+                      "description": "events mode. Default both."},
+            "area": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
+                     "description": "[south, west, north, east]. Omit to use the open view."}}}, "🕰️"),
     "godseye_preview_swap": (
         "Open a URL in the Hermes desktop preview pane, closing the previous URL this plugin opened "
         "(single-tab swap). desktop_preview is a Hermes core tool and cannot gain a native swap action; "
@@ -620,6 +642,9 @@ def extra_handler(name: str):
                     out = preview_mod.close_tracked()
                 else:
                     out = preview_mod.swap(str(args.get("url") or ""), label=str(args.get("label") or ""))
+            elif name == "godseye_timeline":
+                from . import timeline as timeline_mod
+                out = timeline_mod.run(args, session_id=sid)
             elif name in CONTEXT_TOOLS:
                 from . import context, measure as measure_mod
                 if name == "godseye_what_is_here":

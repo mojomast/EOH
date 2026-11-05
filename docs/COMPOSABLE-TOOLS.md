@@ -8,7 +8,7 @@ The model catalog is eleven tools. Each takes a required `op` and calls the same
 
 `godseye_investigation_export` is `godseye_scene` `op=export` (GeoJSON, KML, and the optional pack). It is not a separate registered tool.
 
-`godseye_nav` reserves `op=timeline` for the Wayback / history slider another change is adding. `timeline` is not in the op enum and it is not registered. Add the catalog row beside `compare` when that work lands. `op=compare` stays the imagery swipe. Calling `timeline` returns `unknown_op` and says the op is reserved.
+`godseye_nav` `op=timeline` is the Wayback and event-history slider. The sub-action is an argument named `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`). `op=compare` stays the imagery swipe.
 
 Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 
@@ -21,7 +21,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 | `godseye_layers` | `visibility`, `menu`, `panel`, `context_mode`, `style`, `sonar`, `detection`, `stack`, `post` |
 | `godseye_feeds` | `earthquakes`, `fires`, `launches`, `aircraft_in_area`, `find_aircraft`, `aircraft_track`, `aircraft_info`, `vessels_in_area`, `find_vessel`, `vessel_track`, `next_pass`, `overhead`, `find_cctv`, `cctv_snapshot`, `alpr`, `traffic`, `weather`, `imagery`, `cables`, `infrastructure`, `flood`, `cyclones`, `fire_perimeters`, `military_sites`, `imagery_live`, `iss_pass`, `satellite_pass`, `cctv_control`, `radio` |
 | `godseye_annotate` | `annotate`, `clear`, `draw`, `list`, `delete`, `filter`, `drawer`, `research` |
-| `godseye_nav` | `measure`, `isochrone`, `fly_route`, `compare` (`timeline` is reserved and not registered) |
+| `godseye_nav` | `measure`, `isochrone`, `fly_route`, `compare`, `timeline` |
 | `godseye_track` | `track`, `stop`, `select_nearest`, `frame`, `cockpit` |
 | `godseye_scene` | `save`, `list`, `load`, `delete`, `report`, `export`, `restore`, `tour`, `tour_status`, `tour_stop`, `playback` |
 | `godseye_watch` | `create`, `list`, `pause`, `delete` |
@@ -34,7 +34,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 
 The composable entry applies the same person-tracking refusal as the rest of the plugin, including strings nested inside `area` or `location`. It refuses before any pane or network call. Feed ops keep that rule. CCTV and ALPR stay mapped public cameras: the feeds description says they are not a way to identify a person, and the handlers still run `policy.refuse_reason`.
 
-`godseye_nav` `op=measure` takes the old inner `op` (`distance`, `area`, or `route`) as an argument named `measure`, then puts it back to `op` before the handler. `dispatch_legacy` for the retired measure name still forwards the old `op` unchanged.
+`godseye_nav` `op=measure` takes the old inner `op` (`distance`, `area`, or `route`) as an argument named `measure`, then puts it back to `op` before the handler. `dispatch_legacy` for the retired measure name still forwards the old `op` unchanged. `op=timeline` does the same with an argument named `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`). `dispatch_legacy` for that absorbed name still forwards `op`.
 
 `godseye_capture` `op=summary` closes over `ctx.llm`. `register_tools` binds that closure. It is not a live or MCP dispatch.
 
@@ -52,7 +52,7 @@ The starting table is in the 2026-11-05 research note, section 1. These rows dif
 - **Panels, Contacts mode, sonar, and detection sit with layers.** They change pane chrome or a visual overlay. Cockpit sits with track. Cinematic `control_scene` sits with scene (`op=playback`), separate from investigation save/load. CCTV control and radio sit with feeds.
 - **Two satellite-pass tools.** `next_satellite_pass` is the MCP call (`op=next_pass`, no pane). The live catalog pass is `op=satellite_pass`. The ISS pass is `op=iss_pass`.
 - **Watch check is not a tool.** `godseye_watch` `op=list` takes `check=<id>`.
-- **`op=timeline` is reserved on `godseye_nav`** and is not registered. The history slider should land as that op, or as one self-contained tool if it cannot share `godseye_nav`.
+- **`op=timeline` is `godseye_nav`.** The sub-action is the argument `timeline`, so it does not collide with `op`. `op=compare` is unchanged.
 
 ## Selection eval
 
@@ -60,7 +60,7 @@ The starting table is in the 2026-11-05 research note, section 1. These rows dif
 
 ## Full map
 
-Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`, `state`, `terrain`, or `features`). Phase `B` is the rest. Both are registered. `timeline` is not a row.
+Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`, `state`, `terrain`, or `features`). Phase `B` is the rest, including `timeline`. Both are registered.
 
 | Legacy tool | Composable | op | Phase | Notes |
 |---|---|---|---|---|
@@ -135,6 +135,7 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_isochrone` | `godseye_nav` | `isochrone` | B | minutes of reach |
 | `godseye_live_fly_route` | `godseye_nav` | `fly_route` | B | dolly along an existing route; not a camera fly |
 | `godseye_live_compare` | `godseye_nav` | `compare` | B | Wayback or imagery swipe |
+| `godseye_timeline` | `godseye_nav` | `timeline` | B | argument timeline is set, play, step, stop, state, or list_dates |
 | `godseye_live_track_entity` | `godseye_track` | `track` | B | follow one entity |
 | `godseye_live_stop_tracking` | `godseye_track` | `stop` | B | stop following |
 | `godseye_live_select_nearest_aircraft` | `godseye_track` | `select_nearest` | B | fly, enable flights, select the nearest airborne aircraft |

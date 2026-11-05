@@ -176,6 +176,17 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
         ctx.rest('/live/drawer', { method: 'POST', body: { pane: paneId, pin: ok ? { latitude: pin.latitude, longitude: pin.longitude, label: String(pin.label ?? '').slice(0, 120) } : null } }).catch(() => {})
         return true
       }
+      if (event.data?.type === 'hermes-gev:timeline') {  // the time slider moved: keep the playhead in the scene
+        const tl = event.data.detail?.timeline
+        if (tl && typeof tl === 'object') ctx.rest('/live/timeline', { method: 'POST', body: { pane: paneId, timeline: {
+          mode: tl.mode === 'events' ? 'events' : 'wayback',
+          from: String(tl.from || '').slice(0, 10), to: String(tl.to || '').slice(0, 10),
+          at: String(tl.at || '').slice(0, 10), playing: Boolean(tl.playing),
+          transition: tl.transition === 'fade' ? 'fade' : 'swipe',
+          index: Number.isFinite(tl.index) ? tl.index : 0,
+          clear: Boolean(tl.clear) } } }).catch(() => {})
+        return true
+      }
       if (event.data?.type === 'hermes-gev:filters') {  // a filter chip was toggled: persist it with the scene
         const f = event.data.detail?.filters
         if (f && typeof f === 'object') ctx.rest('/live/filters', { method: 'POST', body: { pane: paneId, filters: {

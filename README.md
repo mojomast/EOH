@@ -61,6 +61,20 @@ The toolbar at the bottom left draws a box (two clicks), an area, or a line. Dis
 
 <sub>Left: <b>Esri Wayback 2014-12-30</b>. Right: <b>Current view</b>. The pins stay on Marché Bonsecours and Basilique Notre-Dame. Drag the divider to move the split.</sub>
 
+### Time slider
+
+`godseye_nav` `op=timeline` puts a play, pause, and step control on the pane. The sub-action is an argument named `timeline`: `set`, `play`, `step`, `stop`, `state`, or `list_dates`.
+
+`timeline=set` with `mode=wayback` lists the Esri World Imagery Wayback releases in the window (`from` and `to`, `YYYY-MM-DD`) and scrubs them over the current view. `transition` is `swipe` (the default) or `fade`. `timeline=list_dates` returns those release dates. The catalog is cached for six hours and is not fetched again inside two seconds. A release date is when Esri published the mosaic. The photo under a spot can be older. The tiles are for viewing only.
+
+`mode=events` shows USGS earthquakes and NASA FIRMS fires, plus alerts already stored by an area watch, as pins. A pin appears when the playhead reaches its time, and it opens the same drawer as any other pin. Omit `from` and `to` to use the last 7 days. `feeds` is `earthquakes`, `fires`, or both. `area` is `[south, west, north, east]`. Omit it to use the open view. FIRMS' area API covers the last 10 days. Older fires in the window come from the watch history.
+
+`timeline=play` runs the slider. `timeline=step` with `by=1` or `by=-1` moves one release, or one event day. `timeline=state` reads the date and what is visible. `timeline=stop` pauses. The slider is saved with the scene and with an investigation, and it comes back when the pane reopens or WebGL recovers. Dragging the control saves the playhead the same way a filter chip does. Photorealistic 3D tiles are hidden while Wayback imagery is up. They are not sampled.
+
+<img src="docs/images/eoh-timeline.jpg" alt="Eye Of Hermes time slider on Wayback, playhead at 2020-04-08, three releases" width="880">
+
+<sub>Wayback playhead on <b>2020-04-08</b>, three Esri releases in the window. Play, step, and the range sit on the EOH pane.</sub>
+
 ### Also on the globe
 
 - **Pins.** Annotation pins, place pins, brief hits, and tour stops are ground-clamped markers. The tip is the point, a dot sits on the ground under it, and the height is sampled again as the camera's level of detail changes. Click a pin, or call `godseye_annotate` `op=drawer`, for a drawer of title, `description_md` (markdown; raw HTML is shown as text), images, and http(s) links. The open drawer is saved with the scene.
@@ -213,6 +227,8 @@ For watch alerts that should start a turn immediately, set Hermes `plugins.entri
 - "Find ramen in Montreal and pin them."
 - "How far is it to walk between these two pins, and what can I reach in 10 minutes?"
 - "Show this block in 2014."
+- "Show me how this area changed from 2016 to 2024."
+- "Replay fires here over the last 7 days."
 - "Brief me on the Strait of Hormuz and show it."
 - "Any earthquakes above magnitude 5 in the last day?" This one works with the pane closed.
 - "Watch fires in this view and tell me when a new one shows up."
@@ -226,9 +242,9 @@ Framing presets on `godseye_view` `op=fly`: `street` is about 150 m at pitch −
 
 `plugin.yaml` registers **11** tools, all in the `godseye` toolset. Each takes a required `op`. The map is [`docs/COMPOSABLE-TOOLS.md`](docs/COMPOSABLE-TOOLS.md).
 
-The 11 registered schemas are **6504** `o200k_base` tokens (**26374** bytes, **6358** `cl100k_base`). The catalog on `feat/v0.2` at `90097b3`, before this cut, was **82** tools and **26574** `o200k_base` tokens (**112644** bytes, **26199** `cl100k_base`). Both figures are tiktoken 0.14.0 on compact JSON (`name`, `description`, `parameters`), in registration order. `evals/measure_schemas.py` reprints the current catalog. Its same-tree baseline, which registers the phase B names again and keeps only `godseye_view` and `godseye_query`, is **82** tools and **26852** `o200k_base` tokens, because those two schemas now include `show`, `state`, `terrain`, and `features`.
+The 11 registered schemas are **6636** `o200k_base` tokens (**26879** bytes, **6485** `cl100k_base`). The same eleven tools on `feat/v0.2` at `9c922d0`, before `op=timeline`, were **6504** `o200k_base` tokens (**26374** bytes, **6358** `cl100k_base`). The catalog on `feat/v0.2` at `90097b3`, before the composable cut, was **82** tools and **26574** `o200k_base` tokens (**112644** bytes, **26199** `cl100k_base`). Figures are tiktoken 0.14.0 on compact JSON (`name`, `description`, `parameters`), in registration order. `evals/measure_schemas.py` reprints the current catalog. Its same-tree baseline, which registers the phase B names again and keeps only `godseye_view` and `godseye_query`, is **83** tools and **27337** `o200k_base` tokens. The slider's absorbed name is registered in that baseline, and `godseye_view` / `godseye_query` include `show`, `state`, `terrain`, and `features`.
 
-The names those ops replaced are not registered. `gev/router.py` `dispatch_legacy` still runs a saved call that uses one of them. Scenes, tours, `/gev`, the relay, and the pane keep bare action names such as `fly_to_location`. They do not use the retired Hermes names. `godseye_nav` leaves room for an op named `timeline` (the history slider). It is not in the op enum.
+The names those ops replaced are not registered. `gev/router.py` `dispatch_legacy` still runs a saved call that uses one of them. Scenes, tours, `/gev`, the relay, and the pane keep bare action names such as `fly_to_location`. They do not use the retired Hermes names. `godseye_nav` `op=timeline` is the time slider. Its sub-action is the argument `timeline`.
 
 ### `godseye_view`
 
@@ -271,7 +287,7 @@ The groups below are the rest of the catalog. Every description includes the pub
 | **Camera and lookup** | Move the globe, or answer "this" and "here". | `godseye_view`, `godseye_query` |
 | **Public feeds** | A fact, a count, or a list. The pane can be closed. | `godseye_feeds` |
 | **Move the globe** | Style, layers, map stack, follow a public vehicle or satellite. Needs the pane. | `godseye_layers`, `godseye_track` |
-| **Read the view** | Distance, reach, before/after. | `godseye_nav` |
+| **Read the view** | Distance, reach, before/after, and the time slider. | `godseye_nav` |
 | **Places and pins** | Drawers, clusters, filters, research. | `godseye_annotate` |
 | **Keep it** | Tours, named investigations, reports, GeoJSON and KML. | `godseye_scene` |
 | **Watch** | New earthquakes, fires, flights, ships, or places in an area. | `godseye_watch` |
@@ -289,7 +305,7 @@ Every name in `plugin.yaml`, once.
 - `godseye_layers` — One layer, the layers menu, a side panel, context mode, visual style, sonar, detection, the map stack, bloom and sharpen.
 - `godseye_feeds` — Earthquakes, fires, launches, aircraft, ships, satellite passes, public cameras, ALPR, traffic, weather, imagery, cables, infrastructure, flood, cyclones, fire perimeters, military sites, and internet radio. CCTV and ALPR are mapped public cameras.
 - `godseye_annotate` — Pins (pass `intent` and `description_md`), clear, draw, list, delete, filter, one pin drawer, and research.
-- `godseye_nav` — `measure` (`distance`, `area`, or `route`), `isochrone`, `fly_route`, `compare`. `timeline` is reserved for the history slider and is not an op yet.
+- `godseye_nav` — `measure` (`distance`, `area`, or `route`), `isochrone`, `fly_route`, `compare`, `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`).
 - `godseye_track` — Follow a public aircraft, ship, or satellite, stop, select the nearest, frame overhead traffic, or open the cockpit.
 - `godseye_scene` — Save, list, load, delete (needs `confirm=true`), report, export (GeoJSON, KML, or `format=pack`), restore, tour, and cinematic playback.
 - `godseye_watch` — Create, list (`check` runs one now), pause, or delete (needs `confirm=true`). Feeds: earthquakes, fires, flights, ships, places.
@@ -404,7 +420,7 @@ The tool snapshots (`gev/tools_snapshot.json`, `gev/live_tools_snapshot.json`) h
 
 Export (`godseye_scene` `op=export`, `/gev export`, GeoJSON, KML, and the pack zip), recorded fixtures, WebGL recovery, and the eleven composable tools are in this version. The camera read is `godseye_view` `op=state`. There is no separate state tool.
 
-`godseye_nav` reserves `op=timeline` for a Wayback / history slider. That op is not registered. The slider can land as `timeline` beside `compare`, or as one self-contained tool.
+The time slider is `godseye_nav` `op=timeline`. `mode=wayback` scrubs Esri Wayback releases over the current view. `mode=events` replays earthquakes and fires in a window. The playhead is saved with the scene and with investigations.
 
 ## Credits
 
@@ -422,6 +438,6 @@ Export (`godseye_scene` `op=export`, `/gev export`, GeoJSON, KML, and the pack z
 python3 -m pytest -q tests
 ```
 
-The usual run blocks public network. Contract tests for measure, isochrones, place search, area watches, and investigation export replay hand-written cassettes under `tests/fixtures/cassettes`: an OSRM route, a Valhalla isochrone, Overpass places, Nominatim search and reverse, USGS earthquakes, a FIRMS CSV, and OpenSky states. Those files contain no keys. `GODSEYE_E2E=1` is the only opt-in for a live call against `npm run dev`, and it is not for CI.
+The usual run blocks public network. Contract tests for measure, isochrones, place search, area watches, the time slider, and investigation export replay hand-written cassettes under `tests/fixtures/cassettes`: an OSRM route, a Valhalla isochrone, Overpass places, Nominatim search and reverse, USGS earthquakes, a FIRMS CSV, an Esri Wayback config, and OpenSky states. Those files contain no keys. `GODSEYE_E2E=1` is the only opt-in for a live call against `npm run dev`, and it is not for CI.
 
-WebGL recovery has its own checks: `node --test gev/gl_recover.test.mjs`, and `node scripts/gl_recover_harness.mjs` (it listens on port 4233). `evals/measure_schemas.py` prints the schema byte and token counts.
+WebGL recovery has its own checks: `node --test gev/gl_recover.test.mjs`, and `node scripts/gl_recover_harness.mjs` (it listens on port 4233). `scripts/timeline_harness.mjs` (port 4244) screenshots the time slider. `evals/measure_schemas.py` prints the schema byte and token counts.

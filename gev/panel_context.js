@@ -168,7 +168,8 @@
     const user = [...shapes.values()].filter((s) => s.by === 'user')
     const out = { ok: true, action: 'hermes_context', camera: camera(), selectedPin: selectedPin(), lastClick,
       drawn: user.map(info), hermesShapes: [...shapes.values()].filter((s) => s.by !== 'user').map((s) => ({ id: s.id, kind: s.kind, label: s.label })),
-      drawing: mode, compare: cmp ? { left: cmp.left?.label, right: cmp.right?.label, position: cmp.pos } : null }
+      drawing: mode, compare: cmp ? { left: cmp.left?.label, right: cmp.right?.label, position: cmp.pos } : null,
+      timeline: (() => { try { return window.__hermesTimeline?.state?.() || null } catch { return null } })() }
     try { out.pins = (window.__hermesPins?.state?.().pins || []).slice(0, 30).map((p) => ({ id: p.id, label: p.label, latitude: p.latitude, longitude: p.longitude })) } catch {}
     // focus: what "this" most likely means: open pin > newest drawn shape > last click > screen centre
     const last = user[user.length - 1]

@@ -243,12 +243,14 @@ def test_pick_release_and_wayback_down(monkeypatch):
     rels = [{"release": 9, "date": "2020-05-01"}, {"release": 1, "date": "2014-02-20"}]
     assert M.pick_release(rels, "2019-12")["release"] == 1 and M.pick_release(rels, "2010")["release"] == 1
     assert M.pick_release(rels, "2021-01-01")["release"] == 9
+    M.reset_wayback_cache()
     monkeypatch.setattr(M, "_http", lambda *a, **k: (500, ""))
     assert M.compare_layer("wayback:2015")["kind"] == "error"
     assert M.compare_layer("osm")["kind"] == "xyz" and M.compare_layer("now")["kind"] == "current"
 
 
 def test_wayback_config_parse(monkeypatch):
+    M.reset_wayback_cache()
     cfg = {"10": {"itemTitle": "World Imagery (Wayback 2014-02-20)"}, "64776": {"itemTitle": "World Imagery (Wayback 2025-01-30)"}, "x": {}}
     monkeypatch.setattr(M, "_http", lambda *a, **k: (200, json.dumps(cfg)))
     assert M.wayback_releases() == [{"release": 64776, "date": "2025-01-30", "title": "World Imagery (Wayback 2025-01-30)"},

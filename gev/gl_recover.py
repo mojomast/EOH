@@ -126,7 +126,7 @@ def context_restored_notice(detail: dict | None = None) -> dict:
         "code": "CONTEXT_RESTORED",
         "message": (
             "WebGL recovery succeeded. The viewer was recreated in the same pane and the saved scene "
-            "(camera, pins, annotations, drawer, filters, layers) was restored."
+            "(camera, pins, annotations, drawer, filters, layers, and the time slider when one was saved) was restored."
             + extra
         ),
     }

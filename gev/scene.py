@@ -77,7 +77,7 @@ class SceneStore:
 
     @staticmethod
     def _has(scene: dict) -> bool:
-        return bool(scene.get("annotations") or scene.get("camera") or scene.get("shapes"))
+        return bool(scene.get("annotations") or scene.get("camera") or scene.get("shapes") or scene.get("timeline"))
 
     @staticmethod
     def _drawer(sc: dict, args: dict, result: dict) -> bool:
@@ -118,6 +118,49 @@ class SceneStore:
         sc["filters"] = None if all(f.get(k, v) == v for k, v in default.items()) else f
         return True
 
+    def note_timeline(self, key: str | None, patch, replace: bool = False) -> bool:
+        """Keep the time slider. ``replace`` writes the whole record; a scrub merges the playhead."""
+        from .timeline import clean_state
+        with self.lock:
+            sc = self.scene(key)
+            if patch is None or (isinstance(patch, dict) and patch.get("clear")):
+                had = sc.get("timeline") is not None
+                sc["timeline"] = None
+                if had:
+                    sc["updated"] = time.time()
+                    self._save()
+                return had
+            if not isinstance(patch, dict):
+                return False
+            base = {} if replace or not isinstance(sc.get("timeline"), dict) else dict(sc["timeline"])
+            for field, value in patch.items():
+                if field == "clear" or value in (None, "", []):
+                    continue
+                base[field] = value
+            cleaned = clean_state(base)
+            if cleaned is None:
+                return False
+            sc["timeline"] = cleaned
+            sc["updated"] = time.time()
+            self._save()
+            return True
+
+    def _timeline(self, sc: dict, args: dict, result: dict) -> bool:
+        from .timeline import merge_state
+        action = str(args.get("action") or "set")
+        if action == "state":
+            return False
+        merged = merge_state(sc.get("timeline"), args, result)
+        if merged is None:
+            had = sc.get("timeline") is not None
+            sc["timeline"] = None
+            return had
+        if action in ("set", "stop") or not args.get("playing"):
+            if action != "play":
+                merged["playing"] = False
+        sc["timeline"] = merged
+        return True
+
     def note_filters(self, key: str | None, filters: dict | None) -> None:
         """The user toggled a filter chip in the pane (reported by the pane)."""
         with self.lock:
@@ -147,6 +190,8 @@ class SceneStore:
                 changed = self._shape(sc, args or {}, result)
             elif name == "hermes_caption":
                 sc["caption"] = (args or {}).get("text") or None
+            elif name == "hermes_timeline":
+                changed = self._timeline(sc, args or {}, result)
             elif name == "set_layer_visibility":
                 changed = self._set_layer(sc, args or {})
             elif name in ("get_current_view_state", "fly_to_location", "move_camera"):
@@ -261,8 +306,9 @@ class SceneStore:
     def list(self, key: str | None) -> dict:
         with self.lock:
             sc = self.scene(key)
+            from .timeline import public_timeline
             return {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
-                    "filters": sc.get("filters"),
+                    "filters": sc.get("filters"), "timeline": public_timeline(sc.get("timeline")),
                     "annotations": [{"id": a["id"], "type": a["spec"].get("type", "pin"),
                                      "label": a["spec"].get("label") or a["spec"].get("target"),
                                      "latitude": a["spec"].get("latitude"), "longitude": a["spec"].get("longitude")}
@@ -317,7 +363,7 @@ class SceneStore:
         with self.lock:
             sc = self.scene(key)
             return {"scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "caption": sc.get("caption"),
-                    "drawer": sc.get("drawer"), "updated": sc.get("updated"),
+                    "drawer": sc.get("drawer"), "timeline": sc.get("timeline"), "updated": sc.get("updated"),
                     "annotations": [{"id": a["id"], "paneId": a.get("paneId"), "spec": dict(a.get("spec") or {})}
                                     for a in sc.get("annotations") or []]}
 
@@ -339,6 +385,12 @@ class SceneStore:
             sc["caption"] = data.get("caption")
             sc["drawer"] = data.get("drawer")
             sc["shapes"] = stored_shapes(data.get("shapes"))
+            timeline = data.get("timeline") if isinstance(data.get("timeline"), dict) else None
+            if timeline:
+                from .timeline import clean_state
+                sc["timeline"] = clean_state(timeline)
+            else:
+                sc["timeline"] = None
             sc["updated"] = time.time()
             self._save()
             return {"ok": True, "scene": key or DEFAULT_KEY, "annotations": len(sc["annotations"])}
@@ -385,4 +437,10 @@ class SceneStore:
                 cmds.append(("hermes_draw", dict(sh)))
             if sc.get("caption") and not redraw_only:
                 cmds.append(("hermes_caption", {"text": sc["caption"]}))
+            tl = sc.get("timeline")
+            if isinstance(tl, dict) and tl.get("mode"):
+                body = dict(tl)
+                body["action"] = "set"
+                body["playing"] = False
+                cmds.append(("hermes_timeline", body))
             return cmds

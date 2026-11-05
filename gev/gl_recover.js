@@ -120,6 +120,13 @@
         target.shapes.push(args)
       } else if (name === 'hermes_caption') {
         target.caption = args.text ?? null
+      } else if (name === 'hermes_timeline') {
+        const tl = {}
+        for (const key of ['mode', 'from', 'to', 'at', 'playing', 'transition', 'index']) {
+          if (args[key] != null && args[key] !== '') tl[key] = args[key]
+        }
+        tl.playing = false
+        target.timeline = tl
       } else if (name === 'set_layer_visibility') {
         const id = typeof args.layerId === 'string' ? args.layerId : (typeof args.id === 'string' ? args.id : '')
         if (!id) continue
@@ -134,7 +141,8 @@
       filters: target.filters ? Object.assign({}, target.filters) : null,
       layers: target.layers.slice(),
       shapes: target.shapes.slice(),
-      caption: target.caption ?? null
+      caption: target.caption ?? null,
+      timeline: target.timeline || null
     }
   }
 

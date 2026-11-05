@@ -92,7 +92,7 @@
     try { list = g().annotations?.list?.() } catch {}
     if (!Array.isArray(list)) return
     const live = new Set(list.map((a) => a.id))
-    for (const id of [...pins.keys()]) if (!live.has(id)) remove(id)
+    for (const id of [...pins.keys()]) if (!pins.get(id)?.timeline && !live.has(id)) remove(id)
   }
 
   const add = (id, lat, lon, spec = {}) => {
@@ -117,7 +117,8 @@
       point: { pixelSize: 7, color: Ce.Color.fromCssColorString(col), outlineColor: Ce.Color.fromCssColorString('#06121c'),
         outlineWidth: 2, disableDepthTestDistance: NEVER_DEPTH } })
     pin._hermesPin = id; dot._hermesPin = id
-    const p = { id, lat, lon, label, color: col, meta: drawerMeta(spec, label), tags: pinTags(spec), h: null, ents: [pin, dot] }
+    const p = { id, lat, lon, label, color: col, meta: drawerMeta(spec, label), tags: pinTags(spec),
+      timeline: spec.timeline === true, h: null, ents: [pin, dot] }
     pins.set(id, p)
     place(p)
     refreshView(true)
@@ -133,7 +134,13 @@
     if (openId === id) close({ silent: true })
     refreshView(true)
   }
-  const clear = () => { for (const id of [...pins.keys()]) remove(id); close({ silent: true }) }
+  const clear = (opts) => {
+    const dropTimeline = Boolean(opts && opts.timeline)
+    for (const id of [...pins.keys()]) {
+      if (!dropTimeline && pins.get(id)?.timeline) continue
+      remove(id)
+    }
+  }
   // Drop the data source bound to a destroyed viewer so the next add() uses the new one.
   const detach = () => {
     try { handler?.destroy?.() } catch {}
