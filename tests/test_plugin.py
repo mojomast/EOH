@@ -400,7 +400,7 @@ def test_doctor_reports_fixes(monkeypatch):
     d = composer.doctor()
     by = {c["check"]: c for c in d["checks"]}
     assert not d["ok"] and "Node 24" in by["node"]["fix"] and "npm run dev" in by["app reachable"]["fix"]
-    assert by["live relay"]["ok"] and not by["pane connected"]["ok"] and "Open the God's Eye View pane" in by["pane connected"]["fix"]
+    assert by["live relay"]["ok"] and not by["pane connected"]["ok"] and "Open the Eye Of Hermes (EOH) pane" in by["pane connected"]["fix"]
     assert "fix:" in composer.format_doctor(d)
 
 

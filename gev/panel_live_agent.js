@@ -5,7 +5,7 @@
       if (typeof run === 'function') return run
       await new Promise((r) => setTimeout(r, 200))
     }
-    throw new Error('God\'s Eye View is still loading')
+    throw new Error('Eye Of Hermes (EOH) is still loading')
   }
   // Hermes-only caption line over the globe (godseye_brief_and_show / HUD summary line).
   const caption = (text) => {

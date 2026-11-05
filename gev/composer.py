@@ -231,8 +231,8 @@ def brief_and_show(args: dict, session_id: str | None = None, live=None, mcp=Non
                                         "rangeM": max(100, min(20_000_000, cam.get("altitude_m") or 200_000)),
                                         "waitForArrival": True}, session_id)
         if fly.get("error") in ("no_pane", "relay_unavailable"):
-            shown["message"] = ("The God's Eye View globe isn't open, so nothing was shown. Open the God's Eye "
-                                "View pane in Hermes Desktop or the Webapp to see it.")
+            shown["message"] = ("The Eye Of Hermes (EOH) globe isn't open, so nothing was shown. Open the Eye Of Hermes "
+                                "(EOH) pane in Hermes Desktop or the Webapp to see it.")
         elif fly.get("error") == "pane_busy":
             shown["message"] = fly.get("message")
         else:
@@ -303,7 +303,7 @@ def set_home(args: dict, session_id: str | None = None, live=None) -> dict:
         st = live("get_current_view_state", {}, session_id)
         if not st.get("ok"):
             return {"ok": False, "error": st.get("error"), "message": st.get("message") or
-                    "Give lat and lon, or open the God's Eye View pane to save the current view."}
+                    "Give lat and lon, or open the Eye Of Hermes (EOH) pane to save the current view."}
         cur = view_from_state(_structured_live(st))
         args = {**cur, **{k: v for k, v in args.items() if v not in (None, "", [])}}
     try:
@@ -389,7 +389,7 @@ def doctor() -> dict:
     panes = [x for x in st.get("panes", []) if x.get("open")]
     age = min((x["lastPollAgeS"] for x in panes), default=None)
     add("pane connected", bool(panes), f"{len(panes)} open, last poll {age}s ago" if panes else "no pane polling",
-        "Open the God's Eye View pane in Hermes Desktop or the Webapp and keep it visible.")
+        "Open the Eye Of Hermes (EOH) pane in Hermes Desktop or the Webapp and keep it visible.")
     for c in panel_checks(started=service_started_at()):
         checks.append({k: v for k, v in c.items() if k != "fix" or not c["ok"]})
     # Server-side provider keys (never baked into the panel; presence only, values never returned).
@@ -443,7 +443,7 @@ def doctor() -> dict:
 
 
 def format_doctor(d: dict) -> str:
-    lines = [("✅ " if d["ok"] else "⚠️ ") + "God's Eye View doctor"]
+    lines = [("✅ " if d["ok"] else "⚠️ ") + "Eye Of Hermes (EOH) doctor"]
     for c in d["checks"]:
         code = f"[{c['code']}] " if c.get("code") else ""
         lines.append(f"{'✓' if c['ok'] else '✗'} {code}{c['check']}: {c['detail']}" + (f"\n    fix: {c['fix']}" if c.get("fix") and not c["ok"] else ""))
@@ -505,7 +505,7 @@ def gev_command(raw: str, live=None, mcp=None) -> str:
                     lines.append(f"View: {v['lat']:.3f}, {v['lon']:.3f} at {round((v.get('altitude_m') or 0) / 1000)} km, "
                                  f"style {v.get('style') or 'normal'}, layers {', '.join(v['layers']) or 'none'}")
         else:
-            lines.append(st.get("message") or "Open the God's Eye View pane to drive the live globe.")
+            lines.append(st.get("message") or "Open the Eye Of Hermes (EOH) pane to drive the live globe.")
         d = doctor()
         bad = [c["check"] for c in d["checks"] if not c["ok"]]
         lines.append("Health: all checks pass" if not bad else "Health: needs attention: " + ", ".join(bad) + " (run /gev doctor)")

@@ -30,8 +30,8 @@ MAX_BODY = 512 * 1024
 PICKUP_S = 8.0
 BUSY_WAIT_S = 45.0  # extra time a working pane (scene restore, long flight) gets to pick a command up
 DEFAULT_PANE = "default"
-NO_PANE = {"ok": False, "error": "no_pane", "message": "No God's Eye View pane is open in Hermes Desktop or the Webapp. Ask the user to open the God's Eye View pane (and keep it visible), then retry."}
-PANE_BUSY = {"ok": False, "error": "pane_busy", "message": "The God's Eye View pane is open but still busy with an earlier command; retry in a few seconds."}
+NO_PANE = {"ok": False, "error": "no_pane", "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp. Ask the user to open the Eye Of Hermes (EOH) pane (and keep it visible), then retry."}
+PANE_BUSY = {"ok": False, "error": "pane_busy", "message": "The Eye Of Hermes (EOH) pane is open but still busy with an earlier command; retry in a few seconds."}
 
 
 def port() -> int:
@@ -383,7 +383,7 @@ class Relay:
                 return dict(PANE_BUSY if pane.inflight else NO_PANE)
             if now >= deadline:
                 pane.inflight.discard(cid)
-                return {"ok": False, "error": "timeout", "message": "The God's Eye View pane did not answer in time."}
+                return {"ok": False, "error": "timeout", "message": "The Eye Of Hermes (EOH) pane did not answer in time."}
             self.cond.wait(max(0.05, min(pickup if queued else deadline, deadline) - now))
         return self.results.pop(cid)
 
