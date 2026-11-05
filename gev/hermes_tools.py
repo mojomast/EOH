@@ -79,6 +79,12 @@ def make_live_handler(name: str):
         out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
         if name == "set_map_stack":
             out = composer.remediate_map_stack(out)
+        if name in ("osm_query", "resolve_area"):
+            from . import poi
+            if name == "resolve_area":
+                out = poi.resolve_area_fallback(args, out, lambda a: composer.live_call(
+                    name, a, session_id=kw.get("session_id"), fanout=fanout))
+            out = poi.remediate(name, out) if isinstance(out, dict) else out
         text = json.dumps(out)
         return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
     return handler
@@ -206,6 +212,28 @@ EXTRA_TOOLS = {
     "godseye_live_stop_tour": (
         "Cancel a running tour (the given jobId, else the latest) and stop camera motion.",
         {"type": "object", "properties": {"jobId": {"type": "string"}}}, "⏹️"),
+    "godseye_find_places": (
+        "Find real places (POIs) without any Overpass config: category/cuisine search in a box via public "
+        "Overpass mirrors, or name/address lookup via Nominatim. e.g. query=\"ramen restaurants in Montreal\". "
+        "Returns name, lat/lon, address, website, opening hours. pin=true pins them on the live globe.",
+        {"type": "object", "properties": {
+            "query": {"type": "string", "description": "e.g. \"ramen restaurants in Montreal\" or a name/address."},
+            "category": {"type": "string", "description": "restaurant, cafe, bar, hotel, museum, pharmacy, ..."},
+            "cuisine": {"type": "string"},
+            "near": {"description": "Place name or {lat, lon}.", "type": ["string", "object"]},
+            "lat": {"type": "number", "minimum": -90, "maximum": 90},
+            "lon": {"type": "number", "minimum": -180, "maximum": 180},
+            "radiusM": {"type": "number", "minimum": 50, "maximum": 15000},
+            "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
+                     "description": "[south, west, north, east]"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
+            "pin": {"type": "boolean", "default": False, "description": "Pin results (max 24) via annotate_map."}}},
+        "🍜"),
+    "godseye_poi_details": (
+        "Best-effort details for one venue: OSM record, website, menu URL if found, and verbatim price "
+        "snippets scraped from its site. Never invents prices; empty when none are scrapeable.",
+        {"type": "object", "properties": {"name": {"type": "string"}, "city": {"type": "string"}},
+         "required": ["name"]}, "🧾"),
     "godseye_live_panes": (
         "List open God's Eye View panes (id, bound chat sessions, seconds since last poll, busy). Tells "
         "'no pane open' apart from 'pane busy'.",
@@ -224,6 +252,14 @@ def extra_handler(name: str):
                 out = composer.doctor()
             elif name == "godseye_share_link":
                 out = composer.share_link(session_id=sid)
+            elif name == "godseye_find_places":
+                from . import poi
+                out = poi.find_places(args)
+                if args.get("pin") and out.get("ok") and out["places"]:
+                    out["pinned"] = composer.live_call("annotate_map", {"annotations": poi.pin_annotations(out["places"])}, sid)
+            elif name == "godseye_poi_details":
+                from . import poi
+                out = poi.poi_details(args)
             elif name == "godseye_live_panes":
                 out = composer.relay_status()
             elif name == "godseye_live_list_annotations":

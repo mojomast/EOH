@@ -222,3 +222,20 @@ GODSEYE_E2E=1 python3 -m pytest -q tests        # plus a live call against npm r
 
 - **[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view)** by Bilawal Sidhu and contributors, MIT. Its license is included as [`LICENSE.upstream-gods-eye-view`](LICENSE.upstream-gods-eye-view). This plugin reuses its MCP server, panel, voice actions and HUD prompt. It is an independent integration, not affiliated with or endorsed by the upstream project.
 - **hermes-godseye** © mojomast, [MIT](LICENSE).
+
+## Place search (POIs) without an Overpass server
+
+`godseye_find_places` finds real places with no keys and no configuration:
+
+    godseye_find_places {"query": "ramen restaurants in Montreal", "limit": 25, "pin": true}
+
+- **Category/cuisine in a box**: Overpass. It tries your endpoint first (`GODSEYE_OVERPASS_URL` or `OVERPASS_UPSTREAMS`), then the public keyless mirrors `overpass.kumi.systems`, `overpass.private.coffee`, `overpass-api.de`. Each request gets 20 s, with 45 s total. An endpoint that fails twice is skipped for 5 minutes.
+- **Names, addresses, and fallback**: Nominatim, sent with a descriptive User-Agent (override with `GODSEYE_HTTP_USER_AGENT`), one request per 1.2 s, cached for 1 h. If every Overpass mirror is down, the search runs as a Nominatim keyword search bounded to the same box. The `source` field shows which path answered.
+- Inputs: `near` (a place name or `{lat, lon}`), `radiusM` (up to 15000) or `bbox` `[S, W, N, E]`, plus `category`/`cuisine`. Results carry `countScope` (queried extent) and OSM attribution.
+- `godseye_poi_details {name, city}` returns the website, the menu URL if one is linked, and price text copied verbatim from the site. If nothing can be scraped, the price list is empty and nothing is made up.
+
+**In-pane `osm_query`** only works when the app has an Overpass server configured. To give it the same fallback chain, add this line to `~/.config/gods-eye-view.env`:
+
+    OVERPASS_UPSTREAMS=https://overpass.kumi.systems/api/interpreter,https://overpass.private.coffee/api/interpreter,https://overpass-api.de/api/interpreter
+
+Then restart `gods-eye-view.service`. The app already fails over across that list with cooldowns. Please respect the mirrors' usage policies.
