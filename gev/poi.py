@@ -15,7 +15,7 @@ import urllib.request
 
 USER_AGENT = os.environ.get(
     "GODSEYE_HTTP_USER_AGENT",
-    "hermes-godseye/0.2 (+https://github.com/mojomast/hermes-godseye; Hermes God's Eye View plugin)")
+    "hermes-godseye/0.2.0 (+https://github.com/mojomast/hermes-godseye; Hermes God's Eye View plugin)")
 PUBLIC_OVERPASS = [
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
