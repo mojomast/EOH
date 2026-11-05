@@ -59,6 +59,10 @@ To rebuild automatically on service start, you can add this line to the app unit
 
 Scenes persist per chat session, and reopening the pane restores pins, routes, the camera and the caption. Tools: `godseye_live_list_annotations`, `godseye_live_delete_annotation`, `godseye_live_restore_scene`, `godseye_live_reload_pane`.
 
+Camera framing: `godseye_live_fly_to_location {latitude, longitude, framing:"street"}` puts you about 150 m away at pitch -15° (rooftop 450 m/-30°, district 2500 m/-45°). The minimum range is 100 m. Results and `get_current_view_state` include `pitchDeg`/`headingDeg`.
+
+Annotations: `label` can span 2-3 lines (`"Misoya\nMiso ramen\nOpen till 22:00"`). `{type:"card", latitude, longitude | target, title, rows:[{text, price}]}` draws a menu or price callout. A route with an unfindable waypoint still draws the legs it can (never across the gap) and names the missing waypoint. `flyTo:"all"` frames everything drawn in that call.
+
 Tours: `godseye_live_run_tour {stops:[{name,lat,lon}], framing:"street"|"rooftop"|"district", orbit:"slow"|null, dwellMs, connect:"route"}` returns a jobId right away. Check it with `godseye_live_tour_status` and cancel with `godseye_live_stop_tour`.
 
 ## Try it

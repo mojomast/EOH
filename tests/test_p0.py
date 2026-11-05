@@ -88,3 +88,45 @@ def test_map_stack_remediation():
     out = composer.remediate_map_stack({"ok": True, "result": {"ok": False, "error": "Cesium ion token missing"}})
     assert "godseye_rebuild_panel" in out["remediation"]
     assert "remediation" not in composer.remediate_map_stack({"ok": True, "result": {"ok": True}})
+
+
+def test_tour_reframes_until_pitch_holds_and_stops_orbit_between_stops():
+    calls, poses = [], iter([-35, -15, -15])
+    def run(name, args):
+        calls.append(name)
+        if name == "get_current_view_state":
+            return {"ok": True, "result": {"camera": {"pitchDeg": next(poses)}}}
+        return {"ok": True}
+    sp = tour.plan({"stops": [{"lat": 1, "lon": 2, "name": "a"}, {"lat": 3, "lon": 4, "name": "b"}], "dwellMs": 0, "orbit": "slow"})
+    t = tour.Tour(sp, run, sleep=lambda s: False)
+    t()
+    assert [v["pitchDeg"] for v in t.visited] == [-15, -15]
+    assert calls.count("hermes_frame") == 3
+    i2 = [i for i, n in enumerate(calls) if n == "fly_to_location"][1]
+    assert calls[i2 - 1] == "move_camera"  # orbit stopped before the next flight
+
+
+def test_scene_keeps_card_rows_and_drops_target(tmp_path):
+    st = SceneStore(tmp_path / "s.json")
+    st.record("k", "annotate_map", {"annotations": [{"type": "card", "target": "Kazu", "title": "Kazu", "rows": [{"text": "Tonkotsu", "price": "$16"}]}]},
+              {"ok": True, "result": {"items": [{"ok": True, "latitude": 45.5, "longitude": -73.5, "card": True}]}})
+    spec = st.restore_commands("k")[0][1]["annotations"][0]
+    assert spec["type"] == "card" and spec["rows"][0]["price"] == "$16" and "target" not in spec and spec["latitude"] == 45.5
+
+
+def test_live_schema_extensions():
+    from gev import hermes_tools as h
+    cat = {t["name"]: t for t in h.load_live_catalog()}
+    fly = h.extend_live_schema("fly_to_location", h.live_schema(cat["fly_to_location"].get("parameters")))
+    assert fly["properties"]["framing"]["enum"] == ["street", "rooftop", "district"]
+    ann = h.extend_live_schema("annotate_map", h.live_schema(cat["annotate_map"].get("parameters")))
+    item = ann["properties"]["annotations"]["items"]["properties"]
+    assert "card" in item["type"]["enum"] and "rows" in item
+    assert {"type": "string", "enum": ["all"]} in ann["properties"]["flyTo"]["anyOf"]
+
+
+def test_pane_shim_has_features():
+    from pathlib import Path
+    js = (Path(__file__).parents[1] / "gev" / "panel_live_agent.js").read_text()
+    for needle in ("prepAnnotate", "missingWaypoints", "framedAll", "FRAMING", "cancelFlight", "MIN_RANGE_M = 100"):
+        assert needle in js

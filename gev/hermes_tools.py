@@ -68,6 +68,40 @@ def live_schema(params: dict | None) -> dict:
     return schema
 
 
+FRAMING_PROP = {"type": "string", "enum": ["street", "rooftop", "district"],
+                "description": "Preset camera framing applied after arrival: street = 150 m range, pitch -15 "
+                               "(standing across the street); rooftop = 450 m, -30; district = 2500 m, -45. "
+                               "rangeM overrides the range (minimum 100 m). The result's camera has pitchDeg/headingDeg."}
+
+
+def extend_live_schema(name: str, schema: dict) -> dict:
+    """Hermes-side features the pane shim adds on top of upstream tools."""
+    props = schema.setdefault("properties", {})
+    if name == "fly_to_location":
+        props["framing"] = FRAMING_PROP
+    if name == "annotate_map":
+        props["flyTo"] = {"anyOf": [{"type": "boolean"}, {"type": "string", "enum": ["all"]}],
+                          "description": "true frames the first mark; 'all' frames every mark drawn in this call."}
+        items = (props.get("annotations") or {}).get("items")
+        if isinstance(items, dict):
+            ip = items.setdefault("properties", {})
+            t = ip.get("type")
+            if isinstance(t, dict) and isinstance(t.get("enum"), list) and "card" not in t["enum"]:
+                t["enum"] = t["enum"] + ["card"]
+            ip["label"] = {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "maxItems": 3}],
+                           "description": "Mark label. Use a newline-separated string or a list for 2-3 lines."}
+            ip["title"] = {"type": "string", "description": "card: heading line"}
+            ip["rows"] = {"type": "array", "maxItems": 8, "description": "card: rows like a menu or price list",
+                          "items": {"type": "object", "properties": {"text": {"type": "string"},
+                                                                     "price": {"type": ["string", "number"]}},
+                                    "required": ["text"]}}
+            t2 = ip.get("type")
+            if isinstance(t2, dict):
+                t2["description"] = (t2.get("description") or "") + (" 'card' = a callout box anchored to a point "
+                                     "(target or latitude/longitude) with title and rows [{text, price}].")
+    return schema
+
+
 def make_live_handler(name: str):
     def handler(args: dict, **kw) -> str:
         from . import composer
@@ -91,7 +125,7 @@ def register_tools(ctx) -> None:
         ctx.register_tool(
             name=name, toolset=TOOLSET,
             schema={"name": name, "description": desc[:4000],
-                    "parameters": live_schema(tool.get("parameters"))},
+                    "parameters": extend_live_schema(tool["name"], live_schema(tool.get("parameters")))},
             handler=make_live_handler(tool["name"]), description=f"Live globe: {tool['name']}", emoji="🌐")
     try:
         ctx.register_system_prompt_section("godseye.live-globe", SYSTEM_PROMPT, max_chars=1500)

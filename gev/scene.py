@@ -13,7 +13,7 @@ from pathlib import Path
 
 DEFAULT_KEY = "default"
 MAX_ITEMS = 96
-POINT_TYPES = {"pin", "highlight", "label", "area"}
+POINT_TYPES = {"pin", "highlight", "label", "area", "card"}
 
 
 def default_path() -> Path:
