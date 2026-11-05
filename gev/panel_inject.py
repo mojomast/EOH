@@ -76,16 +76,22 @@ def embed_boot_script(perf: str | None, config: dict | None) -> str:
 """
 
 
-def prepare(html: str, full_ui: bool = True, perf: str | None = "embed", config: dict | None = None) -> str:
+def prepare(html: str, full_ui: bool = True, perf: str | None = "embed", config: dict | None = None,
+            gl_recover: bool | None = None) -> str:
+    if gl_recover is None:
+        from .gl_recover import enabled
+        gl_recover = enabled()
     head = BASE_TAG
     head += _script(embed_boot_script(perf, config))
     if full_ui:
         head += _script("window.GEV_EMBED_FULL_UI = true")
+    head += _script("window.__HERMES_GL_RECOVER = " + ("true" if gl_recover else "false"))
     head += _script((_HERE / "panel_brand.js").read_text())
     head += _script((_HERE / "panel_worker_shim.js").read_text())
     head += _script((_HERE / "panel_oh.js").read_text())
     head += _script((_HERE / "panel_pins.js").read_text())
     head += _script((_HERE / "panel_context.js").read_text())
+    head += _script((_HERE / "gl_recover.js").read_text())
     head += _script((_HERE / "panel_live_agent.js").read_text())
     m = re.search(r"<head[^>]*>", html, re.I)
     return html[: m.end()] + head + html[m.end():] if m else head + html

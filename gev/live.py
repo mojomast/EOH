@@ -89,6 +89,8 @@ class Relay:
         self.session_binding: dict[str, str] = {}
         # Compact map snapshots that arrived before the pane's first poll.
         self.pending_snaps: dict[str, dict] = {}
+        # WebGL loss / recovery notices drained into the next model turn. session -> list.
+        self.gl_notices: dict[str, list[dict]] = {}
 
     # -- pane side -----------------------------------------------------------------------------
     def _pane(self, pane_id: str | None) -> Pane:
@@ -374,6 +376,77 @@ class Relay:
         self.scenes.note_drawer(pane.last_session or self.scene_key(None, pane), pin)
         return {"ok": True}
 
+    def _notice_keys(self, pane: Pane | None, body: dict, scene_key: str | None) -> list[str]:
+        keys: set[str] = set()
+        if pane:
+            keys.update(pane.sessions)
+            if pane.last_session:
+                keys.add(pane.last_session)
+        for sid in body.get("sessions") or []:
+            if sid:
+                keys.add(str(sid)[:200])
+        if scene_key:
+            keys.add(scene_key)
+        if not keys:
+            keys.add(DEFAULT_PANE)
+        return sorted(keys)
+
+    def _scene_key_for_gl(self, pane: Pane | None, body: dict) -> str:
+        if pane and pane.last_session:
+            return pane.last_session
+        sessions = sorted(pane.sessions) if pane else []
+        picked = self.scenes.pick(sessions)
+        if picked:
+            return picked
+        if sessions:
+            return sessions[0]
+        for sid in body.get("sessions") or []:
+            if sid:
+                return str(sid)[:200]
+        return DEFAULT_PANE
+
+    def gl_event(self, body: dict) -> dict:
+        """Record a context-loss notice, or return restore_commands for a fresh viewer.
+
+        The commands are the scene store's, not a second copy of the scene. They are
+        not queued on the voice runner: the pane applies them on the new viewer.
+        """
+        from .gl_recover import context_lost_notice, context_restored_notice
+        event = str(body.get("event") or "")
+        pid = str(body.get("pane") or "")[:80]
+        with self.cond:
+            pane = self.panes.get(pid)
+        if event == "restore":
+            if pane is None and not (body.get("sessions") or body.get("session_id")):
+                return {"ok": False, "error": "unknown pane"}
+            key = self._scene_key_for_gl(pane, body)
+            cmds = self.scenes.restore_commands(key, clear=True)
+            return {"ok": True, "scene": key, "commands": [[name, args] for name, args in cmds]}
+        kind = str(body.get("kind") or "")
+        if event == "recovered":
+            notice = context_restored_notice(body.get("detail") if isinstance(body.get("detail"), dict) else {})
+        elif event == "lost":
+            if kind not in ("recovering", "exhausted", "manual"):
+                kind = "exhausted" if body.get("exhausted") else "recovering"
+            notice = context_lost_notice(kind)
+        else:
+            return {"ok": False, "error": "bad op"}
+        key = self._scene_key_for_gl(pane, body)
+        keys = self._notice_keys(pane, body, key)
+        with self.cond:
+            for sid in keys:
+                bucket = self.gl_notices.setdefault(sid, [])
+                bucket.append(notice)
+                del bucket[:-8]
+        return notice
+
+    def drain_gl(self, session_id: str | None) -> list[dict]:
+        """Notices for this chat, once. An empty session does not drain another chat."""
+        if not session_id:
+            return []
+        with self.cond:
+            return self.gl_notices.pop(str(session_id), [])
+
     def filters_event(self, body: dict) -> dict:
         """The user toggled a pin filter chip in the pane: keep it in the scene."""
         pane = self.panes.get(str(body.get("pane") or ""))
@@ -522,6 +595,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.drawer_event(body))
             if self.path == "/state":
                 return self._send(200, relay.note_state(body.get("pane"), body.get("state") if isinstance(body.get("state"), dict) else body))
+            if self.path == "/gl":
+                return self._send(200, relay.gl_event(body))
             if self.path == "/mapstate":
                 return self._send(200, {"ok": True, "line": relay.map_line(body.get("session_id"))})
             if self.path == "/result":
@@ -533,6 +608,11 @@ def make_handler(relay: Relay, token: str):
 
 _server = None
 _relay = None
+
+
+def current():
+    """The relay started in this process, or None. Tests and the turn hook use this."""
+    return _relay
 
 
 def start_in_thread(token: str) -> bool:

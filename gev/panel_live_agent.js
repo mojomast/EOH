@@ -28,7 +28,7 @@
     const cam = window.__godsEyeView?.viewer?.camera
     if (!cam) return null
     const h = window.__godsEyeView.viewer.scene?.globe?.ellipsoid?.cartesianToCartographic?.(cam.positionWC)?.height
-    const out = { pitchDeg: deg(cam.pitch), headingDeg: deg(cam.heading), heightM: typeof h === 'number' ? Math.round(h) : null }
+    const out = { pitchDeg: deg(cam.pitch), headingDeg: deg(cam.heading), rollDeg: deg(cam.roll), heightM: typeof h === 'number' ? Math.round(h) : null }
     try {  // what the camera looks at (screen centre on the globe) and how far away it is
       const v = window.__godsEyeView.viewer
       const c = v.canvas
@@ -88,8 +88,14 @@
     const range = Number(args?.rangeM) || Math.hypot(p.x - hit.x, p.y - hit.y, p.z - hit.z)
     const rad = (d) => d * Math.PI / 180
     const heading = typeof args?.headingDeg === 'number' ? rad(args.headingDeg) : cam.heading
-    cam.lookAt(hit, { heading, pitch: rad(Number(args?.pitchDeg ?? -15)), range })
+    const pitch = rad(Number(args?.pitchDeg ?? -15))
+    cam.lookAt(hit, { heading, pitch, range })
     cam.lookAtTransform(cam.transform.constructor.IDENTITY)  // release the lock so orbit/fly still work
+    if (typeof args?.rollDeg === 'number' && typeof cam.setView === 'function') {
+      try {
+        cam.setView({ destination: cam.positionWC, orientation: { heading, pitch, roll: rad(args.rollDeg) } })
+      } catch {}
+    }
     try { v.scene.requestRender?.() } catch {}
     return { ok: true, action: 'hermes_frame', camera: pose() }
   }
@@ -333,22 +339,173 @@
     try { window.parent.postMessage(out, '*') } catch {}
   }
   let disposed = false
+  const glOn = () => {
+    const flag = window.__HERMES_GL_RECOVER
+    if (flag === undefined || flag === null || flag === '') return true
+    if (typeof flag === 'boolean') return flag
+    return !['0', 'false', 'off', 'no'].includes(String(flag).trim().toLowerCase())
+  }
+  // Intentional teardown releases the GPU slot before destroy. Recovery uses the same order.
+  const releaseContext = (viewer) => {
+    try { viewer?.scene?.context?._gl?.getExtension('WEBGL_lose_context')?.loseContext() } catch {}
+  }
+  const destroyViewer = (viewer) => {
+    try { if (viewer && !viewer.isDestroyed?.()) viewer.destroy() } catch {}
+  }
+  const localFly = (viewer, args) => {
+    const cam = viewer?.camera
+    const C3 = cam?.positionWC?.constructor
+    if (!cam || typeof C3?.fromDegrees !== 'function') return
+    const range = Number(args?.rangeM) || Number(args?.heightM) || 1_000_000
+    const lon = Number(args?.longitude), lat = Number(args?.latitude)
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return
+    try { cam.cancelFlight?.() } catch {}
+    try { cam.setView?.({ destination: C3.fromDegrees(lon, lat, range) }) } catch {}
+  }
+  const localPins = (args) => {
+    const P = window.__hermesPins
+    if (!P) return
+    ;(args?.annotations || []).forEach((spec, i) => {
+      const lat = Number(spec?.latitude), lon = Number(spec?.longitude)
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return
+      try { P.add(String(spec.id || `gl-pin-${i + 1}`), lat, lon, spec || {}) } catch {}
+    })
+  }
+  const rebindOverlays = () => {
+    try { window.__hermesPins?.detach?.() } catch {}
+    try { window.__hermesContext?.detach?.() } catch {}
+    cardHook = null
+    try { ensureCardLayer() } catch {}
+  }
+  // Commands come from SceneStore.restore_commands (the host asks the relay).
+  // The voice runner still points at the destroyed app, so each command is also
+  // applied on the new viewer. A God's Eye View recreateViewer() hook, when the
+  // fork ships one, rebinds that runner and is preferred.
+  const paintRestored = async (viewer, commands) => {
+    if (!window.__godsEyeView) window.__godsEyeView = {}
+    window.__godsEyeView.viewer = viewer
+    rebindOverlays()
+    const run = window.__godsEyeView?.voiceCommands?.runner
+    for (const cmd of commands || []) {
+      const name = Array.isArray(cmd) ? cmd[0] : cmd?.name
+      const args = (Array.isArray(cmd) ? cmd[1] : cmd?.args) || {}
+      try {
+        if (name === 'fly_to_location') localFly(viewer, args)
+        else if (name === 'hermes_frame') frame(args)
+        else if (name === 'clear_annotations') { clearCards(); try { window.__hermesPins?.clear() } catch {} }
+        else if (name === 'annotate_map') localPins(args)
+        else if (name === 'hermes_pin_filter') window.__hermesPins?.filterCommand?.(args)
+        else if (name === 'hermes_pin_drawer') window.__hermesPins?.command?.(args)
+        else if (name === 'hermes_draw') window.__hermesContext?.command?.('hermes_draw', args)
+        else if (name === 'hermes_caption') caption(args.text)
+        else if (name === 'set_layer_visibility' && typeof run === 'function') await run(name, args)
+      } catch {}
+    }
+  }
+  const requestScene = () => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); reject(new Error('scene timeout')) }, 8000)
+    function onMsg(event) {
+      if (event.source !== window.parent || event.data?.type !== 'hermes-gev:gl-scene') return
+      cleanup()
+      if (event.data.error) reject(new Error('scene unavailable'))
+      else resolve(Array.isArray(event.data.commands) ? event.data.commands : [])
+    }
+    function cleanup() { clearTimeout(timer); removeEventListener('message', onMsg) }
+    addEventListener('message', onMsg)
+    tell('hermes-gev:gl-need-scene')
+  })
+  const createViewer = async (container, info) => {
+    const g = window.__godsEyeView || {}
+    const Ctor = info?.factory
+    if (typeof Ctor !== 'function' || Ctor === Object || !container) throw new Error('no viewer factory')
+    const credit = document.createElement('div')
+    credit.style.display = 'none'
+    container.appendChild(credit)
+    const options = {
+      animation: false, timeline: false, baseLayerPicker: false, geocoder: false, homeButton: false,
+      sceneModePicker: false, navigationHelpButton: false, fullscreenButton: false, vrButton: false,
+      selectionIndicator: false, infoBox: false, baseLayer: false, creditContainer: credit
+    }
+    let next
+    try { next = new Ctor(container, options) } catch { next = new Ctor(container) }
+    if (!window.__godsEyeView) window.__godsEyeView = {}
+    window.__godsEyeView.viewer = next
+    try { g.viewer = next } catch {}
+    return next
+  }
+  const GL = window.__hermesGlRecover
+  let glCtl = null
+  if (GL && typeof GL.attach === 'function') {
+    glCtl = GL.attach({
+      listen: false,
+      enabled: glOn,
+      getViewer: () => window.__godsEyeView?.viewer || null,
+      setViewer: (viewer) => { if (!window.__godsEyeView) window.__godsEyeView = {}; window.__godsEyeView.viewer = viewer },
+      containerOf: (viewer) => viewer?.container || document.getElementById('cesiumContainer') || document.body,
+      releaseContext,
+      destroyViewer,
+      // Fork hook: recreateViewer owns loseContext + destroy + a new Viewer, then we restore.
+      recreate: async (prev, container) => {
+        const fn = window.__godsEyeView?.recreateViewer
+        if (typeof fn !== 'function') return null
+        const next = await fn({ container, viewer: prev })
+        if (!next) return null
+        if (!window.__godsEyeView) window.__godsEyeView = {}
+        window.__godsEyeView.viewer = next
+        return next
+      },
+      createViewer,
+      getScene: requestScene,
+      applyScene: async (viewer, commands) => {
+        const state = { camera: {}, pins: [], layers: [], shapes: [] }
+        const applied = GL.applyRestoreCommands(state, commands)
+        await paintRestored(viewer, commands)
+        try { viewer.__hermesScene = state } catch {}
+        return applied
+      },
+      onLost: () => tell('hermes-gev:gl-recovering'),
+      onRecovered: (applied) => {
+        const cam = applied?.camera || {}
+        tell('hermes-gev:gl-recovered', {
+          pins: Array.isArray(applied?.pins) ? applied.pins.length : 0,
+          heading: cam.headingDeg, pitch: cam.pitchDeg, roll: cam.rollDeg
+        })
+      },
+      onGiveUp: (info) => tell('hermes-gev:gl-lost', { exhausted: !!info?.exhausted, auto: info?.auto !== false })
+    })
+  }
   const dispose = () => {
     if (disposed) return
     disposed = true
+    // Controller dispose is loseContext, then destroy. Without it, do that here.
+    if (glCtl) {
+      glCtl.dispose()
+      return
+    }
     const viewer = window.__godsEyeView?.viewer
-    try { viewer?.scene?.context?._gl?.getExtension('WEBGL_lose_context')?.loseContext() } catch {}
-    try { if (viewer && !viewer.isDestroyed?.()) viewer.destroy() } catch {}
+    releaseContext(viewer)
+    destroyViewer(viewer)
   }
   addEventListener('pagehide', dispose)
-  addEventListener('webglcontextlost', (e) => { if (!disposed) { e.preventDefault(); tell('hermes-gev:gl-lost') } }, true)
-  addEventListener('webglcontextrestored', () => tell('hermes-gev:gl-restored'), true)
+  addEventListener('webglcontextlost', (e) => {
+    // Keep the context lost. Restoring GPU state is what Cesium says not to do,
+    // including on intentional teardown (loseContext, then destroy).
+    e.preventDefault()
+    if (disposed) return
+    if (glCtl) glCtl.onContextLost(e)
+    else tell('hermes-gev:gl-lost')
+  }, true)
+  addEventListener('webglcontextrestored', () => {
+    if (disposed || glOn()) return  // a new viewer replaces GPU state; do not reuse the lost one
+    tell('hermes-gev:gl-restored')
+  }, true)
   // Cesium's "Error constructing CesiumWidget" dialog: hide it and let the pane offer a clean reload.
   new MutationObserver(() => {
     const panel = document.querySelector('.cesium-widget-errorPanel')
     if (panel && panel.style.display !== 'none') {
-      tell('hermes-gev:gl-failed', String(panel.innerText || '').slice(0, 200))
+      const text = String(panel.innerText || '').slice(0, 200)
       panel.style.display = 'none'
+      if (!glCtl?.isRecovering?.()) tell('hermes-gev:gl-failed', text)
     }
   }).observe(document.documentElement, { childList: true, subtree: true })
   // Tell the pane when the app can run commands (it does not take relay commands before this).

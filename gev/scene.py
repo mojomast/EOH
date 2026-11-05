@@ -7,6 +7,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 DEFAULT_KEY = "default"
 MAX_ITEMS = 96
 POINT_TYPES = {"pin", "highlight", "label", "area", "card"}
+_LAYER_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
 
 def default_path() -> Path:
@@ -132,8 +134,11 @@ class SceneStore:
                 changed = self._shape(sc, args or {}, result)
             elif name == "hermes_caption":
                 sc["caption"] = (args or {}).get("text") or None
+            elif name == "set_layer_visibility":
+                changed = self._set_layer(sc, args or {})
             elif name in ("get_current_view_state", "fly_to_location", "move_camera"):
                 changed = self._camera(sc, name, args, result)
+                changed = self._take_layers(sc, result) or changed
             else:
                 changed = False
             if changed:
@@ -189,7 +194,10 @@ class SceneStore:
             lat, lon = (args or {}).get("latitude"), (args or {}).get("longitude")
         if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
             if cam.get("pitchDeg") is not None and sc.get("camera"):
-                sc["camera"].update(pitchDeg=cam.get("pitchDeg"), headingDeg=cam.get("headingDeg"))
+                extra = {"pitchDeg": cam.get("pitchDeg"), "headingDeg": cam.get("headingDeg")}
+                if isinstance(cam.get("rollDeg"), (int, float)):
+                    extra["rollDeg"] = cam["rollDeg"]
+                sc["camera"].update(extra)
                 return True
             return False
         height = cam.get("heightM") or (args or {}).get("rangeM") or (sc.get("camera") or {}).get("heightM")
@@ -197,7 +205,43 @@ class SceneStore:
             # look-at point + range: what fly_to_location needs to put the camera back where it was
             lat, lon, height = cam["targetLat"], cam["targetLon"], cam["rangeM"]
         sc["camera"] = {"lat": lat, "lon": lon, "heightM": height, "pitchDeg": cam.get("pitchDeg"),
-                        "headingDeg": cam.get("headingDeg")}
+                        "headingDeg": cam.get("headingDeg"), "rollDeg": cam.get("rollDeg")}
+        return True
+
+    @staticmethod
+    def _layer_id(value) -> str | None:
+        text = str(value or "")[:64]
+        return text if _LAYER_ID.fullmatch(text) else None
+
+    def _set_layer(self, sc: dict, args: dict) -> bool:
+        lid = self._layer_id((args or {}).get("layerId") or (args or {}).get("id"))
+        if not lid:
+            return False
+        layers = [x for x in (sc.get("layers") or []) if x != lid]
+        if (args or {}).get("enabled") is not False:
+            layers.append(lid)
+        sc["layers"] = layers[:16]
+        return True
+
+    @classmethod
+    def _take_layers(cls, sc: dict, result: dict) -> bool:
+        raw = result.get("layers") if isinstance(result, dict) else None
+        if not isinstance(raw, list) or not raw:
+            return False
+        ids: list[str] = []
+        for layer in raw:
+            lid = None
+            if isinstance(layer, str):
+                lid = cls._layer_id(layer)
+            elif isinstance(layer, dict) and layer.get("enabled") is not False and layer.get("visible") is not False:
+                lid = cls._layer_id(layer.get("id") or layer.get("layerId"))
+            if lid and lid not in ids:
+                ids.append(lid)
+            if len(ids) >= 16:
+                break
+        if not ids:
+            return False
+        sc["layers"] = ids
         return True
 
     # -- queries -------------------------------------------------------------------------------
@@ -295,9 +339,22 @@ class SceneStore:
                 cmds.append(("fly_to_location", {"latitude": cam["lat"], "longitude": cam["lon"],
                                                  "rangeM": max(100, min(20_000_000, int(cam.get("heightM") or 1_000_000))),
                                                  "waitForArrival": True}))
-                if isinstance(cam.get("pitchDeg"), (int, float)):  # exact pose, not an eased nudge
-                    cmds.append(("hermes_frame", {"pitchDeg": cam["pitchDeg"], "headingDeg": cam.get("headingDeg"),
-                                                  "rangeM": cam.get("heightM")}))
+                angled = any(isinstance(cam.get(k), (int, float)) for k in ("pitchDeg", "headingDeg", "rollDeg"))
+                if angled:  # exact pose, not an eased nudge
+                    pose = {}
+                    if isinstance(cam.get("pitchDeg"), (int, float)):
+                        pose["pitchDeg"] = cam["pitchDeg"]
+                    if isinstance(cam.get("headingDeg"), (int, float)):
+                        pose["headingDeg"] = cam["headingDeg"]
+                    if isinstance(cam.get("rollDeg"), (int, float)):
+                        pose["rollDeg"] = cam["rollDeg"]
+                    if cam.get("heightM") is not None:
+                        pose["rangeM"] = cam.get("heightM")
+                    cmds.append(("hermes_frame", pose))
+            if not redraw_only:
+                for lid in sc.get("layers") or []:
+                    if self._layer_id(lid):
+                        cmds.append(("set_layer_visibility", {"layerId": lid, "enabled": True}))
             specs = [a["spec"] for a in sc["annotations"]]
             if redraw_only or clear:
                 cmds.append(("clear_annotations", {}))  # filters stay; re-applied after the redraw
