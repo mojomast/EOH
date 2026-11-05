@@ -1463,6 +1463,22 @@
       }
     },
     {
+      "id": "street-walk-route",
+      "task": "walk the saved route in street view",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "street_walk",
+        "arguments": {
+          "op": "street_walk",
+          "walk": "start",
+          "label": "drawn route"
+        },
+        "shape": {
+          "required": ["op", "walk", "label"]
+        }
+      }
+    },
+    {
       "id": "compare-2014",
       "task": "show this block in 2014",
       "expect": {

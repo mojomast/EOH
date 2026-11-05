@@ -202,6 +202,14 @@ async def live_drawer(body: dict):
     return await asyncio.to_thread(live.call, "/drawer", bridge.ensure_token(), body, 15)
 
 
+@router.post("/live/heartbeat")
+async def live_heartbeat(body: dict):
+    """Pane liveness while a long command is running. Does not queue a command."""
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/heartbeat", bridge.ensure_token(), body or {}, 5)
+
+
 @router.post("/live/state")
 async def live_state(body: dict):
     """Pane heartbeat: compact map snapshot for the per-turn line. No secrets."""

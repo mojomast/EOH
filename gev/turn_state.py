@@ -213,6 +213,30 @@ def fetch_line(session_id: str | None) -> str | None:
     return line if isinstance(line, str) and line.startswith("EOH ") else None
 
 
+def _motion_text(session_id) -> str:
+    """A walk or dolly the last reload cut off, once. Same drain as a WebGL notice."""
+    if not session_id:
+        return ""
+    try:
+        from . import live
+        rel = live.current()
+        if rel is None:
+            return ""
+        notes = rel.drain_motion(session_id)
+    except Exception:
+        return ""
+    lines = []
+    for note in notes or []:
+        if not isinstance(note, dict) or not note.get("code"):
+            continue
+        payload = {}
+        for key in ("ok", "code", "message", "fix", "motion"):
+            if note.get(key) is not None:
+                payload[key] = note[key]
+        lines.append(json.dumps(payload, separators=(",", ":")))
+    return "\n".join(lines)
+
+
 def _gl_text(session_id) -> str:
     """CONTEXT_LOST / CONTEXT_RESTORED notices queued by the live relay, once."""
     if not session_id:
@@ -268,6 +292,9 @@ def pre_llm_call(session_id=None, user_message=None, conversation_history=None,
     graphics = _gl_text(session_id)
     if graphics:
         parts.append(graphics)
+    motion = _motion_text(session_id)
+    if motion:
+        parts.append(motion)
     if not parts:
         return None
     return {"context": "\n\n".join(parts)}

@@ -253,6 +253,7 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_nav", "measure"): {"measure": "distance", "points": [{"lat": 1, "lon": 2}, {"lat": 3, "lon": 4}]},
         ("godseye_nav", "isochrone"): {"minutes": [10], "mode": "walk"},
         ("godseye_nav", "fly_route"): {},
+        ("godseye_nav", "street_walk"): {"walk": "state"},
         ("godseye_nav", "compare"): {"left": "wayback:2014", "right": "current"},
         ("godseye_nav", "timeline"): {"timeline": "state"},
         ("godseye_track", "track"): {"query": "JAL1"},
@@ -293,6 +294,8 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
             legacy_args["op"] = legacy_args.pop("measure")
         elif target.op == "timeline":
             legacy_args["op"] = legacy_args.pop("timeline")
+        elif target.op == "street_walk":
+            legacy_args["op"] = legacy_args.pop("walk")
         seen.clear()
         ctx.tools[target.composable]["handler"]({"op": target.op, **args}, session_id="s")
         router.dispatch_legacy(target.legacy, legacy_args, session_id="s")
@@ -312,6 +315,8 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
             assert forwarded["op"] == "distance" and "measure" not in forwarded
         elif target.op == "timeline":
             assert forwarded["op"] == "state" and "timeline" not in forwarded
+        elif target.op == "street_walk":
+            assert forwarded["op"] == "state" and "walk" not in forwarded
         else:
             assert "op" not in forwarded
         if target.composable == "godseye_view" and target.op == "fly":
@@ -437,6 +442,9 @@ def test_golden_set_matches_schemas_and_the_router(monkeypatch):
         elif expect["op"] == "timeline":
             assert forwarded.get("op") == expect["arguments"]["timeline"]
             assert "timeline" not in forwarded
+        elif expect["op"] == "street_walk":
+            assert forwarded.get("op") == expect["arguments"]["walk"]
+            assert "walk" not in forwarded
         else:
             assert "op" not in forwarded
     covered = {(task["expect"]["tool"], task["expect"]["op"]) for task in data["tasks"]}
@@ -483,7 +491,7 @@ def test_measure_schemas_shrinks_the_catalog():
     import measure_schemas
     report = measure_schemas.measure()
     assert report["after"]["tools"] == 11
-    assert report["baseline"]["tools"] == 87
+    assert report["baseline"]["tools"] == 88
     assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert report["after"]["bytes"] < report["baseline"]["bytes"]
     assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]

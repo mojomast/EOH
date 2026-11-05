@@ -23,13 +23,23 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PANE_STALE_S = 30.0
-INFLIGHT_STALE_S = 170.0  # longer than the pane's own 150 s command timeout
+# desktop/plugin.js waits this long for one command (PANE_COMMAND_MS). The relay uses the
+# same budget: a shorter wait returned timeout while the pane was still allowed to finish,
+# and the late result then had nobody waiting.
+PANE_COMMAND_S = 150.0
+RESULT_WAIT_S = PANE_COMMAND_S
+INFLIGHT_STALE_S = 170.0  # a little past PANE_COMMAND_S so a picked-up command is not pruned first
+# A fly_route or street_walk may hitch the page. Heartbeats normally refresh last_poll;
+# this is the gap allowed when those heartbeats pause but the pane still says it is busy.
+BUSY_STALE_S = 180.0
+BUSY_COMMANDS = {"fly_route", "street_walk", "hermes_fly_chunk", "hermes_street_hop", "hermes_route_light"}
+LOST_MEMORY_S = 1800.0
 POLL_WAIT_S = 20.0
-RESULT_WAIT_S = 60.0
 MAX_BODY = 512 * 1024
 PICKUP_S = 8.0
 BUSY_WAIT_S = 45.0  # extra time a working pane (scene restore, long flight) gets to pick a command up
 DEFAULT_PANE = "default"
+_DETAIL_KEYS = ("index", "total", "label", "chunk", "chunks", "provider", "stepM")
 # ``code`` / ``fix`` sit beside the original ``error`` string so older checks keep working.
 NO_PANE = {"ok": False, "error": "no_pane", "code": "no_pane",
            "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp. Ask the user to open the Eye Of Hermes (EOH) pane (and keep it visible), then retry.",
@@ -37,6 +47,48 @@ NO_PANE = {"ok": False, "error": "no_pane", "code": "no_pane",
 PANE_BUSY = {"ok": False, "error": "pane_busy", "code": "pane_busy",
              "message": "The Eye Of Hermes (EOH) pane is open but still busy with an earlier command; retry in a few seconds.",
              "fix": "Wait a few seconds and retry this same call once. Do not send a different live command first, and do not open a second pane."}
+
+
+def _plain_name(value) -> str:
+    text = str(value or "")[:40]
+    if text and all(ch.isalnum() or ch == "_" for ch in text):
+        return text
+    return ""
+
+
+def _public_detail(detail) -> dict:
+    if not isinstance(detail, dict):
+        return {}
+    out = {}
+    for key in _DETAIL_KEYS:
+        value = detail.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, (int, float)):
+            out[key] = int(value) if isinstance(value, int) or key in ("index", "total", "chunk", "chunks") else round(float(value), 1)
+        elif isinstance(value, str) and key in ("label", "provider"):
+            out[key] = value[:80]
+    return out
+
+
+def motion_notice(motion: dict) -> dict:
+    """Told to the next turn when a reload cut off a walk or a dolly."""
+    kind = str(motion.get("kind") or "route").replace("_", " ")
+    label = motion.get("label") or "the route"
+    index, total = motion.get("index"), motion.get("total")
+    where = ""
+    if isinstance(index, int) and isinstance(total, int) and total:
+        where = f" It had reached point {index + 1} of {total}."
+    resume = ("Offer to resume with godseye_nav op=street_walk walk=resume."
+              if motion.get("kind") == "street_walk"
+              else "Offer to start the dolly again with godseye_nav op=fly_route.")
+    return {
+        "ok": False, "code": "MOTION_INTERRUPTED",
+        "message": f"A {kind} along {label} was interrupted when the Eye Of Hermes pane reloaded.{where} The saved scene is restored.",
+        "fix": "Ask the user to keep the pane open. " + resume,
+        "motion": {k: motion.get(k) for k in ("kind", "state", "label", "index", "total", "stepM", "dwellS")
+                   if motion.get(k) is not None},
+    }
 
 
 def port() -> int:
@@ -58,16 +110,23 @@ class Pane:
         self.snapshot: dict = {}  # last compact map state (heartbeat or a view-state result)
         self.last_heartbeat = 0.0
         self.context_losses = 0
+        self.activity: dict = {}  # fly_route / street_walk, held while that job runs
+
+    def busy_route(self) -> bool:
+        name = (self.activity or {}).get("name")
+        return name in BUSY_COMMANDS or bool((self.activity or {}).get("hold"))
 
     def fresh(self, now: float) -> bool:
-        if self.polling or now - self.last_poll < PANE_STALE_S:
+        limit = BUSY_STALE_S if self.busy_route() else PANE_STALE_S
+        if self.polling or now - self.last_poll < limit:
             return True
-        return bool(self.inflight) and now - self.last_poll < INFLIGHT_STALE_S  # a working pane, not a ghost
+        return bool(self.inflight) and now - self.last_poll < max(INFLIGHT_STALE_S, limit)
 
     def info(self, now: float) -> dict:
         out = {"id": self.id, "sessions": sorted(self.sessions),
                "lastPollAgeS": 0.0 if self.polling else round(max(0.0, now - self.last_poll), 1),
-               "polling": self.polling > 0, "busy": bool(self.inflight), "queued": len(self.queue),
+               "polling": self.polling > 0, "busy": bool(self.inflight) or self.busy_route(),
+               "queued": len(self.queue),
                "open": self.fresh(now)}
         if self.label:
             out["label"] = self.label
@@ -75,6 +134,8 @@ class Pane:
             out["contextLosses"] = self.context_losses
         if self.last_heartbeat:
             out["lastHeartbeatAgeS"] = round(max(0.0, now - self.last_heartbeat), 1)
+        if (self.activity or {}).get("name"):
+            out["activity"] = self.activity["name"]
         return out
 
 
@@ -97,6 +158,10 @@ class Relay:
         self.pending_snaps: dict[str, dict] = {}
         # WebGL loss / recovery notices drained into the next model turn. session -> list.
         self.gl_notices: dict[str, list[dict]] = {}
+        # A walk or dolly that a reload cut off. One notice per session, drained once.
+        self.motion_notices: dict[str, list[dict]] = {}
+        # session or pane id -> last pane that went stale, so the next call can say pane_lost.
+        self.lost: dict[str, dict] = {}
 
     # -- pane side -----------------------------------------------------------------------------
     def _pane(self, pane_id: str | None) -> Pane:
@@ -131,12 +196,18 @@ class Relay:
             if pending:
                 pane.snapshot = {**(getattr(pane, "snapshot", None) or {}), **pending}
                 pane.last_heartbeat = time.monotonic()
-            if fresh:  # a new or reloaded frame: bring its scene back before anything else
+            if fresh:  # a new or reloaded frame: the old one cannot answer
+                self._fail_inflight_locked(pane)
+                for sid in sorted(pane.sessions):
+                    self._halt_routes(sid)
                 key = self.scenes.pick(sorted(pane.sessions))
                 if key:
                     for name, args in self.scenes.restore_commands(key):
                         self._internal(pane, name, args)
                     pane.restored = key
+                    motion = self.scenes.interrupt_motion(key)
+                    if motion:
+                        self._push_motion_locked(pane, key, motion)
             pane.last_poll = time.monotonic()
             pane.polling += 1
             self.cond.notify_all()
@@ -193,6 +264,7 @@ class Relay:
         for pid, pane in list(self.panes.items()):
             if pane.fresh(now):
                 continue
+            self._remember_lost(pane, now)
             removed.append(pid)
             del self.panes[pid]
             for sid, bound in list(self.session_binding.items()):
@@ -275,6 +347,9 @@ class Relay:
         with self.cond:
             targets = self.targets(session_id, pane_id, fanout)
             if not targets:
+                rec = self._fresh_lost(session_id) or self._fresh_lost(pane_id)
+                if rec:
+                    return self._pane_lost_from_rec(rec)
                 return dict(NO_PANE)
             sent = []
             for pane in targets:
@@ -457,6 +532,161 @@ class Relay:
         with self.cond:
             return self.gl_notices.pop(str(session_id), [])
 
+    def drain_motion(self, session_id: str | None) -> list[dict]:
+        """A walk or dolly that a reload cut off, once per chat."""
+        if not session_id:
+            return []
+        with self.cond:
+            return self.motion_notices.pop(str(session_id), [])
+
+    def heartbeat(self, pane_id, body: dict | None) -> dict:
+        """Refresh last_poll from a timer that does not run a command.
+
+        A heartbeat with busy false must not clear a held fly_route or street_walk.
+        The hold is the job, not the command that happens to be in flight.
+        """
+        body = body if isinstance(body, dict) else {}
+        name = _plain_name(body.get("name"))
+        busy = bool(body.get("busy")) and bool(name)
+        with self.cond:
+            pane = self._pane(pane_id)
+            pane.last_poll = time.monotonic()
+            pane.last_heartbeat = pane.last_poll
+            if (pane.activity or {}).get("hold"):
+                self.cond.notify_all()
+                return {"ok": True, "hold": True}
+            if busy:
+                pane.activity = {"name": name, "detail": _public_detail(body.get("detail")), "hold": False}
+            else:
+                pane.activity = {}
+            self.cond.notify_all()
+            return {"ok": True}
+
+    def hold_activity(self, session_id, name: str, detail=None) -> None:
+        """Keep the stale window open for the whole job, including the gaps between chunks."""
+        clean = _public_detail(detail)
+        with self.cond:
+            panes = self.targets(session_id)
+            if not panes and session_id:
+                bound = self.session_binding.get(str(session_id))
+                if bound and bound in self.panes:
+                    panes = [self.panes[bound]]
+            for pane in panes:
+                pane.activity = {"name": name, "detail": clean, "hold": True}
+                if clean.get("label"):
+                    pane.activity["label"] = clean["label"]
+                pane.last_poll = time.monotonic()
+            self.cond.notify_all()
+
+    def release_activity(self, session_id, name: str) -> None:
+        with self.cond:
+            for pane in self.panes.values():
+                act = pane.activity or {}
+                if not act.get("hold") or act.get("name") != name:
+                    continue
+                if session_id:
+                    sid = str(session_id)
+                    bound = self.session_binding.get(sid)
+                    if sid not in pane.sessions and pane.last_session != sid and bound != pane.id:
+                        continue
+                pane.activity = {}
+
+    def lost_result(self, session_id=None, pane_id=None):
+        """pane_lost when this chat's pane went stale. None when no pane was ever open."""
+        with self.cond:
+            rec = self._fresh_lost(session_id) or self._fresh_lost(pane_id)
+            if not rec:
+                return None
+            return self._pane_lost_from_rec(rec)
+
+    def _remember_lost(self, pane: Pane, now: float) -> None:
+        rec = {"at": now, "last_poll": pane.last_poll, "pane": pane.id,
+               "activity": dict(pane.activity or {}), "sessions": list(pane.sessions)}
+        self.lost[pane.id] = rec
+        for sid in list(pane.sessions) + ([pane.last_session] if pane.last_session else []):
+            if sid:
+                self.lost[str(sid)] = rec
+
+    def _fresh_lost(self, key, now: float | None = None):
+        if not key:
+            return None
+        rec = self.lost.get(str(key))
+        if not rec:
+            return None
+        now = time.monotonic() if now is None else now
+        if now - float(rec.get("at") or 0) > LOST_MEMORY_S:
+            return None
+        return rec
+
+    def _pane_lost_from_pane(self, pane: Pane, now: float) -> dict:
+        return self._pane_lost_from_rec({
+            "at": now, "last_poll": pane.last_poll, "pane": pane.id,
+            "activity": dict(pane.activity or {}),
+        }, now)
+
+    def _pane_lost_from_rec(self, rec: dict, now: float | None = None) -> dict:
+        now = time.monotonic() if now is None else now
+        activity = rec.get("activity") or {}
+        name = activity.get("name") if isinstance(activity.get("name"), str) else None
+        detail = _public_detail(activity.get("detail"))
+        if activity.get("label") and "label" not in detail:
+            detail = {**detail, "label": str(activity.get("label"))[:80]}
+        age = round(max(0.0, now - float(rec.get("last_poll") or now)), 1)
+        doing = ""
+        index, total = detail.get("index"), detail.get("total")
+        if name and isinstance(index, int) and isinstance(total, int) and total:
+            doing = f" It was on {name} at point {index + 1} of {total}."
+        elif name:
+            doing = f" It was on {name}."
+        return {
+            "ok": False, "error": "pane_lost", "code": "pane_lost",
+            "message": "The Eye Of Hermes (EOH) pane stopped responding." + doing
+                       + f" Last activity was {age}s ago.",
+            "fix": "Ask the user to reopen the Eye Of Hermes (EOH) pane and keep it visible. "
+                   "The saved scene restores on its own. If a route walk or dolly was running, "
+                   "it was interrupted; offer to resume it.",
+            "lastActivity": {"name": name, "detail": detail, "pane": rec.get("pane"), "ageS": age},
+        }
+
+    def _fail_inflight_locked(self, pane: Pane) -> None:
+        """The old frame is gone. Do not call result(); this already holds the relay lock."""
+        now = time.monotonic()
+        payload = self._pane_lost_from_pane(pane, now)
+        ids = {cmd["id"] for cmd in pane.queue} | set(pane.inflight)
+        pane.queue = []
+        pane.inflight.clear()
+        for cid in ids:
+            if cid in self.callbacks:
+                cb = self.callbacks.pop(cid)
+                if cb:
+                    try:
+                        cb(dict(payload))
+                    except Exception:
+                        pass
+            else:
+                self.results[cid] = dict(payload)
+        if ids:
+            self.cond.notify_all()
+
+    def _halt_routes(self, session_id: str) -> None:
+        try:
+            from . import flyroute, streetwalk
+            streetwalk.halt(session_id)
+            flyroute.halt(session_id)
+        except Exception:
+            pass
+
+    def _push_motion_locked(self, pane: Pane, key: str, motion: dict) -> None:
+        notice = motion_notice(motion)
+        keys = set(pane.sessions)
+        if key:
+            keys.add(str(key))
+        if pane.last_session:
+            keys.add(pane.last_session)
+        for sid in keys:
+            if sid:
+                self.motion_notices[str(sid)] = [notice]
+
     def timeline_event(self, body: dict) -> dict:
         """The user moved the time slider. Merge the playhead; keep saved releases and events."""
         pane = self.panes.get(str(body.get("pane") or ""))
@@ -550,13 +780,19 @@ class Relay:
             now = time.monotonic()
             queued = any(c["id"] == cid for c in pane.queue)
             if queued and now >= pickup:  # nobody picked it up
-                if pane.inflight and now < pickup + BUSY_WAIT_S and now < deadline:
+                if pane.inflight and now < pickup + BUSY_WAIT_S and now < deadline and pane.fresh(now):
                     self.cond.wait(0.25)  # alive and working through earlier commands: keep our place
                     continue
                 pane.queue = [c for c in pane.queue if c["id"] != cid]
+                if not pane.fresh(now):
+                    self._remember_lost(pane, now)
+                    return self._pane_lost_from_pane(pane, now)
                 return dict(PANE_BUSY if pane.inflight else NO_PANE)
             if now >= deadline:
                 pane.inflight.discard(cid)
+                if not pane.fresh(now):
+                    self._remember_lost(pane, now)
+                    return self._pane_lost_from_pane(pane, now)
                 return {"ok": False, "error": "timeout", "code": "timeout",
                         "message": "The Eye Of Hermes (EOH) pane did not answer in time.",
                         "fix": "Retry this call once. If it times out again, call godseye_view op=panes and godseye_admin op=doctor before changing arguments."}
@@ -611,7 +847,10 @@ def make_handler(relay: Relay, token: str):
             if self.path == "/cmd":
                 return self._send(200, relay.submit(
                     str(body.get("name", "")), body.get("args") or {}, session_id=body.get("session_id"),
-                    pane_id=body.get("pane_id"), fanout=bool(body.get("fanout"))))
+                    pane_id=body.get("pane_id"), fanout=bool(body.get("fanout")),
+                    record=body.get("record") is not False))
+            if self.path == "/heartbeat":
+                return self._send(200, relay.heartbeat(body.get("pane"), body))
             if self.path == "/scene":
                 return self._send(200, relay.scene_op(body))
             if self.path == "/tour":

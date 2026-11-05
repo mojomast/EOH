@@ -110,6 +110,7 @@ def prepare(html: str, full_ui: bool = True, perf: str | None = "embed", config:
     head += _script((_HERE / "panel_context.js").read_text())
     head += _script((_HERE / "panel_timeline.js").read_text())
     head += _script((_HERE / "gl_recover.js").read_text())
+    head += _script((_HERE / "panel_route.js").read_text())
     head += _script((_HERE / "panel_live_agent.js").read_text())
     m = re.search(r"<head[^>]*>", html, re.I)
     return html[: m.end()] + head + html[m.end():] if m else head + html

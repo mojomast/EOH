@@ -100,7 +100,8 @@ Pins and drawings on the open pane.
 | --- | --- |
 | `measure` | `op=measure`. Argument `measure` is `distance`, `area`, or `route` (not a second `op`). Pass `points`, `pins`, or `use_drawn: "latest"`. `mode` for a route is `walk`, `bike`, or `drive`. |
 | `isochrone` | `op=isochrone`. Minutes of reach. `minutes: [15]`, `mode: "walk"`. If `approximate` is true, say so. If `routing_unavailable`, say so. Do not draw a straight-line circle. |
-| `fly_route` | Dolly along a route already drawn. This is not a camera fly. |
+| `fly_route` | Dolly along a route already drawn. This is not a camera fly. A dense waypoint list is thinned and sent in chunks of about 300 points. `lighten` defaults to true: Street Level turns off and the globe uses a coarse tile setting until the dolly ends, then both are restored. Pass `lighten: false` to keep the current Street Level and quality. |
+| `street_walk` | Walk a saved route in Street View. Argument `walk` is `start`, `pause`, `resume`, `step`, `stop`, or `state` (not a second `op`). Pass `label` of a drawn route, or `points` / `waypoints` / `stops`. Default spacing is about 75 m (`stepM`, 20–250). `dwellS` is seconds at each panorama (default 4). `provider` is `google` or `mapillary`. `state` reports progress. A reload interrupts the walk; `walk=resume` continues it. |
 | `compare` | `op=compare`. Imagery swipe. `left` / `right`: `current`, `osm`, or `wayback:YYYY[-MM[-DD]]`. `action: "list_dates"` lists Wayback releases. `action: "stop"` ends it. Map stacks cannot be split. |
 | `timeline` | Time slider. Argument `timeline` is `set`, `play`, `step`, `stop`, `state`, or `list_dates` (not a second `op`). `mode`: `wayback` (Esri Wayback releases over the current view, `transition` `swipe` or `fade`) or `events` (USGS quakes and NASA FIRMS fires, plus stored watch alerts, as pins that appear when the playhead reaches them). `from` / `to` / `date` are `YYYY-MM-DD`. Events default to the last 7 days. `area` is `[south, west, north, east]` or omit it to use the open view. `feeds`: `earthquakes` and/or `fires`. `by` on `step` is `1` or `-1`. `state` reads the date and what is visible. Wayback tiles are for viewing only. Do not sample photorealistic 3D tiles. The slider is saved with the scene and with investigations. |
 
@@ -173,7 +174,7 @@ When the turn has "[EOH watch alert]" lines, tell the user. The new items are al
 2. **Orient from the map line.** Each turn may include `EOH pane=...` (connected or busy, camera, layers, pins, drawer). Trust it. Call `godseye_query` `op=context` when the user is asking what they see, not to rediscover the camera. Use `godseye_view` `op=state` with `detail: "full"` only when the line is missing and you need the full object.
 3. **Check results are capped.** Read `total` and `truncated` before saying "there is nothing".
 4. **Sections can be unavailable** (fires need a FIRMS key). Say so instead of guessing.
-5. **Failures include `code`, `message`, and `fix`.** Do what `fix` says (open the pane, wait and retry once, pass `confirm=true` only after the user agrees). `no_pane` means the Eye Of Hermes pane is closed: feeds still work. `pane_busy` means wait and retry the same call once.
+5. **Failures include `code`, `message`, and `fix`.** Do what `fix` says (open the pane, wait and retry once, pass `confirm=true` only after the user agrees). `no_pane` means the Eye Of Hermes pane is closed: feeds still work. `pane_lost` means a pane that was open stopped answering: ask the user to reopen it (the saved scene comes back) and offer to resume a walk or dolly. `pane_busy` means wait and retry the same call once.
 
 ## The pane
 
