@@ -8,6 +8,7 @@ layer (gev/panel_context.js), the time slider (gev/panel_timeline.js) and the li
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 from pathlib import Path
@@ -18,6 +19,14 @@ BASE_TAG = '<base href="https://app.gods-eye-view.invalid/">'
 
 def _script(body: str) -> str:
     return "<" + "script>" + body + "</" + "script>"
+
+
+def _png_data_url(name: str) -> str:
+    """data: URL for a docs/images PNG, or '' when the file is absent."""
+    path = _HERE.parent / "docs" / "images" / name
+    if not path.is_file():
+        return ""
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 
 def _json_for_script(value) -> str:
@@ -86,6 +95,14 @@ def prepare(html: str, full_ui: bool = True, perf: str | None = "embed", config:
     if full_ui:
         head += _script("window.GEV_EMBED_FULL_UI = true")
     head += _script("window.__HERMES_GL_RECOVER = " + ("true" if gl_recover else "false"))
+    # 64px mark for the panel document favicon; 128px mark for the header (retina at 28px).
+    icon = _png_data_url("eoh-logo-64.png")
+    mark = _png_data_url("eoh-logo-128.png")
+    if icon:
+        head += '<link rel="icon" type="image/png" sizes="64x64" href="' + icon + '">'
+    if mark or icon:
+        head += _script("window.__EOH_LOGO = " + _json_for_script(mark or icon)
+                        + "; window.__EOH_LOGO_ICON = " + _json_for_script(icon or mark))
     head += _script((_HERE / "panel_brand.js").read_text())
     head += _script((_HERE / "panel_worker_shim.js").read_text())
     head += _script((_HERE / "panel_oh.js").read_text())
