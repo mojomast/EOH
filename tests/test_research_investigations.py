@@ -157,7 +157,8 @@ def test_gev_command_investigation_and_research_help():
 
 def test_schemas_and_docs_mention_new_tools_and_intent():
     for name in ("godseye_research_pins", "godseye_investigation_save", "godseye_investigation_list",
-                 "godseye_investigation_load", "godseye_investigation_delete", "godseye_investigation_report"):
+                 "godseye_investigation_load", "godseye_investigation_delete", "godseye_investigation_report",
+                 "godseye_investigation_export"):
         assert name in h.EXTRA_TOOLS
         assert name in (ROOT / "plugin.yaml").read_text()
     skill = (ROOT / "skills" / "godseye-analyst" / "SKILL.md").read_text()
