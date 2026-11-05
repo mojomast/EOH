@@ -265,6 +265,61 @@
   // only on GC, so a pane that remounts leaks contexts until Cesium can no longer create one.
   // Release ours explicitly when the frame goes away, and report loss instead of dying silently.
   const tell = (type, detail) => { try { window.parent.postMessage({ type, detail }, '*') } catch {} }
+  // Compact facts for the per-turn map line. The host posts this to the relay; it is not a tool call.
+  const mapSnapshot = () => {
+    const p = pose()
+    const g = window.__godsEyeView || {}
+    let layers
+    try {
+      const snap = g.layerSnapshot?.getAll?.() || g.dataLayers?.getAll?.() || g.layers?.getAll?.() || null
+      if (Array.isArray(snap)) {
+        layers = snap.filter((x) => x && x.enabled !== false && x.visible !== false)
+          .map((x) => x.id || x.layerId).filter((id) => typeof id === 'string' && id.length < 33).slice(0, 12)
+      }
+    } catch {}
+    let pins = null, drawer = null, pinsRead = false
+    try {
+      const st = window.__hermesPins?.state?.()
+      if (st && Array.isArray(st.pins)) {
+        pinsRead = true
+        pins = st.pins.length
+        const open = st.open ? st.pins.find((pin) => pin.id === st.open) : null
+        drawer = open ? String(open.label || 'open').slice(0, 40) : null
+      }
+    } catch {}
+    const out = {
+      lat: p && typeof p.targetLat === 'number' ? p.targetLat : null,
+      lon: p && typeof p.targetLon === 'number' ? p.targetLon : null,
+      rangeM: p && typeof p.rangeM === 'number' ? p.rangeM : null,
+      pitch: p && typeof p.pitchDeg === 'number' ? p.pitchDeg : null,
+      heading: p && typeof p.headingDeg === 'number' ? p.headingDeg : null
+    }
+    // Omit fields the frame could not read so a heartbeat does not wipe the relay cache.
+    if (Array.isArray(layers)) out.layers = layers
+    if (pinsRead) { out.pins = pins; out.drawer = drawer }
+    return out
+  }
+  // Fork protocol (mojomast/gods-eye-view, prepared here, not fully implemented).
+  // TODO(fork F1): the fork pauses the render loop on {type:'gev:visible', visible:false}
+  // even when the pane is embedded inline. Until that build ships, feature-detect setHostVisible.
+  // TODO(fork F2): runtime keys via /config.json or {type:'gev:init', config:{cesiumIonToken,
+  // googleMapsApiKey, photonUrl}}. This script never contains key values. applyHostConfig is the
+  // call site once the fork advertises it; a null config means "keep the build-time fallback".
+  const applyHostVisible = (visible) => {
+    const fn = window.__godsEyeView?.setHostVisible
+    window.__hermesHost = window.__hermesHost || {}
+    window.__hermesHost.visible = !!visible
+    if (typeof fn !== 'function') return { applied: false, pending: 'gev:visible' }
+    try { fn(!!visible); return { applied: true } } catch (e) { return { applied: false, error: String(e?.message || e).slice(0, 160) } }
+  }
+  const applyHostConfig = (config) => {
+    window.__hermesHost = window.__hermesHost || {}
+    if (!config || typeof config !== 'object') return { applied: false, pending: 'gev:init' }
+    const fn = window.__godsEyeView?.applyHostConfig
+    if (typeof fn !== 'function') return { applied: false, pending: 'gev:init' }
+    try { fn(config); window.__hermesHost.configApplied = true; return { applied: true } }
+    catch (e) { return { applied: false, error: String(e?.message || e).slice(0, 160) } }
+  }
   let disposed = false
   const dispose = () => {
     if (disposed) return
@@ -290,7 +345,14 @@
   addEventListener('message', async (event) => {
     const m = event.data
     if (event.source === window.parent && m?.type === 'hermes-gev:dispose') return dispose()
-    if (event.source === window.parent && m?.type === 'hermes-gev:ping') return isReady && tell('hermes-gev:ready')
+    if (event.source === window.parent && m?.type === 'gev:visible') return void applyHostVisible(m.visible)
+    if (event.source === window.parent && m?.type === 'gev:init') return void applyHostConfig(m.config)
+    if (event.source === window.parent && m?.type === 'hermes-gev:ping') {
+      if (!isReady) return
+      tell('hermes-gev:ready')
+      tell('hermes-gev:state', mapSnapshot())
+      return
+    }
     if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
     let payload
     try {

@@ -170,6 +170,7 @@ All settings are optional environment variables, for example in `~/.hermes/.env`
 | `GODSEYE_BRIDGE_PORT` | `18791` | HUD bridge port |
 | `GODSEYE_LIVE_PORT` | `18792` | Live-globe relay port |
 | `GODSEYE_BIND` / `GODSEYE_NODE_DIR` | `127.0.0.1` / `~/.local/node24` | `install-service.sh` only |
+| `GODSEYE_TURN_STATE` | `1` | `0` / `off` disables the one-line map state injected each turn via Hermes `pre_llm_call`. Hosts without that hook skip it. |
 
 If the app is reached by a non-localhost name, add that name to God's Eye View's `GEV_ALLOWED_HOSTS`.
 

@@ -50,6 +50,48 @@ export function stablePaneId(sessions = paneSessions(), store = globalThis.sessi
   }
 }
 
+// Fork messages for mojomast/gods-eye-view. The plugin posts them; the app applies them only
+// when it implements the hook (setHostVisible / applyHostConfig) or listens for these types.
+// TODO(fork F1): {type:'gev:visible', visible:false} should pause rendering while the pane is hidden.
+// TODO(fork F2): {type:'gev:init', config} carries runtime keys. config is null until a server-side
+// route can read the env file; never put key values in this file.
+export function forkVisibilityMessage(visible) {
+  return { type: 'gev:visible', visible: !!visible }
+}
+export function forkInitMessage(config) {
+  return { type: 'gev:init', config: config && typeof config === 'object' ? config : null }
+}
+export function postForkMessage(frame, message) {
+  try { (frame?.() || frame)?.postMessage(message, '*') } catch {}
+}
+// Page Visibility plus IntersectionObserver. Hidden means the globe pane is covered or the tab is in the background.
+export function watchPaneVisibility(el, onChange) {
+  if (typeof onChange !== 'function') return () => {}
+  let intersecting = true
+  const emit = () => {
+    const pageOn = typeof document === 'undefined' || document.visibilityState !== 'hidden'
+    onChange(Boolean(pageOn && intersecting))
+  }
+  const clean = []
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    const fn = () => emit()
+    document.addEventListener('visibilitychange', fn)
+    clean.push(() => document.removeEventListener('visibilitychange', fn))
+  }
+  if (el && typeof IntersectionObserver === 'function') {
+    try {
+      const io = new IntersectionObserver((entries) => {
+        intersecting = entries.some((e) => e.isIntersecting && e.intersectionRatio > 0)
+        emit()
+      }, { threshold: [0, 0.01] })
+      io.observe(el)
+      clean.push(() => io.disconnect())
+    } catch { /* ref is not an Element yet; page visibility still applies */ }
+  }
+  emit()
+  return () => { for (const fn of clean) fn() }
+}
+
 // Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
 // frame, and post the results back. Each pane polls with its own id and session ids.
 // Returns { onMessage, stop }.
@@ -58,6 +100,8 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
   let fresh = true  // first poll of a new frame: the relay restores this session's scene
   let paneLabel = typeof label === 'function' ? label() : label
   const pending = new Map()
+  let lastState = ''
+  frameReady.then(() => { postForkMessage(frame, forkInitMessage(null)) })
   // Commands go to the frame only once its app is up: a message posted earlier would land in the
   // iframe's initial about:blank document and be lost (seen as a stuck "pane busy").
   let markReady
@@ -102,6 +146,15 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
       const win = frame()
       if (!win || event.source !== win) return false
       if (event.data?.type === 'hermes-gev:ready') { markReady(); return true }
+      if (event.data?.type === 'hermes-gev:state') {  // cached map line; not a tool call
+        const snap = event.data.detail
+        const key = JSON.stringify(snap || {})
+        if (key !== lastState) {
+          lastState = key
+          ctx.rest('/live/state', { method: 'POST', body: { pane: paneId, state: snap } }).catch(() => {})
+        }
+        return true
+      }
       if (event.data?.type === 'hermes-gev:drawer') {  // a click opened/closed a pin drawer: persist it
         const pin = event.data.detail?.pin
         const ok = pin && Number.isFinite(pin.latitude) && Number.isFinite(pin.longitude)
@@ -268,7 +321,8 @@ function GlobePane({ ctx }) {
       return Boolean(kind)
     }
     const off = ctx.addEventListener(window, 'message', (e) => onGl(e) || live.onMessage(e) || onMessage(e))
-    return () => { live.stop(); off?.(); disposeFrame(frame()) }
+    const stopVis = watchPaneVisibility(ref.current, (visible) => postForkMessage(frame, forkVisibilityMessage(visible)))
+    return () => { stopVis(); live.stop(); off?.(); disposeFrame(frame()) }
   }, [src, homeView, nonce])
   const reloadGraphics = () => { disposeFrame(ref.current?.contentWindow); setGl(null); setNonce((n) => n + 1) }
 

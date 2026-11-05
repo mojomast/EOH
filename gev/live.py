@@ -30,8 +30,13 @@ MAX_BODY = 512 * 1024
 PICKUP_S = 8.0
 BUSY_WAIT_S = 45.0  # extra time a working pane (scene restore, long flight) gets to pick a command up
 DEFAULT_PANE = "default"
-NO_PANE = {"ok": False, "error": "no_pane", "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp. Ask the user to open the Eye Of Hermes (EOH) pane (and keep it visible), then retry."}
-PANE_BUSY = {"ok": False, "error": "pane_busy", "message": "The Eye Of Hermes (EOH) pane is open but still busy with an earlier command; retry in a few seconds."}
+# ``code`` / ``fix`` sit beside the original ``error`` string so older checks keep working.
+NO_PANE = {"ok": False, "error": "no_pane", "code": "no_pane",
+           "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp. Ask the user to open the Eye Of Hermes (EOH) pane (and keep it visible), then retry.",
+           "fix": "Ask the user to open the Eye Of Hermes (EOH) pane and keep it visible, then retry this same call. Data tools (godseye_* without live_) work with no pane."}
+PANE_BUSY = {"ok": False, "error": "pane_busy", "code": "pane_busy",
+             "message": "The Eye Of Hermes (EOH) pane is open but still busy with an earlier command; retry in a few seconds.",
+             "fix": "Wait a few seconds and retry this same call once. Do not send a different live command first, and do not open a second pane."}
 
 
 def port() -> int:
@@ -50,6 +55,7 @@ class Pane:
         self.created = time.monotonic()
         self.restored: str | None = None
         self.label: str | None = None
+        self.snapshot: dict = {}  # last compact map state (heartbeat or a view-state result)
 
     def fresh(self, now: float) -> bool:
         if self.polling or now - self.last_poll < PANE_STALE_S:
@@ -81,6 +87,8 @@ class Relay:
         self.tours: dict[str, object] = {}
         # session_id -> pane_id: stable binding so a reopened pane for the same chat reuses its id
         self.session_binding: dict[str, str] = {}
+        # Compact map snapshots that arrived before the pane's first poll.
+        self.pending_snaps: dict[str, dict] = {}
 
     # -- pane side -----------------------------------------------------------------------------
     def _pane(self, pane_id: str | None) -> Pane:
@@ -111,6 +119,9 @@ class Relay:
                 pane.sessions = claimed
                 for sid in claimed:
                     self.session_binding[sid] = pane.id
+            pending = self.pending_snaps.pop(pane.id, None)
+            if pending:
+                pane.snapshot = {**(getattr(pane, "snapshot", None) or {}), **pending}
             if fresh:  # a new or reloaded frame: bring its scene back before anything else
                 key = self.scenes.pick(sorted(pane.sessions))
                 if key:
@@ -277,11 +288,63 @@ class Relay:
         key = self.scene_key(session_id, pane)
         pane.last_session = key
         self.scenes.record(key, name, args, res)
+        self._absorb_snapshot(pane, name, args, res)
         if name in ("fly_to_location", "move_camera") and isinstance(res, dict) and res.get("ok"):
             with self.cond:  # follow up with the real camera pose (lat/lon/height/pitch)
                 self._internal(pane, "get_current_view_state", {},
-                               lambda payload: self.scenes.record(key, "get_current_view_state", {}, payload))
+                               lambda payload, p=pane, k=key: self._noted_view(p, k, payload))
                 self.cond.notify_all()
+
+    def _noted_view(self, pane: Pane, key: str, payload: dict) -> None:
+        """Scene record + snapshot update. Runs under Relay.cond (from result()); must not re-acquire it."""
+        self.scenes.record(key, "get_current_view_state", {}, payload)
+        self._absorb_snapshot(pane, "get_current_view_state", {}, payload)
+
+    def _absorb_snapshot(self, pane: Pane, name: str, args: dict, res: dict) -> None:
+        """Cache camera and layers from a tool result for the per-turn map line.
+
+        Does not take Relay.cond: the view-state callback runs while that lock is held
+        (Condition is not reentrant).
+        """
+        from .turn_state import absorb_result
+        extra = absorb_result(name, args, res)
+        if name == "set_layer_visibility" and isinstance(res, dict) and res.get("ok"):
+            lid = str((args or {}).get("layerId") or "")[:32]
+            current = (pane.snapshot or {}).get("layers")
+            if lid and isinstance(current, list):
+                layers = [x for x in current if x != lid]
+                if (args or {}).get("enabled") is not False:
+                    layers.append(lid)
+                extra = {**extra, "layers": layers[:12]}
+        if extra:
+            pane.snapshot = {**(pane.snapshot or {}), **extra}
+
+    def note_state(self, pane_id: str | None, snap: dict | None) -> dict:
+        """Store a compact snapshot pushed by the pane (no command, no queue)."""
+        from .turn_state import sanitize_snapshot
+        pid = str(pane_id or "")[:80]
+        clean = sanitize_snapshot(snap if isinstance(snap, dict) else {})
+        with self.cond:
+            pane = self.panes.get(pid)
+            if pane is None:
+                self.pending_snaps[pid] = {**self.pending_snaps.get(pid, {}), **clean}
+                return {"ok": True, "pending": True}
+            pane.snapshot = {**(pane.snapshot or {}), **clean}
+            return {"ok": True}
+
+    def map_line(self, session_id: str | None = None) -> str:
+        """One line for pre_llm_call. Reads the cache; does not enqueue a pane command."""
+        from .turn_state import line_from_parts
+        with self.cond:
+            targets = self.targets(session_id)
+            pane = targets[0] if targets else None
+            if pane is None:
+                return line_from_parts("closed", {}, {})
+            status = "busy" if (pane.inflight or pane.queue) else "connected"
+            snap = dict(pane.snapshot or {})
+            key = self.scene_key(session_id, pane)
+        listing = self.scenes.list(key)
+        return line_from_parts(status, snap, listing)
 
     def drawer_event(self, body: dict) -> dict:
         """The user opened/closed a pin drawer by clicking in the pane: keep it in the scene."""
@@ -364,7 +427,9 @@ class Relay:
                 return dict(PANE_BUSY if pane.inflight else NO_PANE)
             if now >= deadline:
                 pane.inflight.discard(cid)
-                return {"ok": False, "error": "timeout", "message": "The Eye Of Hermes (EOH) pane did not answer in time."}
+                return {"ok": False, "error": "timeout", "code": "timeout",
+                        "message": "The Eye Of Hermes (EOH) pane did not answer in time.",
+                        "fix": "Retry this call once. If it times out again, call godseye_live_panes and godseye_doctor before changing arguments."}
             self.cond.wait(max(0.05, min(pickup if queued else deadline, deadline) - now))
         return self.results.pop(cid)
 
@@ -425,6 +490,10 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.panes_op(body))
             if self.path == "/drawer":
                 return self._send(200, relay.drawer_event(body))
+            if self.path == "/state":
+                return self._send(200, relay.note_state(body.get("pane"), body.get("state") if isinstance(body.get("state"), dict) else body))
+            if self.path == "/mapstate":
+                return self._send(200, {"ok": True, "line": relay.map_line(body.get("session_id"))})
             if self.path == "/result":
                 relay.result(body.get("id", 0), body.get("payload") or {})
                 return self._send(200, {"ok": True})
@@ -456,5 +525,6 @@ def call(path: str, token: str, body: dict | None = None, timeout: float = RESUL
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except (urllib.error.URLError, OSError) as exc:
-        return {"ok": False, "error": "relay_unavailable",
-                "message": f"The live-globe relay is not running ({type(exc).__name__}); restart the Hermes dashboard/gateway with the godseye plugin enabled."}
+        return {"ok": False, "error": "relay_unavailable", "code": "relay_unavailable",
+                "message": f"The live-globe relay is not running ({type(exc).__name__}); restart the Hermes dashboard/gateway with the godseye plugin enabled.",
+                "fix": "Restart the Hermes dashboard or gateway with the godseye plugin enabled, then retry."}

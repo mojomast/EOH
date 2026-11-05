@@ -24,10 +24,20 @@ of tools:
    infrastructure. Never search for a named person, recognise faces, or track or locate an
    individual, even if they are "on" an aircraft or ship. Decline and offer the public-data view.
 2. **Data first, then show.** Answer from a data tool (or `godseye_situation_brief` /
-   `godseye_military_awareness`), then optionally show it live. Do not describe the screen
-   without reading it: call `godseye_live_get_current_view_state` first.
+   `godseye_military_awareness`), then optionally show it live. Orient from the `EOH pane=...`
+   line already in the turn (connected or busy, camera, layers, pins, drawer). Call
+   `godseye_live_get_current_view_state` only when that line is missing or you need `detail=full`.
 3. **Check results are capped.** Read `total` and `truncated` before saying "there is nothing".
 4. **Sections can be unavailable** (e.g. fires need a FIRMS key). Say so instead of guessing.
+
+## Tokens and errors
+
+- Large tools default to `detail: "concise"` (ids and counts, no screenshots). Pass
+  `detail: "full"` when you need coordinates, rows, geometry or an image
+  (`get_cctv_snapshot`, `get_weather_map`, `get_recent_imagery`).
+- A failed call includes `code`, `message` and `fix`. Do what `fix` says (open the pane,
+  wait and retry once, rebuild the panel, switch to `godseye_find_places`) instead of
+  guessing a new argument.
 
 ## The pane
 
@@ -48,7 +58,8 @@ of tools:
 `military_awareness`, pins the nearest contacts in red).
 
 **"What am I looking at?"**
-`godseye_live_get_current_view_state`, then `godseye_live_analyst_query` for counts if needed.
+Read the `EOH pane=` line. Call `godseye_live_analyst_query` for counts if needed. Use
+`godseye_live_get_current_view_state` with `detail: "full"` only when the line is missing.
 
 **"Night-vision view of the Strait of Hormuz with ships."**
 `godseye_live_fly_to_location {query: "Strait of Hormuz", waitForArrival: true}` →
