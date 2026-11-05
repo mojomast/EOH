@@ -3,6 +3,10 @@
 ## 0.2.0 (unreleased)
 
 ### Added
+- `godseye_find_places`: keyless POI search ("ramen restaurants in Montreal"). Category/cuisine-in-bbox via Overpass (configured endpoint first, then overpass.kumi.systems, overpass.private.coffee, overpass-api.de; 20 s per request, 45 s total, per-endpoint circuit breaker), name/address lookup and a keyword fallback via Nominatim (descriptive User-Agent, 1.2 s pacing, 1 h cache). Returns lat/lon, name, address, website, opening hours; `pin:true` pins up to 24 via annotate_map.
+- `godseye_poi_details` (best effort): OSM record, website, menu URL if linked, and verbatim price snippets from the venue's site. Prices are never invented.
+- `resolve_area` falls back to `around:true` (buffer polygon) for point-only places, then to a Nominatim bbox polygon.
+- `AREA_TOO_LARGE` remediation says to fly with rangeM <= 15000 first. `OVERPASS_NOT_CONFIGURED` explains the public fallback and gives the exact `OVERPASS_UPSTREAMS=` line.
 - `godseye_brief_and_show`: runs situation_brief or military_awareness, then flies the live globe, enables the brief's layers, pins the top N hits and sets a caption line. Returns the brief plus what was shown, and still returns the brief when no pane is open. If upstream geocoding is unavailable, it retries with coordinates.
 - Multi-pane live relay. Panes register an id and their chat session ids, and commands go to the session's pane, else the most recently active ready pane. Every live tool takes an opt-in `fanout`. New `godseye_live_panes` tool and `/live/panes` route. `pane_busy` is now distinct from `no_pane`.
 - `/gev` slash command (`fly`, `layers`, `status`, `brief`, `home [set]`, `share`, `doctor`) via `ctx.register_command`.
