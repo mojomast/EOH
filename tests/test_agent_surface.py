@@ -141,19 +141,13 @@ def test_detail_schema_only_on_large_tools():
 
     c = Ctx()
     hermes_tools.register_tools(c)
-    air = c.tools["godseye_aircraft_in_area"]["schema"]["parameters"]["properties"]["detail"]
+    air = c.tools["godseye_feeds"]["schema"]["parameters"]["properties"]["detail"]
     assert air["enum"] == ["concise", "full"] and air["default"] == "concise"
-    assert "detail" in c.tools["godseye_query"]["schema"]["parameters"]["properties"]
-    assert "detail" in c.tools["godseye_get_cctv_snapshot"]["schema"]["parameters"]["properties"]
-    for name in ("godseye_measure", "godseye_isochrone", "godseye_live_compare",
-                 "godseye_live_draw", "godseye_research_pins", "godseye_investigation_load",
-                 "godseye_live_filter_pins", "godseye_watch_list", "godseye_watch_create"):
+    for name in ("godseye_query", "godseye_view", "godseye_nav", "godseye_annotate",
+                 "godseye_scene", "godseye_watch"):
         assert "detail" in c.tools[name]["schema"]["parameters"]["properties"], name
-    assert "detail" not in c.tools["godseye_doctor"]["schema"]["parameters"]["properties"]
-    assert "detail" not in c.tools["godseye_view"]["schema"]["parameters"]["properties"]
-    assert "detail" not in c.tools["godseye_hud_summary"]["schema"]["parameters"]["properties"]
-    assert "detail" not in c.tools["godseye_watch_delete"]["schema"]["parameters"]["properties"]
-    assert "detail" not in c.tools["godseye_investigation_delete"]["schema"]["parameters"]["properties"]
+    assert "detail" not in c.tools["godseye_admin"]["schema"]["parameters"]["properties"]
+    assert "detail" not in c.tools["godseye_capture"]["schema"]["parameters"]["properties"]
 
 
 def _aircraft_result(n=40):
@@ -262,7 +256,7 @@ def test_fixit_errors_for_the_common_failures(monkeypatch):
                             "message": "The live-globe relay is not running (URLError)."}, tool="x")
     assert down["code"] == "relay_unavailable" and "Restart the Hermes" in down["fix"]
     timeout = errors.annotate({"ok": False, "error": "timeout", "message": "slow"}, tool="x")
-    assert timeout["code"] == "timeout" and "godseye_doctor" in timeout["fix"]
+    assert timeout["code"] == "timeout" and "op=doctor" in timeout["fix"]
 
     def missing_key(name, args, session_id=None, fanout=False):
         return {"ok": True, "result": {"ok": False, "error": "Cesium ion token missing"}}
@@ -270,7 +264,7 @@ def test_fixit_errors_for_the_common_failures(monkeypatch):
     monkeypatch.setattr("gev.composer.live_call", missing_key)
     stack = json.loads(hermes_tools.make_live_handler("set_map_stack")({"stack": "photoreal"}))
     assert stack["code"] == "MAP_STACK_KEY"
-    assert "godseye_rebuild_panel" in stack["fix"] and "CESIUM_ION_TOKEN" in stack["fix"]
+    assert "op=rebuild" in stack["fix"] and "CESIUM_ION_TOKEN" in stack["fix"]
     assert "remediation" in stack  # existing field kept
 
     keys = errors.annotate({"ok": False, "code": "KEY_MISSING", "error": "KEY_MISSING",
@@ -300,7 +294,7 @@ def test_fixit_errors_for_the_common_failures(monkeypatch):
     from gev.measure import _routing_down
     route_down = errors.annotate(_routing_down("OSRM", "connection refused"), tool="godseye_measure")
     assert route_down["code"] == "routing_unavailable"
-    assert "op=distance" in route_down["fix"] and "circle" in route_down["fix"]
+    assert "measure=distance" in route_down["fix"] and "circle" in route_down["fix"]
     side = errors.annotate({"ok": False, "error": "unsupported_side",
                             "message": "'photoreal': map stacks cannot be split."}, tool="godseye_live_compare")
     assert side["code"] == "unsupported_side" and "wayback" in side["fix"]
@@ -312,7 +306,7 @@ def test_fixit_errors_for_the_common_failures(monkeypatch):
                             "message": "Refusing to delete without confirm=true."}, tool="godseye_investigation_delete")
     assert soft["code"] == "confirm_required" and soft["code"] != "refused"
     missing = errors.annotate({"ok": False, "code": "NOT_FOUND", "error": "no watch 'w-9'"}, tool="godseye_watch_pause")
-    assert missing["code"] == "NOT_FOUND" and "godseye_watch_list" in missing["fix"]
+    assert missing["code"] == "NOT_FOUND" and "op=list" in missing["fix"]
     feeds = errors.annotate({"ok": False, "code": "BAD_FEEDS", "error": "feeds must be a non-empty subset of earthquakes"},
                            tool="godseye_watch_create")
     assert feeds["code"] == "BAD_FEEDS" and "earthquakes" in feeds["fix"]

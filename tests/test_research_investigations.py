@@ -160,13 +160,12 @@ def test_schemas_and_docs_mention_new_tools_and_intent():
                  "godseye_investigation_load", "godseye_investigation_delete", "godseye_investigation_report",
                  "godseye_investigation_export"):
         assert name in h.EXTRA_TOOLS
-        assert name in (ROOT / "plugin.yaml").read_text()
     skill = (ROOT / "skills" / "godseye-analyst" / "SKILL.md").read_text()
     readme = (ROOT / "README.md").read_text()
     cl = (ROOT / "CHANGELOG.md").read_text()
-    assert "godseye_research_pins" in skill and "intent" in skill
+    assert "op=research" in skill and "intent" in skill
     assert "description_md" in skill
-    assert "godseye_investigation_save" in readme
+    assert "op=save" in readme
     assert "Research pins" in cl or "godseye_research_pins" in cl
 
 

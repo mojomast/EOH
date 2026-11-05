@@ -180,9 +180,9 @@ def test_tool_handler_missing_name_and_slash(hermes_home, monkeypatch):
     msg = composer.gev_command("export Montreal Ramen pack")
     assert "Montreal Ramen" in msg and ".zip" in msg
     assert "export" in composer.HELP
-    assert "godseye_investigation_export" in (ROOT / "README.md").read_text()
+    assert "op=export" in (ROOT / "README.md").read_text()
     assert "godseye_investigation_export" in (ROOT / "CHANGELOG.md").read_text()
-    assert "godseye_investigation_export" in (ROOT / "skills/godseye-analyst/SKILL.md").read_text()
+    assert "op=export" in (ROOT / "skills/godseye-analyst/SKILL.md").read_text()
 
 
 def test_export_does_not_fetch_imagery(hermes_home, monkeypatch):

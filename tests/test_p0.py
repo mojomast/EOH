@@ -86,7 +86,7 @@ def test_panel_checks_scopes_never_leak_value(tmp_path):
 
 def test_map_stack_remediation():
     out = composer.remediate_map_stack({"ok": True, "result": {"ok": False, "error": "Cesium ion token missing"}})
-    assert "godseye_rebuild_panel" in out["remediation"]
+    assert "op=rebuild" in out["remediation"]
     assert "remediation" not in composer.remediate_map_stack({"ok": True, "result": {"ok": True}})
 
 

@@ -16,12 +16,12 @@ sys.path.insert(0, str(ROOT))
 from gev import hermes_tools, router  # noqa: E402
 from gev.selection_eval import load_golden, score  # noqa: E402
 
-ROW = re.compile(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| (A|later) \| (.*) \|$")
-# Re-measured after godseye_investigation_export landed on feat/v0.2.
-# baseline = that catalog (absorbed names included, view/query absent).
-# after = the catalog the model sees (18 names dropped, two composable tools added).
-# Filled in by test_measure once measure_schemas.py has been run; the assertions
-# below check the relationship, and the PR body records the token counts.
+ROW = re.compile(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| (A|B) \| (.*) \|$")
+COMPOSABLE = {
+    "godseye_view", "godseye_query", "godseye_layers", "godseye_feeds",
+    "godseye_annotate", "godseye_nav", "godseye_track", "godseye_scene",
+    "godseye_watch", "godseye_capture", "godseye_admin",
+}
 
 
 class Ctx:
@@ -98,10 +98,12 @@ def _schema_ok(schema: dict, args: dict):
 def test_catalog_matches_plugin_yaml_and_handler_family():
     provided = set(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     legacy = {t.legacy for t in router.CATALOG}
-    hidden = {t.legacy for t in router.CATALOG if t.phase == "A"}
-    assert hidden.isdisjoint(provided)
-    assert legacy - hidden == provided - {"godseye_view", "godseye_query"}
-    assert "godseye_investigation_export" in provided
+    assert provided == COMPOSABLE
+    assert legacy.isdisjoint(provided)
+    assert "timeline" not in router.phase_a_ops("godseye_nav")
+    assert "timeline" in router.RESERVED_OPS["godseye_nav"]
+    assert router.BY_LEGACY["godseye_live_get_current_view_state"].op == "state"
+    assert router.BY_LEGACY["godseye_investigation_export"].composable == "godseye_scene"
     assert len(legacy) == len(router.CATALOG)
     live = {"godseye_live_" + t["name"] for t in hermes_tools.load_live_catalog()}
     mcp = {"godseye_" + t["name"] for t in hermes_tools.load_catalog()}
@@ -136,29 +138,22 @@ def test_design_doc_lists_every_tool():
 
 def test_phase_a_names_are_not_registered():
     ctx = _ctx()
-    assert set(ctx.tools) == set(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
-    retired = []
+    assert set(ctx.tools) == COMPOSABLE
+    retired = [target.legacy for target in router.CATALOG]
     for target in router.CATALOG:
-        if target.phase == "A":
-            retired.append(target.legacy)
-            assert target.legacy not in ctx.tools, target.legacy
-            assert router.absorbed(target.legacy)
-            assert target.composable in {"godseye_view", "godseye_query"}
-        else:
-            assert target.legacy in ctx.tools, target.legacy
-            assert not router.absorbed(target.legacy)
-            desc = ctx.tools[target.legacy]["schema"]["description"]
-            assert not desc.startswith("deprecated:"), target.legacy
-    assert len(retired) == 18
+        assert target.legacy not in ctx.tools, target.legacy
+        assert router.absorbed(target.legacy)
     for name, tool in ctx.tools.items():
         blob = json.dumps(tool["schema"])
         assert "deprecated: use godseye_" not in blob
         for old in retired:
             assert old not in blob, (name, old)
-    for name in ("godseye_view", "godseye_query"):
-        schema = ctx.tools[name]["schema"]
+        schema = tool["schema"]
         assert schema["parameters"]["required"] == ["op"]
         assert schema["parameters"]["properties"]["op"]["enum"] == router.phase_a_ops(name)
+        assert "timeline" not in schema["parameters"]["properties"]["op"]["enum"]
+    feeds = ctx.tools["godseye_feeds"]["schema"]["description"]
+    assert "CCTV" in feeds and "ALPR" in feeds and "not a way to identify a person" in feeds
 
 
 def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
@@ -196,20 +191,119 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_query", "resolve_area"): {"query": "Bagmati"},
         ("godseye_query", "entity"): {"scope": "selected"},
     }
+    def hud(args, **kw):
+        seen.append(("hud", "godseye_hud_summary", args, kw.get("session_id")))
+        return "{}"
+
+    router.bind_hud(hud)
+    samples.update({
+        ("godseye_view", "show"): {"area": {"place": "Tokyo"}},
+        ("godseye_view", "state"): {"detail": "full"},
+        ("godseye_layers", "visibility"): {"layerId": "flights", "enabled": True},
+        ("godseye_layers", "menu"): {},
+        ("godseye_layers", "panel"): {"panelId": "data-panel", "open": True},
+        ("godseye_layers", "context_mode"): {"mode": "contacts"},
+        ("godseye_layers", "style"): {"style": "surveillance"},
+        ("godseye_layers", "sonar"): {"enabled": True},
+        ("godseye_layers", "detection"): {"mode": "dense"},
+        ("godseye_layers", "stack"): {"stack": "osm"},
+        ("godseye_layers", "post"): {"bloom": {}},
+        ("godseye_query", "terrain"): {"points": [{"lat": 35.0, "lon": 139.0}]},
+        ("godseye_query", "features"): {"location": {"lat": 35.0, "lon": 139.0}, "kind": "named_places"},
+        ("godseye_feeds", "earthquakes"): {},
+        ("godseye_feeds", "fires"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "launches"): {},
+        ("godseye_feeds", "aircraft_in_area"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "find_aircraft"): {"callsign": "JAL1"},
+        ("godseye_feeds", "aircraft_track"): {"icao24": "abc123"},
+        ("godseye_feeds", "aircraft_info"): {"icao24": "abc123"},
+        ("godseye_feeds", "vessels_in_area"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "find_vessel"): {"name": "Ever Given"},
+        ("godseye_feeds", "vessel_track"): {"mmsi": "123456789"},
+        ("godseye_feeds", "next_pass"): {"location": {"lat": 35.0, "lon": 139.0}},
+        ("godseye_feeds", "overhead"): {"location": {"lat": 35.0, "lon": 139.0}},
+        ("godseye_feeds", "find_cctv"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "cctv_snapshot"): {"camera_id": "cam-1"},
+        ("godseye_feeds", "alpr"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "traffic"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "weather"): {"map": "radar"},
+        ("godseye_feeds", "imagery"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "cables"): {},
+        ("godseye_feeds", "infrastructure"): {"kind": "dams", "area": {"place": "Tokyo"}},
+        ("godseye_feeds", "flood"): {},
+        ("godseye_feeds", "cyclones"): {},
+        ("godseye_feeds", "fire_perimeters"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "military_sites"): {"area": {"place": "Tokyo"}},
+        ("godseye_feeds", "imagery_live"): {"area": "view"},
+        ("godseye_feeds", "iss_pass"): {},
+        ("godseye_feeds", "satellite_pass"): {"target": "25544"},
+        ("godseye_feeds", "cctv_control"): {"action": "next"},
+        ("godseye_feeds", "radio"): {"action": "status"},
+        ("godseye_annotate", "annotate"): {"annotations": [{"type": "pin", "latitude": 1, "longitude": 2, "label": "A"}]},
+        ("godseye_annotate", "clear"): {},
+        ("godseye_annotate", "draw"): {"action": "start", "kind": "box"},
+        ("godseye_annotate", "list"): {},
+        ("godseye_annotate", "delete"): {"id": "anno-1"},
+        ("godseye_annotate", "filter"): {"action": "set"},
+        ("godseye_annotate", "drawer"): {"action": "open"},
+        ("godseye_annotate", "research"): {"mode": "light"},
+        ("godseye_nav", "measure"): {"measure": "distance", "points": [{"lat": 1, "lon": 2}, {"lat": 3, "lon": 4}]},
+        ("godseye_nav", "isochrone"): {"minutes": [10], "mode": "walk"},
+        ("godseye_nav", "fly_route"): {},
+        ("godseye_nav", "compare"): {"left": "wayback:2014", "right": "current"},
+        ("godseye_track", "track"): {"query": "JAL1"},
+        ("godseye_track", "stop"): {},
+        ("godseye_track", "select_nearest"): {"layerId": "flights"},
+        ("godseye_track", "frame"): {"target": "flights"},
+        ("godseye_track", "cockpit"): {"action": "status"},
+        ("godseye_scene", "save"): {"name": "Montreal Ramen"},
+        ("godseye_scene", "list"): {},
+        ("godseye_scene", "load"): {"name": "Montreal Ramen"},
+        ("godseye_scene", "delete"): {"name": "Montreal Ramen", "confirm": True},
+        ("godseye_scene", "report"): {"name": "Montreal Ramen"},
+        ("godseye_scene", "export"): {"name": "Montreal Ramen", "format": "both"},
+        ("godseye_scene", "restore"): {},
+        ("godseye_scene", "tour"): {"stops": [{"name": "A", "lat": 1, "lon": 2}]},
+        ("godseye_scene", "tour_status"): {"jobId": "job-1"},
+        ("godseye_scene", "tour_stop"): {"jobId": "job-1"},
+        ("godseye_scene", "playback"): {"action": "status"},
+        ("godseye_watch", "create"): {"area": {"view": True}, "feeds": ["earthquakes"]},
+        ("godseye_watch", "list"): {},
+        ("godseye_watch", "pause"): {"id": "w-1"},
+        ("godseye_watch", "delete"): {"id": "w-1", "confirm": True},
+        ("godseye_capture", "hud"): {"visible": "on"},
+        ("godseye_capture", "summary"): {"context": {"place": "Tokyo"}},
+        ("godseye_admin", "doctor"): {},
+        ("godseye_admin", "rebuild"): {},
+        ("godseye_admin", "reload"): {},
+        ("godseye_admin", "preview"): {"url": "https://example.com"},
+    })
     for target in router.CATALOG:
-        if target.phase != "A":
-            continue
-        args = samples[(target.composable, target.op)]
+        args = dict(samples[(target.composable, target.op)])
+        legacy_args = dict(args)
+        if target.op == "measure":
+            legacy_args["op"] = legacy_args.pop("measure")
         seen.clear()
         ctx.tools[target.composable]["handler"]({"op": target.op, **args}, session_id="s")
-        router.dispatch_legacy(target.legacy, dict(args), session_id="s")
-        assert len(seen) == 2, target.legacy
-        kind, name, forwarded, sid = seen[0]
+        router.dispatch_legacy(target.legacy, legacy_args, session_id="s")
+        assert len(seen) == 2, (target.legacy, seen)
         assert seen[0] == seen[1]
+        kind, name, forwarded, sid = seen[0]
         assert kind == target.kind and sid == "s"
-        expect_name = target.bare if target.kind != "extra" else target.legacy
+        if target.kind == "hud":
+            expect_name = "godseye_hud_summary"
+        elif target.kind == "extra":
+            expect_name = target.legacy
+        else:
+            expect_name = target.bare
         assert name == expect_name
-        assert "op" not in forwarded and "here" not in forwarded and "style" not in forwarded
+        assert "here" not in forwarded
+        if target.op == "measure":
+            assert forwarded["op"] == "distance" and "measure" not in forwarded
+        else:
+            assert "op" not in forwarded
+        if target.composable == "godseye_view" and target.op == "fly":
+            assert "style" not in forwarded
 
 
 def test_fly_style_calls_set_visual_style_after_a_successful_fly(monkeypatch):
@@ -305,6 +399,9 @@ def test_unknown_op_does_not_call_a_handler(monkeypatch):
     assert out["error"] == "unknown_op" and "fly" in out["fix"]
     missing = json.loads(ctx.tools["godseye_query"]["handler"]({}))
     assert missing["error"] == "unknown_op"
+    reserved = json.loads(ctx.tools["godseye_nav"]["handler"]({"op": "timeline"}))
+    assert reserved["error"] == "unknown_op" and "reserved" in reserved["message"]
+    assert "timeline" not in ctx.tools["godseye_nav"]["schema"]["parameters"]["properties"]["op"]["enum"]
 
 
 def test_golden_set_matches_schemas_and_the_router(monkeypatch):
@@ -323,13 +420,22 @@ def test_golden_set_matches_schemas_and_the_router(monkeypatch):
         assert score(task, expect["tool"], expect["arguments"]) is None, task["id"]
         spec, forwarded, extra, err = router.prepare(expect["tool"], dict(expect["arguments"]), "s")
         assert err is None, (task["id"], err)
-        assert spec.op == expect["op"] and spec.phase == "A"
-        assert "op" not in forwarded
+        assert spec.op == expect["op"] and spec.phase in {"A", "B"}
+        if expect["op"] == "measure":
+            assert forwarded.get("op") == expect["arguments"]["measure"]
+            assert "measure" not in forwarded
+        else:
+            assert "op" not in forwarded
+    covered = {(task["expect"]["tool"], task["expect"]["op"]) for task in data["tasks"]}
+    for target in router.CATALOG:
+        assert (target.composable, target.op) in covered, target.legacy
 
 
 def test_retired_name_is_not_a_registered_tool():
-    missing = json.loads(router.dispatch_legacy("godseye_doctor", {}))
+    missing = json.loads(router.dispatch_legacy("godseye_not_a_tool", {}))
     assert missing["code"] == "unknown_tool"
+    doctor = json.loads(router.dispatch_legacy("godseye_doctor", {}))
+    assert doctor.get("code") != "unknown_tool"
 
 
 def test_system_prompt_teaches_the_new_tools_first():
@@ -348,19 +454,24 @@ def test_skill_teaches_new_tools_and_keeps_the_policy():
     assert "dispatch_legacy" in text
     assert "Legacy names" not in text
     for target in router.CATALOG:
-        if target.phase == "A":
-            assert target.legacy not in text, target.legacy
+        assert target.legacy not in text, target.legacy
+
+
+def test_feeds_refuse_person_tracking_before_dispatch(monkeypatch):
+    monkeypatch.setattr("gev.mcp_client.client", lambda: (_ for _ in ()).throw(AssertionError("mcp")))
+    ctx = _ctx()
+    out = json.loads(ctx.tools["godseye_feeds"]["handler"](
+        {"op": "find_cctv", "area": {"place": "track someone in Paris"}}))
+    assert "Refused" in out["error"] and out["code"] == "refused"
 
 
 def test_measure_schemas_shrinks_the_catalog():
     sys.path.insert(0, str(ROOT / "evals"))
     import measure_schemas
     report = measure_schemas.measure()
-    assert report["baseline"]["tools"] == report["after"]["tools"] + 16
+    assert report["after"]["tools"] == 11
+    assert report["baseline"]["tools"] == 82
     assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
-    assert report["composable_only"]["tools"] == 2
-    assert report["phase_a_legacy"]["tools"] == 18
-    assert report["composable_only"]["bytes"] < report["phase_a_legacy"]["bytes"]
     assert report["after"]["bytes"] < report["baseline"]["bytes"]
     assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]
     assert report["after"]["tokens"]["cl100k_base"] < report["baseline"]["tokens"]["cl100k_base"]
