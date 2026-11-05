@@ -1,8 +1,9 @@
 #!/bin/sh
 # Install God's Eye View as a user systemd service wired to the Hermes HUD bridge.
-#   GODSEYE_HOME (checkout, default ~/gods-eye-view)  GODSEYE_NODE_DIR (default ~/.local/node24)
+#   GODSEYE_BIND (listen address, default 127.0.0.1)  GODSEYE_HOME (checkout, default ~/gods-eye-view)  GODSEYE_NODE_DIR (default ~/.local/node24)
 set -e
 GEV="${GODSEYE_HOME:-$HOME/gods-eye-view}"
+BIND="${GODSEYE_BIND:-127.0.0.1}"
 NODE_DIR="${GODSEYE_NODE_DIR:-$HOME/.local/node24}"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 ENVF="$HERMES_HOME/plugin-data/godseye/hud-bridge.env"
@@ -18,7 +19,7 @@ WorkingDirectory=$GEV
 Environment=PATH=$NODE_DIR/bin:/usr/bin:/bin
 # Written by the godseye plugin's HUD bridge (0600); sets GEV_HUD_SUMMARY_* so the in-app HUD uses Hermes.
 EnvironmentFile=-$ENVF
-ExecStart=$NODE_DIR/bin/npm run dev -- --host 127.0.0.1 --port 4173 --strictPort
+ExecStart=$NODE_DIR/bin/npm run dev -- --host $BIND --port 4173 --strictPort
 Restart=on-failure
 RestartSec=5
 

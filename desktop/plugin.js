@@ -9,7 +9,7 @@ function GlobePane({ ctx }) {
   useEffect(() => {
     ctx.rest('/status').then(setStatus).catch(() => setStatus({ appUp: false }))
   }, [])
-  const base = status?.apiBase || 'http://localhost:4173'
+  const base = status?.frameUrl || status?.apiBase || 'http://localhost:4173'
   const askHud = async () => {
     setHud('…')
     const r = await ctx.rest('/hud', { method: 'POST', body: { context: { locale: 'en' } } }).catch((e) => ({ error: String(e) }))
@@ -23,6 +23,7 @@ function GlobePane({ ctx }) {
         children: [
           jsx('span', { children: status?.appUp ? `live · ${base}` : `app not running at ${base} (npm run dev)` }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: askHud, children: 'HUD (Hermes)' }),
+          jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => ctx.os.openExternal(base + '/'), children: 'Open full app' }),
           jsx('span', { className: 'truncate', children: hud })
         ]
       }),

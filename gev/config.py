@@ -22,3 +22,9 @@ def node_bin() -> str | None:
         return str(Path(raw).expanduser())
     local = Path.home() / ".local/node24/bin/node"
     return str(local) if local.is_file() else shutil.which("node")
+
+
+def public_url() -> str:
+    """URL the Desktop/Webapp pane frames: GODSEYE_PUBLIC_URL (e.g. a tailnet address when the
+    Webapp runs in a browser on another machine), else the API base."""
+    return os.environ.get("GODSEYE_PUBLIC_URL", "").rstrip("/") or api_base()

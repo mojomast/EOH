@@ -35,7 +35,7 @@ async def status():
             up = r.status == 200
     except Exception:
         pass
-    return {"apiBase": config.api_base(), "appUp": up, "hudBridge": bridge._server is not None,
+    return {"apiBase": config.api_base(), "frameUrl": config.public_url(), "appUp": up, "hudBridge": bridge._server is not None,
             "checkout": config.checkout() is not None, "node": config.node_bin() is not None}
 
 
