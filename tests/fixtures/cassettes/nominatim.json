@@ -1,0 +1,49 @@
+{
+  "_comment": "Hand-written Nominatim search and reverse fixtures. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "nominatim.openstreetmap.org",
+        "path_contains": "/search"
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "place_id": 1,
+            "lat": "45.503182",
+            "lon": "-73.569806",
+            "display_name": "Montreal, Quebec, Canada",
+            "type": "city",
+            "category": "boundary",
+            "boundingbox": ["45.49", "45.52", "-73.58", "-73.55"]
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "host": "nominatim.openstreetmap.org",
+        "path_contains": "/reverse"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "place_id": 2,
+          "lat": "45.5088",
+          "lon": "-73.554",
+          "display_name": "2061 Rue de la Montagne, Montreal, Quebec, Canada",
+          "name": "Sansotei Ramen",
+          "category": "amenity",
+          "type": "restaurant",
+          "osm_type": "node",
+          "osm_id": 101,
+          "address": {"city": "Montreal", "road": "Rue de la Montagne"},
+          "extratags": {"website": "https://sansotei.example", "cuisine": "ramen"}
+        }
+      }
+    }
+  ]
+}

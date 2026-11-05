@@ -51,6 +51,8 @@ def scene_snapshot(scene_store, session_key: str | None, *, notes: str | None = 
         sc = dict(scene_store.scene(session_key))
         anns = [{"id": a["id"], "paneId": a.get("paneId"), "spec": dict(a.get("spec") or {})}
                 for a in sc.get("annotations") or []]
+        raw_shapes = sc.get("shapes") or {}
+        shapes = [dict(v) for v in raw_shapes.values() if isinstance(v, dict)] if isinstance(raw_shapes, dict) else []
     pins, routes, cards = [], [], []
     for a in anns:
         t = str((a["spec"] or {}).get("type") or "pin").lower()
@@ -76,6 +78,7 @@ def scene_snapshot(scene_store, session_key: str | None, *, notes: str | None = 
         "notes": notes,
         "views": views or [],
         "meta": meta or {},
+        "shapes": shapes,
     }
 
 

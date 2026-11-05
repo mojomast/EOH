@@ -20,6 +20,7 @@ of tools:
 | Research a pin's drawer (summary, photos, sources) | `godseye_research_pins` |
 | Save / load a whole investigation | `godseye_investigation_save` / `_load` / `_list` / `_delete` |
 | Export an HTML+Markdown report | `godseye_investigation_report` |
+| Export GeoJSON / KML (optional zip pack) | `godseye_investigation_export` |
 
 ## Rules
 
@@ -144,12 +145,15 @@ pins them with drawer content shaped by the request (cuisine, hours, menu/websit
 `godseye_investigation_save {name:"Montreal Ramen", notes:"..."}` →
 `godseye_investigation_load {name:"Montreal Ramen"}` →
 `godseye_investigation_report {name:"Montreal Ramen", capture:true}`.
+`godseye_investigation_export {name:"Montreal Ramen", format:"pack"}` writes GeoJSON and KML
+(and a zip of the report plus any saved screenshots). Omit `name` to export the current scene.
+Google photoreal tile imagery is not included.
 Delete only with `godseye_investigation_delete {name:"...", confirm:true}`.
 
 Slash command for quick control: `/gev fly <place>`, `/gev layers [on|off names]`,
 `/gev status`, `/gev brief <place>`, `/gev home [set]`, `/gev share`, `/gev doctor`,
 `/gev research [light|full]`, `/gev save|list|load <name>`, `/gev delete <name> --confirm`,
-`/gev report [name]`.
+`/gev report [name]`, `/gev export [name] [geojson|kml|both|pack]`.
 
 "What's that building?" -> `godseye_live_context` -> answer from `here.place` (name, address, OSM
 type, tags) and the nearest `here.nearby` entries; offer to pin it.

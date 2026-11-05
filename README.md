@@ -63,9 +63,9 @@ The toolbar at the bottom left draws a box (two clicks), an area, or a line. Dis
 
 ### Also on the globe
 
-- **Pins.** Annotation pins, place pins, brief hits, and tour stops are ground-clamped markers. The tip is the point, a dot sits on the ground under it, and the height is sampled again as the camera's level of detail changes. Click a pin, or call `godseye_live_pin_drawer`, for a drawer of title, markdown, images, and http(s) links. Raw HTML is shown as text. The open drawer is saved with the scene.
+- **Pins.** Annotation pins, place pins, brief hits, and tour stops are ground-clamped markers. The tip is the point, a dot sits on the ground under it, and the height is sampled again as the camera's level of detail changes. Click a pin, or call `godseye_live_pin_drawer`, for a drawer of title, `description_md` (markdown; raw HTML is shown as text), images, and http(s) links. The open drawer is saved with the scene.
 - **Clusters and filters.** Above a camera height of 2,500 m, pins within 56 screen pixels merge into a count bubble. Click it, or `godseye_live_filter_pins` with `action=expand`, to zoom in. A chip bar filters by category (OSM `amenity`, `shop`, `tourism`, `leisure`, `cuisine`), by rating, and by **Open now**. Open now understands a subset of OSM `opening_hours`: `24/7`, weekday ranges and lists, overnight spans, and `off`, with a later rule replacing earlier ones. Anything else is unknown, and unknown pins stay visible unless `include_unknown` is false. The clock is the pane's local time.
-- **Research and investigations.** `godseye_research_pins` fills drawers from Wikipedia, Wikidata, Wikimedia Commons, OSM tags already on the pin, and a site's meta description. Missing sources are marked unavailable. `godseye_investigation_save` / `_load` / `_list` / `_delete` store a named scene. `godseye_investigation_report` writes HTML and Markdown under the plugin data directory, with a map image when the pane can read its canvas.
+- **Research and investigations.** `godseye_research_pins` fills drawers from Wikipedia, Wikidata, Wikimedia Commons, OSM tags already on the pin, and a site's meta description. Missing sources are marked unavailable. `godseye_investigation_save` / `_load` / `_list` / `_delete` store a named scene. `godseye_investigation_report` writes HTML and Markdown under `plugin-data/godseye/reports/`, with a map image when the pane can read its canvas. `godseye_investigation_export` writes that investigation, or the current scene when `name` is omitted, under `plugin-data/godseye/exports/`. `format` is `geojson`, `kml`, `both` (the default), or `pack`. GeoJSON is RFC 7946 with longitude then latitude. Pins are points and carry their drawer and enrichment properties. Drawings and areas are polygons or lines. Routes are lines. `pack` is a zip of the GeoJSON, the KML, the Markdown report, and any saved screenshots. Google photorealistic tile imagery is left out of the files. `/gev export` runs the same tool.
 - **Area watches.** `godseye_watch_create` polls an area for earthquakes (USGS), fires (NASA FIRMS), flights (OpenSky), ships (through the app), or OSM places. The first run records what is already there. Later runs alert only on ids that have not been seen, pin the new items, and queue a message for the next chat turn. With `deliver=inject`, the plugin also calls `ctx.inject_message` when Hermes is configured to allow it.
 - **Brief and show, home, share, tours.** `godseye_brief_and_show` runs a situation brief (or military awareness when the question is about military activity), flies there, turns on the brief's layers, and pins the top hits. `godseye_home` saves a view and opens a cold pane there. `godseye_share_link` builds a `/share/<code>` link with God's Eye View's share codec, or a camera-hash URL when that codec cannot run. `godseye_live_run_tour` flies a list of stops in the background.
 
@@ -216,13 +216,14 @@ For watch alerts that should start a turn immediately, set Hermes `plugins.entri
 - "Any earthquakes above magnitude 5 in the last day?" This one works with the pane closed.
 - "Watch fires in this view and tell me when a new one shows up."
 - "Save this investigation and write a report."
+- "Export this investigation as GeoJSON and KML." `format=pack` also writes a zip.
 - "Find John Smith's house." This is refused.
 
 Framing presets on `godseye_live_fly_to_location`: `street` is about 150 m at pitch −15°, `rooftop` is 450 m at −30°, `district` is 2,500 m at −45°. The minimum range is 100 m.
 
 ## Tools
 
-`plugin.yaml` registers **97** tools, all in the `godseye` toolset. Every description includes the public-data policy. The groups below are the practical map. The full list is at the end of this section.
+`plugin.yaml` registers **98** tools, all in the `godseye` toolset. Every description includes the public-data policy. The groups below are the practical map. The full list is at the end of this section.
 
 | Group | When to use it | Examples |
 | --- | --- | --- |
@@ -230,7 +231,7 @@ Framing presets on `godseye_live_fly_to_location`: `street` is about 150 m at pi
 | **Move the globe** | Fly, zoom, style, layers, map stack, follow a public vehicle or satellite. Needs the pane. | `godseye_live_fly_to_location`, `godseye_live_set_visual_style`, `godseye_live_set_layer_visibility`, `godseye_live_track_entity` |
 | **Read the view** | "This", "here", distance, reach, before/after, counts of what is loaded. | `godseye_live_context`, `godseye_measure`, `godseye_isochrone`, `godseye_live_compare`, `godseye_live_analyst_query` |
 | **Places and pins** | Search, drawers, clusters, filters, research. | `godseye_find_places`, `godseye_live_pin_drawer`, `godseye_live_filter_pins`, `godseye_research_pins` |
-| **Keep it** | Home, share, tours, named investigations, reports. | `godseye_home`, `godseye_share_link`, `godseye_investigation_save`, `godseye_investigation_report` |
+| **Keep it** | Home, share, tours, named investigations, reports, GeoJSON and KML. | `godseye_home`, `godseye_share_link`, `godseye_investigation_save`, `godseye_investigation_export` |
 | **Watch** | New earthquakes, fires, flights, ships, or places in an area. | `godseye_watch_create`, `godseye_watch_list`, `godseye_watch_pause`, `godseye_watch_delete` |
 | **Setup** | Health, panes, rebuild, HUD. | `godseye_doctor`, `godseye_live_panes`, `godseye_rebuild_panel`, `godseye_hud_summary` |
 
@@ -239,7 +240,7 @@ Framing presets on `godseye_live_fly_to_location`: `street` is about 150 m at pi
 Large tools take `detail=concise` (the default) or `detail=full`. `detail` is removed before the arguments are sent upstream, because the MCP server and the pane runner reject unknown fields.
 
 <details>
-<summary><strong>Full list of 97 tools</strong></summary>
+<summary><strong>Full list of 98 tools</strong></summary>
 
 ### Public feeds
 
@@ -341,6 +342,7 @@ These need the pane. They run upstream voice actions unless noted as added here.
 - `godseye_investigation_load` — Load one and restore it on the pane.
 - `godseye_investigation_delete` — Delete one. Requires `confirm=true`.
 - `godseye_investigation_report` — HTML and Markdown under `plugin-data/godseye/reports/`.
+- `godseye_investigation_export` — GeoJSON and KML under `plugin-data/godseye/exports/`. `format=both` is the default. `format=pack` adds a zip of the GeoJSON, the KML, the Markdown report, and any saved screenshots. Photorealistic tile imagery is not embedded.
 - `godseye_watch_create` — Watch an area. Feeds: `earthquakes`, `fires`, `flights`, `ships`, `pois`.
 - `godseye_watch_list` — List watches. `check=<id>` runs one now.
 - `godseye_watch_pause` — Pause or resume a watch.
@@ -371,6 +373,7 @@ These need the pane. They run upstream voice actions unless noted as added here.
 /gev load <name>
 /gev delete <name> --confirm
 /gev report [name]
+/gev export [name] [geojson|kml|both|pack]
 ```
 
 The analyst skill is `skills/godseye-analyst/SKILL.md`, registered as `godseye-analyst` (Hermes shows it as `godseye:godseye-analyst`). It tells the model when to use a data tool, when to use a live tool, to call `godseye_live_context` for "this" and "here", to trust the map line, to pass `detail=full` only when it needs the payload, and to follow `fix` on errors. Long playbooks live in the skill. Tool schemas stay short.
@@ -401,7 +404,7 @@ Three mechanisms keep a session from thrashing the GPU or the context window. No
 
 Eye Of Hermes is for public, aggregate data: aircraft, vessels, satellites, hazards, weather, infrastructure, and mapped places. `gev/policy.py` refuses requests that ask to search for a named person, recognise a face, or find, locate, track, or follow a person. The refusal is `code=refused`, and the fix tells the model to stop and offer a public-asset view instead. Tracking a flight by callsign or ICAO address, a ship by MMSI, or a satellite by NORAD id is supported. Tracking a person is not a feature.
 
-**Photorealistic 3D tiles are for looking.** They are Google Photorealistic 3D Tiles, reached through Cesium ion. Google's [Map Tiles API policies](https://developers.google.com/maps/documentation/tile/policies) allow them for visualization. They are not a source to index, to run detection on, or to mine into a dataset. This plugin's measurements, briefs, and watches use the public feeds and OSM. They do not interpret the tile imagery.
+**Photorealistic 3D tiles are for looking.** They are Google Photorealistic 3D Tiles, reached through Cesium ion. Google's [Map Tiles API policies](https://developers.google.com/maps/documentation/tile/policies) allow them for visualization. They are not a source to index, to run detection on, or to mine into a dataset. This plugin's measurements, briefs, and watches use the public feeds and OSM. They do not interpret the tile imagery. `godseye_investigation_export` writes the investigation's own pins, drawings, and routes. It does not embed those tiles. A pack zip may include screenshots the user already saved, and it skips photorealistic tile images.
 
 **Nominatim and Overpass are shared public services.** Nominatim's [usage policy](https://operations.osmfoundation.org/policies/nominatim/) asks for a real User-Agent, about one request per second, and no bulk scraping. This plugin waits 1.2 seconds between Nominatim calls, sends a User-Agent that names `hermes-godseye` and this repository, and caches responses for one hour. Point `GODSEYE_NOMINATIM_URL` at your own instance if you outgrow the public one. Overpass queries are bounded (15 km radius for place search) and back off when a mirror fails. Please stay inside those mirrors' fair-use rules. OSM data in place results is credited `© OpenStreetMap contributors (ODbL)`.
 
@@ -424,7 +427,7 @@ Eye Of Hermes is for public, aggregate data: aircraft, vessels, satellites, haza
 
 The pane's browser also requests whatever the viewer needs for the active stack: Cesium ion, Google 3D tiles, Esri imagery, OpenStreetMap tiles, Mapillary, and the app's live layers. The relay and the HUD bridge listen on `127.0.0.1` only.
 
-**Files.** The plugin writes under `~/.hermes/plugin-data/godseye/` (or `$HERMES_HOME/plugin-data/godseye/`): the HUD bridge env (mode 0600, URL plus a random token), home view, scenes, watches, investigations, reports, and the research cache. It also rewrites `dist/panel/config.json` in the God's Eye View checkout. It does not read Hermes credential stores. This repository has no telemetry client and no self-updater.
+**Files.** The plugin writes under `~/.hermes/plugin-data/godseye/` (or `$HERMES_HOME/plugin-data/godseye/`): the HUD bridge env (mode 0600, URL plus a random token), home view, scenes, watches, investigations, reports, GeoJSON/KML exports, and the research cache. It also rewrites `dist/panel/config.json` in the God's Eye View checkout. It does not read Hermes credential stores. This repository has no telemetry client and no self-updater.
 
 Drawer content is escaped before it is shown. Only http(s) images and links are kept. The host opens those links. The frame does not.
 
@@ -454,11 +457,12 @@ The tool snapshots (`gev/tools_snapshot.json`, `gev/live_tools_snapshot.json`) h
 
 ## Roadmap
 
-None of this is in the tree this README describes. Three of the four items below are in open pull requests. WebGL recovery does not have a pull request yet.
+GeoJSON and KML export, and the recorded feed fixtures, are in this version. See `godseye_investigation_export` above, and Development below.
+
+Still outside this tree:
 
 - **Fewer tools.** [Pull request #3](https://github.com/mojomast/hermes-godseye/pull/3) is phase A: `godseye_view` and `godseye_query` call the tools that already exist, and the current names stay registered.
-- **Export and recorded tests.** [Pull request #2](https://github.com/mojomast/hermes-godseye/pull/2) writes an investigation as GeoJSON and KML, and replays saved feed responses in tests so the suite does not call the public servers.
-- **WebGL recovery.** A lost context shows **Click to reload the globe**. The follow-on, still outside this tree and not yet a pull request, destroys the viewer, creates it again, and restores the saved scene. `lifecycleKeepAlive` and the visibility pause stay.
+- **WebGL recovery.** A lost context shows **Click to reload the globe**. The follow-on destroys the viewer, creates it again, and restores the saved scene. It does not have a pull request yet. `lifecycleKeepAlive` and the visibility pause stay.
 
 ## Credits
 
@@ -476,4 +480,4 @@ None of this is in the tree this README describes. Three of the four items below
 python3 -m pytest -q tests
 ```
 
-`GODSEYE_E2E=1` adds a live call against `npm run dev`. The usual unit run does not contact the public feeds.
+The usual run blocks public network. Contract tests for measure, isochrones, place search, area watches, and investigation export replay hand-written cassettes under `tests/fixtures/cassettes`: an OSRM route, a Valhalla isochrone, Overpass places, Nominatim search and reverse, USGS earthquakes, a FIRMS CSV, and OpenSky states. Those files contain no keys. `GODSEYE_E2E=1` is the only opt-in for a live call against `npm run dev`, and it is not for CI.

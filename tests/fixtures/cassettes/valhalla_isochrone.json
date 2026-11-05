@@ -1,0 +1,33 @@
+{
+  "_comment": "Hand-written Valhalla isochrone fixture, 10 minute walk. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "valhalla1.openstreetmap.de",
+        "path_contains": "/isochrone"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "features": [
+            {
+              "type": "Feature",
+              "properties": {"contour": 10, "metric": "time"},
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                  [-73.58, 45.49],
+                  [-73.55, 45.49],
+                  [-73.55, 45.52],
+                  [-73.58, 45.52],
+                  [-73.58, 45.49]
+                ]]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

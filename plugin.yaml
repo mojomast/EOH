@@ -80,6 +80,7 @@ provides_tools:
   - godseye_investigation_load
   - godseye_investigation_delete
   - godseye_investigation_report
+  - godseye_investigation_export
   - godseye_live_stop_tour
   - godseye_live_fly_to_location
   - godseye_live_select_nearest_aircraft
