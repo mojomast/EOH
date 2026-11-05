@@ -247,6 +247,7 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_annotate", "draw"): {"action": "start", "kind": "box"},
         ("godseye_annotate", "list"): {},
         ("godseye_annotate", "delete"): {"id": "anno-1"},
+        ("godseye_annotate", "update"): {"id": "a1", "label": "Cafe"},
         ("godseye_annotate", "filter"): {"action": "set"},
         ("godseye_annotate", "drawer"): {"action": "open"},
         ("godseye_annotate", "research"): {"mode": "light"},
@@ -254,6 +255,8 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_nav", "isochrone"): {"minutes": [10], "mode": "walk"},
         ("godseye_nav", "fly_route"): {},
         ("godseye_nav", "street_walk"): {"walk": "state"},
+        ("godseye_nav", "street_level"): {"street": "at", "lat": 45.5, "lon": -73.5},
+        ("godseye_nav", "itinerary"): {"pins": ["a1", "a2"], "mode": "drive"},
         ("godseye_nav", "compare"): {"left": "wayback:2014", "right": "current"},
         ("godseye_nav", "timeline"): {"timeline": "state"},
         ("godseye_track", "track"): {"query": "JAL1"},
@@ -278,7 +281,10 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_watch", "delete"): {"id": "w-1", "confirm": True},
         ("godseye_capture", "hud"): {"visible": "on"},
         ("godseye_capture", "summary"): {"context": {"place": "Tokyo"}},
+        ("godseye_capture", "pane"): {},
         ("godseye_admin", "doctor"): {},
+        ("godseye_admin", "batch"): {"calls": [{"tool": "godseye_admin", "args": {"op": "status"}}]},
+        ("godseye_admin", "keys"): {"action": "install", "file": "/tmp/godseye-keys.env"},
         ("godseye_admin", "rebuild"): {},
         ("godseye_admin", "reload"): {},
         ("godseye_admin", "preview"): {"url": "https://example.com"},
@@ -296,6 +302,8 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
             legacy_args["op"] = legacy_args.pop("timeline")
         elif target.op == "street_walk":
             legacy_args["op"] = legacy_args.pop("walk")
+        elif target.op == "street_level":
+            legacy_args["op"] = legacy_args.pop("street")
         seen.clear()
         ctx.tools[target.composable]["handler"]({"op": target.op, **args}, session_id="s")
         router.dispatch_legacy(target.legacy, legacy_args, session_id="s")
@@ -317,6 +325,8 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
             assert forwarded["op"] == "state" and "timeline" not in forwarded
         elif target.op == "street_walk":
             assert forwarded["op"] == "state" and "walk" not in forwarded
+        elif target.op == "street_level":
+            assert forwarded["op"] == "at" and "street" not in forwarded
         else:
             assert "op" not in forwarded
         if target.composable == "godseye_view" and target.op == "fly":
@@ -445,6 +455,9 @@ def test_golden_set_matches_schemas_and_the_router(monkeypatch):
         elif expect["op"] == "street_walk":
             assert forwarded.get("op") == expect["arguments"]["walk"]
             assert "walk" not in forwarded
+        elif expect["op"] == "street_level":
+            assert forwarded.get("op") == expect["arguments"]["street"]
+            assert "street" not in forwarded
         else:
             assert "op" not in forwarded
     covered = {(task["expect"]["tool"], task["expect"]["op"]) for task in data["tasks"]}
@@ -491,7 +504,7 @@ def test_measure_schemas_shrinks_the_catalog():
     import measure_schemas
     report = measure_schemas.measure()
     assert report["after"]["tools"] == 11
-    assert report["baseline"]["tools"] == 88
+    assert report["baseline"]["tools"] == 94
     assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert report["after"]["bytes"] < report["baseline"]["bytes"]
     assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]

@@ -38,6 +38,17 @@ def make_handler(name: str):
         if reason:
             return _present_error({"ok": False, "error": reason}, name)
         try:
+            from .areas import rewrite_feed_args
+            prefer = "swne"
+            tool = next((item for item in load_catalog() if item.get("name") == name), None)
+            blob = json.dumps((tool or {}).get("inputSchema") or {})
+            if "west, south, east, north" in blob or "west,south,east,north" in blob:
+                prefer = "wsen"
+            args, _bbox_warning = rewrite_feed_args(args, prefer)
+        except ValueError as exc:
+            return _present_error({"ok": False, "error": "bad_args", "message": str(exc),
+                                   "fix": "Pass bbox as {south, west, north, east}."}, name)
+        try:
             result = mcp_client.client().call_tool(name, args)
         except Exception as exc:  # surfaced to the model, never raised into the turn
             return _present_error({"ok": False, "error": f"God's Eye View call failed: {exc}. Is `npm run dev` running at {config.api_base()}?"}, name)
@@ -131,7 +142,15 @@ def extend_live_schema(name: str, schema: dict) -> dict:
         props["framing"] = FRAMING_PROP
     if name == "fly_route":
         props["lighten"] = {"type": "boolean"}
+        props["id"] = {"type": "string"}
+        props["routeId"] = {"type": "string"}
+        props["points"] = {"type": "array", "items": {"type": "object"}}
+        props["waypoints"] = {"type": "array", "items": {"type": "object"}}
+        props["stops"] = {"type": "array", "items": {"type": "object"}}
     if name == "annotate_map":
+        props["source"] = {"type": "string"}
+        props["records"] = {"type": "array", "items": {"type": "object"}}
+        props["replace"] = {"type": "boolean"}
         props["flyTo"] = {"anyOf": [{"type": "boolean"}, {"type": "string", "enum": ["all"]}],
                           "description": "true frames the first mark; 'all' frames every mark drawn in this call."}
         props["intent"] = {"type": "string", "maxLength": 240,
@@ -169,18 +188,59 @@ def make_live_handler(name: str):
         args = dict(args or {})
         mode = detail.pop_detail(args) if name in detail.LARGE_LIVE else "full"
         fanout = bool(args.pop("fanout", False))
+        dataset_warnings: list = []
         reason = policy.refuse_reason(args)
         if reason:
             return _present_error({"ok": False, "error": reason}, name)
         if name == "annotate_map":
-            from . import enrich
+            from . import enrich, live as live_mod, marks as marks_mod, records as records_mod
+            if args.get("source") or args.get("records") is not None:
+                try:
+                    pins, dataset_warnings = records_mod.pins_from(args)
+                except ValueError as exc:
+                    return _present_error({
+                        "ok": False, "error": "bad_dataset", "message": str(exc),
+                        "fix": "Pass source as a .jsonl, .csv, or .json path, or records:[{lat, lon, label, description_md, images, links, tags, category, id}].",
+                    }, name)
+                args.pop("source", None)
+                args.pop("records", None)
+                base = [item for item in (args.get("annotations") or []) if isinstance(item, dict)]
+                args["annotations"] = base + pins
+            replace = args.pop("replace", None) is True
+            relay = live_mod.current()
+            planned = None
+            if relay is not None:
+                key = kw.get("session_id")
+                planned = marks_mod.plan(relay.scenes.annotations(key), args.get("annotations") or [], replace)
+                for item in planned["update"]:
+                    relay.scenes.update_annotation(key, str(item.get("id") or item.get("paneId") or ""), item["fields"])
+                    from . import composer
+                    composer.live_call("hermes_pin_update", {"id": item.get("paneId") or item.get("id"), **item["fields"]},
+                                       session_id=kw.get("session_id"), fanout=fanout)
+                args["annotations"] = planned["add"]
+                if not args["annotations"]:
+                    return json.dumps({"ok": True, "added": 0, "updated": len(planned["update"]),
+                                       "skipped": planned["skipped"], "warnings": dataset_warnings}, ensure_ascii=False)
             intent = args.get("intent") or args.get("context")
             args["annotations"] = enrich.enrich_annotations(args.get("annotations") or [], intent=intent, mode="light")
+            if len(args["annotations"]) > 24:
+                from . import composer
+                chunks = [args["annotations"][i:i + 24] for i in range(0, len(args["annotations"]), 24)]
+                results = []
+                for chunk in chunks:
+                    part = dict(args)
+                    part["annotations"] = chunk
+                    results.append(composer.live_call(name, part, session_id=kw.get("session_id"), fanout=fanout))
+                ok = all(isinstance(item, dict) and item.get("ok") for item in results)
+                return json.dumps({"ok": ok, "batches": len(results), "added": len(args["annotations"]),
+                                   "warnings": dataset_warnings, "results": results}, ensure_ascii=False)
         if name == "fly_route":
             from . import flyroute
             out = flyroute.run(args, session_id=kw.get("session_id"), fanout=fanout)
         else:
             out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
+        if name == "annotate_map" and dataset_warnings and isinstance(out, dict):
+            out["warnings"] = dataset_warnings
         if name == "set_map_stack":
             out = composer.remediate_map_stack(out)
         if name in ("osm_query", "resolve_area"):
@@ -289,7 +349,7 @@ EXTRA_TOOLS = {
         "GOOGLE_MAPS_API_KEY, MAPILLARY_CLIENT_TOKEN, AISSTREAM_API_KEY, FIRMS_MAP_KEY) in the env file "
         "and panel bundle (values never printed), active map stack, layer feed states from "
         "feedProvenance, and annotation count. Every failed check includes fix text. Read-only.",
-        {"type": "object", "properties": {}}, "🩺"),
+        {"type": "object", "properties": {"probe": {"type": "boolean"}}}, "🩺"),
     "godseye_control_status": (
         "Control room status: God's Eye View app, live relay, HUD bridge, panes and last heartbeat, "
         "WebGL recovery, and public-feed fetch state. Missing optional keys are names only. Read-only. "
@@ -329,7 +389,20 @@ EXTRA_TOOLS = {
         {"type": "object", "properties": {}}, "📍"),
     "godseye_live_delete_annotation": (
         "Delete one stored annotation by id (from godseye_live_list_annotations) and redraw the rest on the pane.",
-        {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}, "🗑️"),
+        {"type": "object", "properties": {
+            "id": {"type": "string"},
+            "ids": {"type": "array", "items": {"type": "string"}},
+        }}, "🗑️"),
+    "godseye_live_update_annotation": (
+        "Patch one stored pin (label, description_md, images, links, tags) without redrawing the map.",
+        {"type": "object", "properties": {
+            "id": {"type": "string"},
+            "label": {"type": "string"},
+            "description_md": {"type": "string"},
+            "images": {"type": "array", "items": {"type": "object"}},
+            "links": {"type": "array", "items": {"type": "object"}},
+            "tags": {"type": "object"},
+        }, "required": ["id"]}, "✏️"),
     "godseye_live_restore_scene": (
         "Re-apply this chat's stored scene (camera + every annotation, by stored coordinates, no geocoding) to the "
         "open pane. Normally automatic on pane (re)open; use it after a manual clear or to force a redraw.",
@@ -337,7 +410,10 @@ EXTRA_TOOLS = {
     "godseye_live_reload_pane": (
         "Make the open pane re-fetch its panel and rebuild its frame (e.g. after a panel rebuild); the scene is "
         "restored automatically afterwards.",
-        {"type": "object", "properties": {"fanout": FANOUT_PROP}}, "🔄"),
+        {"type": "object", "properties": {
+            "fanout": FANOUT_PROP,
+            "confirm": {"type": "boolean"},
+        }}, "🔄"),
     "godseye_rebuild_panel": (
         "Rebuild God's Eye View's dist/panel bundle (npm run build:panel with ~/.config/gods-eye-view.env exported, "
         "Node 24) and reload every open pane. A current build reads dist/panel/config.json, rewritten when the pane "
@@ -364,8 +440,10 @@ EXTRA_TOOLS = {
             "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."},
             "intent": {"type": "string", "maxLength": 240,
                        "description": "User's request for this tour; used to fill each stop pin's drawer."},
-            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."}},
-         "required": ["stops"]}, "🧭"),
+            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."},
+            "source": {"type": "string"},
+            "records": {"type": "array", "items": {"type": "object"}},
+        }}, "🧭"),
     "godseye_live_pin_drawer": (
         "Open or close the info drawer of a pin on the live globe (the same drawer a click opens). It shows the "
         "pin's title, description_md, images and links (set them in annotate_map). Pick the pin by id (annotate_map "
@@ -551,6 +629,42 @@ EXTRA_TOOLS = {
             "dwellS": {"type": "number", "minimum": 0, "maximum": 30},
             "provider": {"type": "string", "enum": ["google", "mapillary"]},
         }}, "🚶"),
+    "godseye_street_level": (
+        "Open Street Level at one point and step through panoramas. street is at, next, prev, or route. "
+        "One hop per call. street_walk still dwells along a whole route.",
+        {"type": "object", "properties": {
+            "op": {"type": "string", "enum": ["at", "next", "prev", "route"]},
+            "lat": {"type": "number"},
+            "lon": {"type": "number"},
+            "label": {"type": "string"},
+            "points": {"type": "array", "items": {"type": "object"}},
+            "provider": {"type": "string", "enum": ["google", "mapillary"]},
+        }}, "🚶"),
+    "godseye_itinerary": (
+        "Build a drive or walk route through pins or coordinates, draw it as one mark, and optionally dolly or open Street Level.",
+        {"type": "object", "properties": {
+            "pins": {"type": "array", "items": {"type": "object"}},
+            "mode": {"type": "string", "enum": ["drive", "walk"]},
+            "label": {"type": "string"},
+            "dolly": {"type": "boolean"},
+            "streetStops": {"type": "boolean"},
+            "id": {"type": "string"},
+        }, "required": ["pins"]}, "🗺️"),
+    "godseye_pane_shot": (
+        "PNG of the open pane, including the drawer, pins, and imagery.",
+        {"type": "object", "properties": {"fanout": FANOUT_PROP}}, "🖼️"),
+    "godseye_batch": (
+        "Run several composable calls and return a result for each. stop_on_error stops after the first failure.",
+        {"type": "object", "properties": {
+            "calls": {"type": "array", "items": {"type": "object"}},
+            "stop_on_error": {"type": "boolean"},
+        }, "required": ["calls"]}, "🧰"),
+    "godseye_keys": (
+        "Install provider keys from a KEY=VALUE file. Takes a path only. Values are never accepted or echoed.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["install"]},
+            "file": {"type": "string"},
+        }, "required": ["action", "file"]}, "🔑"),
     "godseye_timeline": (
         "Time slider on the EOH pane. op=set arms it. mode=wayback scrubs Esri World Imagery Wayback "
         "release dates over the current view (transition swipe or fade). mode=events shows USGS quakes and "
@@ -653,6 +767,89 @@ CONTEXT_TOOLS = {"godseye_live_context": "live_context", "godseye_what_is_here":
                  "godseye_isochrone": "isochrone", "godseye_live_draw": "draw", "godseye_live_compare": "compare"}
 
 
+def _drawer_stored(listing: dict, args: dict) -> dict | None:
+    rows = listing.get("annotations") if isinstance(listing, dict) else None
+    if not isinstance(rows, list):
+        return None
+    want = str(args.get("id") or "")
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if want and want in {str(row.get("id") or ""), str(row.get("paneId") or ""), str(row.get("clientId") or "")}:
+            return row
+    label = str(args.get("label") or "").strip().lower()
+    if label:
+        for row in rows:
+            if isinstance(row, dict) and str(row.get("label") or "").strip().lower() == label:
+                return row
+    return None
+
+
+def _reload_pane(composer, sid, fanout: bool, confirm: bool) -> dict:
+    info = composer.live_call("hermes_scene_info", {}, sid)
+    payload = info.get("result") if isinstance(info, dict) and isinstance(info.get("result"), dict) else info
+    if not isinstance(payload, dict):
+        out = composer.live_call("hermes_reload", {}, sid, fanout=fanout)
+        if not isinstance(out, dict):
+            out = {"ok": False, "error": "reload_failed"}
+        out["unsavedMarks"] = None
+        return out
+    marks = payload.get("marks") if isinstance(payload.get("marks"), list) else None
+    stored = composer.scene_op("list", sid, full=True)
+    stored_rows = stored.get("annotations") if isinstance(stored, dict) else []
+    if not isinstance(stored_rows, list):
+        stored_rows = []
+    unsaved = []
+    if marks is not None:
+        known = set()
+        for row in stored_rows:
+            if not isinstance(row, dict):
+                continue
+            for key in ("id", "paneId", "clientId", "label"):
+                if row.get(key):
+                    known.add(str(row[key]))
+        for mark in marks:
+            if not isinstance(mark, dict):
+                continue
+            ident = str(mark.get("id") or mark.get("label") or "")
+            if ident and ident in known:
+                continue
+            unsaved.append(mark)
+    elif isinstance(payload.get("annotations"), int):
+        extra = int(payload["annotations"]) - len(stored_rows)
+        if extra > 0 and not confirm:
+            return {
+                "ok": False, "error": "unsaved_marks", "unsavedMarks": extra,
+                "message": f"{extra} pane mark(s) are not in the saved scene.",
+                "fix": "Pass confirm=true to reload anyway. A reload drops marks that were not snapshotted.",
+            }
+    snap = []
+    for mark in unsaved:
+        lat = mark.get("latitude", mark.get("lat"))
+        lon = mark.get("longitude", mark.get("lon"))
+        if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+            snap.append({"type": mark.get("type") or "pin", "latitude": lat, "longitude": lon,
+                         "label": str(mark.get("label") or "")[:120], "paneId": mark.get("id"),
+                         "clientId": mark.get("id")})
+    snapshotted = 0
+    from . import live as live_mod
+    relay = live_mod.current()
+    if relay is not None and snap:
+        snapshotted = relay.scenes.append_pins(sid, snap)
+    if unsaved and snapshotted < len(unsaved) and not confirm and not snap:
+        return {
+            "ok": False, "error": "unsaved_marks", "unsavedMarks": len(unsaved), "snapshotted": snapshotted,
+            "message": f"{len(unsaved)} unsaved mark(s) would be dropped.",
+            "fix": "Pass confirm=true to reload anyway.",
+        }
+    out = composer.live_call("hermes_reload", {}, sid, fanout=fanout)
+    if not isinstance(out, dict):
+        out = {"ok": False, "error": "reload_failed"}
+    out["unsavedMarks"] = len(unsaved) if marks is not None else out.get("unsavedMarks", 0)
+    out["snapshotted"] = snapshotted
+    return out
+
+
 def extra_handler(name: str):
     def handler(args: dict, **kw) -> str:
         from . import composer, home
@@ -662,7 +859,12 @@ def extra_handler(name: str):
             if name == "godseye_brief_and_show":
                 out = composer.brief_and_show(args, session_id=sid)
             elif name == "godseye_doctor":
+                probe = args.get("probe") is True or str(args.get("detail") or "").lower() == "full"
                 out = composer.doctor()
+                if probe:
+                    from .providers import probe_providers
+                    out["probes"] = probe_providers()
+                    out["tomtom"] = "reload the pane"
             elif name == "godseye_control_status":
                 from . import control_room
                 out = control_room.status()
@@ -700,6 +902,31 @@ def extra_handler(name: str):
             elif name == "godseye_street_walk":
                 from . import streetwalk
                 out = streetwalk.run(args, session_id=sid)
+            elif name == "godseye_street_level":
+                from . import streetstep
+                out = streetstep.run(args, session_id=sid)
+            elif name == "godseye_itinerary":
+                from . import itinerary
+                out = itinerary.run(args, session_id=sid)
+            elif name == "godseye_batch":
+                from . import batching
+                out = batching.run(args, session_id=sid)
+            elif name == "godseye_keys":
+                from .providers import install_keys
+                from . import runtime_config
+                from . import control_room
+                if str(args.get("action") or "") != "install":
+                    out = {"ok": False, "error": "bad_args", "message": "keys action must be install.",
+                           "fix": "Call godseye_admin op=keys with action=install and file set to a path."}
+                else:
+                    out = install_keys(
+                        str(args.get("file") or ""),
+                        restart=lambda: control_room.app_action("restart"),
+                        regen=runtime_config.write_checkout,
+                        invalidate=lambda: composer.live_call("hermes_invalidate_providers", {}, sid),
+                    )
+            elif name == "godseye_pane_shot":
+                out = composer.live_call("hermes_pane_shot", {}, sid, fanout=bool(args.get("fanout")))
             elif name == "godseye_timeline":
                 from . import timeline as timeline_mod
                 out = timeline_mod.run(args, session_id=sid)
@@ -712,25 +939,48 @@ def extra_handler(name: str):
                 else:
                     out = getattr(context, CONTEXT_TOOLS[name])(args, session_id=sid)
             elif name == "godseye_live_list_annotations":
-                out = composer.scene_op("list", sid)
+                out = composer.scene_op("list", sid, full=mode == "full")
+            elif name == "godseye_live_update_annotation":
+                fields = {k: args[k] for k in ("label", "title", "description_md", "images", "links", "tags") if k in args}
+                out = composer.scene_op("update", sid, id=str(args.get("id") or ""), fields=fields)
             elif name == "godseye_live_delete_annotation":
-                out = composer.scene_op("delete", sid, id=str(args.get("id") or ""))
+                out = composer.scene_op("delete", sid, id=args.get("id"), ids=args.get("ids"))
             elif name == "godseye_live_restore_scene":
                 out = composer.scene_op("restore", sid)
             elif name == "godseye_live_pin_drawer":
                 fan = bool(args.pop("fanout", False))
                 out = composer.live_call("hermes_pin_drawer", args, sid, fanout=fan)
+                stored = composer.scene_op("list", sid, full=True)
+                if isinstance(out, dict) and isinstance(stored, dict):
+                    out["stored"] = _drawer_stored(stored, args)
             elif name == "godseye_live_filter_pins":
                 fan = bool(args.pop("fanout", False))
                 out = composer.live_call("hermes_pin_filter", args, sid, fanout=fan)
             elif name.startswith("godseye_watch_"):
                 out = watch_tool(name, args, sid)
             elif name == "godseye_live_reload_pane":
-                out = composer.live_call("hermes_reload", {}, sid, fanout=bool(args.get("fanout")))
+                out = _reload_pane(composer, sid, bool(args.get("fanout")), args.get("confirm") is True)
             elif name == "godseye_rebuild_panel":
                 out = composer.rebuild_panel(sid)
             elif name == "godseye_live_run_tour":
-                out = composer.tour_op("start", sid, args=args)
+                if args.get("source") or args.get("records") is not None:
+                    from . import records as records_mod
+                    try:
+                        stops, warnings = records_mod.stops_from(args)
+                    except ValueError as exc:
+                        out = {"ok": False, "error": "bad_dataset", "message": str(exc),
+                               "fix": "Tour source is a .jsonl, .csv, or .json file, or records:[{lat, lon, label}]."}
+                        stops, warnings = None, []
+                    if stops is not None:
+                        args = dict(args)
+                        args.pop("source", None)
+                        args.pop("records", None)
+                        args["stops"] = list(args.get("stops") or []) + stops
+                        out = composer.tour_op("start", sid, args=args)
+                        if isinstance(out, dict) and warnings:
+                            out["warnings"] = warnings
+                else:
+                    out = composer.tour_op("start", sid, args=args)
             elif name == "godseye_live_tour_status":
                 out = composer.tour_op("status", sid, jobId=args.get("jobId"))
             elif name == "godseye_live_stop_tour":

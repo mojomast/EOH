@@ -393,6 +393,8 @@ def _area_from(args: dict, live, session_id) -> tuple[dict | None, dict | None]:
     raw = args.get("area")
     if isinstance(raw, (list, tuple)) and len(raw) == 4:
         raw = {"bbox": list(raw)}
+    elif isinstance(raw, dict) and all(name in raw for name in ("south", "west", "north", "east")) and "bbox" not in raw:
+        raw = {"bbox": raw}
     if isinstance(raw, dict) and not raw.get("view"):
         try:
             return watch.normalize_area(raw), None

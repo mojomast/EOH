@@ -55,7 +55,7 @@ def test_provider_key_checks_missing(tmp_path, monkeypatch):
     envf = tmp_path / "empty.env"
     envf.write_text("")
     monkeypatch.setattr(composer, "env_file", lambda: envf)
-    for k in ("AISSTREAM_API_KEY", "FIRMS_API_KEY", "FIRMS_MAP_KEY", "FIRMS_KEY"):
+    for k in (*composer.SERVER_KEYS, *composer.CLIENT_KEYS, "FIRMS_API_KEY", "FIRMS_KEY", "NASA_FIRMS_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     out = composer.provider_key_checks(envf)
     assert all(not c["ok"] and c.get("code") == "KEY_MISSING" for c in out)

@@ -51,19 +51,33 @@ def _num(v, lo, hi):
     return x if lo <= x <= hi and math.isfinite(x) else None
 
 
-def normalize_area(area: dict) -> dict:
-    """-> {kind, bbox:[s,w,n,e], ...}. Raises ValueError with a clear message."""
+def normalize_area(area: dict, geocode=None) -> dict:
+    """-> {kind, bbox:[s,w,n,e], ...}. Raises ValueError with a clear message.
+
+    ``bbox`` may be ``[south, west, north, east]`` or ``{south, west, north, east}``.
+    A list that is only valid as ``[west, south, east, north]`` is converted.
+    ``{place, radius_km}`` is geocoded.
+    """
     if not isinstance(area, dict):
         raise ValueError("area must be an object: {bbox:[south,west,north,east]} | {polygon:[[lat,lon],...]} | "
-                         "{lat, lon, radius_km} | {view: true}")
+                         "{lat, lon, radius_km} | {place, radius_km} | {view: true}")
+    if all(name in area for name in ("south", "west", "north", "east")) and area.get("bbox") is None:
+        area = {"bbox": {name: area[name] for name in ("south", "west", "north", "east")}}
+    if area.get("place") and area.get("bbox") is None and area.get("polygon") is None and area.get("lat") is None:
+        from .areas import area_from_place
+        if geocode is None:
+            from .poi import geocode as geocode
+        return area_from_place(str(area["place"]), float(area.get("radius_km") or 0), geocode)
     if area.get("bbox") is not None:
-        b = area["bbox"]
-        if not isinstance(b, (list, tuple)) or len(b) != 4:
-            raise ValueError("bbox must be [south, west, north, east]")
-        s, w, n, e = (_num(b[0], -90, 90), _num(b[1], -180, 180), _num(b[2], -90, 90), _num(b[3], -180, 180))
-        if None in (s, w, n, e) or s >= n or w >= e:
-            raise ValueError("bbox must be [south, west, north, east] with south<north and west<east")
-        return {"kind": "bbox", "bbox": [s, w, n, e]}
+        from .areas import interpret_bbox
+        try:
+            parsed = interpret_bbox(area["bbox"], prefer="swne")
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        out = {"kind": "bbox", "bbox": parsed["bbox"]}
+        if parsed.get("warning"):
+            out["warning"] = parsed["warning"]
+        return out
     if area.get("polygon") is not None:
         pts = []
         for p in area["polygon"] if isinstance(area["polygon"], list) else []:

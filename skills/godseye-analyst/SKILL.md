@@ -67,7 +67,7 @@ Pane chrome and the look of the globe. Needs the pane.
 
 ## godseye_feeds
 
-Public facts. Most ops work with the pane closed. One op per call. `detail: "full"` for rows or an image.
+Public facts. Most ops work with the pane closed. One op per call. `detail: "full"` for rows or an image. A bbox is `{south, west, north, east}` or `{place, radius_km}`. A four-number list is accepted only when one order is a real box.
 
 Hazards: `earthquakes`, `fires` (needs `area`), `launches`, `flood`, `cyclones`, `fire_perimeters` (needs `area`).
 Aircraft: `aircraft_in_area` (`area`), `find_aircraft`, `aircraft_track` (`icao24`), `aircraft_info`.
@@ -85,11 +85,12 @@ Pins and drawings on the open pane.
 
 | op | Use |
 | --- | --- |
-| `annotate` | `annotations` required. Pass `intent` (the user's words) whenever you create pins. Fill `description_md`, `images`, and `links` (http/https only) when you know them. |
+| `annotate` | `annotations` required, or `source` (a `.jsonl`, `.csv`, or `.json` path), or `records` (`[{lat, lon, label, description_md, images, links, tags, category, id}]`). Pass `intent` whenever you create pins. `replace: true` updates a pin with the same `id` or within 25 m. Exact duplicates are skipped. |
 | `clear` | Erase marks. Only when the user asks. |
 | `draw` | `action: "start"` and `kind` (`box`, `polygon`, `line`) hands the pane to the user. `action: "add"` draws your own shape from `points`. |
-| `list` | Stored marks for this chat. |
-| `delete` | One stored mark. `id` required. |
+| `list` | Stored marks for this chat. `detail: "full"` includes title, description, images, links, and tags. |
+| `delete` | One mark (`id`) or several (`ids`). |
+| `update` | Patch `label`, `description_md`, `images`, `links`, or `tags` on one pin. No redraw. |
 | `filter` | Category, rating, open-now chips. `action`: `set`, `state`, `expand`. |
 | `drawer` | Open or close one pin drawer (`op=drawer`). `action`: `open`, `close`, `state`. Pick the pin by `id`, `label`, or lat/lon. |
 | `research` | Fill drawers (`op=research`) from Wikipedia, Wikidata, Commons, OSM tags, and a site's meta description. `mode`: `light` or `full`. Never invent facts. This plugin cannot call Hermes `web_search`. Pass verified snippets as `agent_notes`. |
@@ -100,10 +101,12 @@ Pins and drawings on the open pane.
 | --- | --- |
 | `measure` | `op=measure`. Argument `measure` is `distance`, `area`, or `route` (not a second `op`). Pass `points`, `pins`, or `use_drawn: "latest"`. `mode` for a route is `walk`, `bike`, or `drive`. |
 | `isochrone` | `op=isochrone`. Minutes of reach. `minutes: [15]`, `mode: "walk"`. If `approximate` is true, say so. If `routing_unavailable`, say so. Do not draw a straight-line circle. |
-| `fly_route` | Dolly along a route already drawn. This is not a camera fly. A dense waypoint list is thinned and sent in chunks of about 300 points. `lighten` defaults to true: Street Level turns off and the globe uses a coarse tile setting until the dolly ends, then both are restored. Pass `lighten: false` to keep the current Street Level and quality. |
+| `fly_route` | Dolly along a route already drawn. This is not a camera fly. Pass `id` for an exact saved route, or `points` / `waypoints` / `stops` for coordinates. A label matches exactly before a fuzzy match, and a fuzzy match must hit one route. A dense waypoint list is thinned and sent in chunks of about 300 points. `lighten` defaults to true: Street Level turns off and the globe uses a coarse tile setting until the dolly ends, then both are restored. Pass `lighten: false` to keep the current Street Level and quality. |
 | `street_walk` | Walk a saved route in Street View. Argument `walk` is `start`, `pause`, `resume`, `step`, `stop`, or `state` (not a second `op`). Pass `label` of a drawn route, or `points` / `waypoints` / `stops`. Default spacing is about 75 m (`stepM`, 20–250). `dwellS` is seconds at each panorama (default 4). `provider` is `google` or `mapillary`. `state` reports progress. A reload interrupts the walk; `walk=resume` continues it. |
+| `street_level` | Open one panorama. Argument `street` is `at`, `next`, `prev`, or `route` (not a second `op`). `at` takes `lat`/`lon`. `next` and `prev` step from the last panorama. `route` uses the same route resolution as `fly_route`. |
+| `itinerary` | Build a `drive` or `walk` route through `pins` (ids or `{lat, lon}`), draw it as one mark, and optionally set `dolly` or `streetStops`. |
 | `compare` | `op=compare`. Imagery swipe. `left` / `right`: `current`, `osm`, or `wayback:YYYY[-MM[-DD]]`. `action: "list_dates"` lists Wayback releases. `action: "stop"` ends it. Map stacks cannot be split. |
-| `timeline` | Time slider. Argument `timeline` is `set`, `play`, `step`, `stop`, `state`, or `list_dates` (not a second `op`). `mode`: `wayback` (Esri Wayback releases over the current view, `transition` `swipe` or `fade`) or `events` (USGS quakes and NASA FIRMS fires, plus stored watch alerts, as pins that appear when the playhead reaches them). `from` / `to` / `date` are `YYYY-MM-DD`. Events default to the last 7 days. `area` is `[south, west, north, east]` or omit it to use the open view. `feeds`: `earthquakes` and/or `fires`. `by` on `step` is `1` or `-1`. `state` reads the date and what is visible. Wayback tiles are for viewing only. Do not sample photorealistic 3D tiles. The slider is saved with the scene and with investigations. |
+| `timeline` | Time slider. Argument `timeline` is `set`, `play`, `step`, `stop`, `state`, or `list_dates` (not a second `op`). `mode`: `wayback` (Esri Wayback releases over the current view, `transition` `swipe` or `fade`) or `events` (USGS quakes and NASA FIRMS fires, plus stored watch alerts, as pins that appear when the playhead reaches them). `from` / `to` / `date` are `YYYY-MM-DD`. Events default to the last 7 days. `area` is `{south, west, north, east}`, `[south, west, north, east]`, or `{place, radius_km}`. `feeds`: `earthquakes` and/or `fires`. `by` on `step` is `1` or `-1`. `state` reads the date and what is visible. Wayback tiles are for viewing only. Do not sample photorealistic 3D tiles. The slider is saved with the scene and with investigations. |
 
 ## godseye_track
 
@@ -130,7 +133,7 @@ Named investigations, the live scene, tours, and export. Files land under `plugi
 | `report` | HTML and Markdown. `capture: true` asks the pane for a map image. |
 | `export` | `op=export`. GeoJSON (RFC 7946, longitude then latitude) and KML. `format`: `geojson`, `kml`, `both` (default), or `pack`. `pack` adds a zip of the GeoJSON, the KML, the Markdown report, and saved screenshots. Omit `name` to export the current scene. Do not embed photorealistic tile imagery. |
 | `restore` | Re-apply this chat's scene. Reopening the pane does this on its own. |
-| `tour` | `stops` required. Returns a `jobId` immediately. |
+| `tour` | `stops` required, or the same `source` / `records` row schema as annotate. Returns a `jobId` immediately. |
 | `tour_status` | `jobId` required. |
 | `tour_stop` | Cancel a tour. |
 | `playback` | Cinematic scene. `action`: `list`, `play`, `stop`, `next`, `status`. Not an investigation. |
@@ -141,7 +144,7 @@ Only when the user asks. Feeds: `earthquakes`, `fires`, `flights`, `ships`, `poi
 
 | op | Use |
 | --- | --- |
-| `create` | `area` and `feeds`. Area is a bbox, a polygon, a center plus radius, or `{view: true}`. |
+| `create` | `area` and `feeds`. Area is `{south, west, north, east}`, a bbox list, `{place, radius_km}`, a polygon, a center plus radius, or `{view: true}`. |
 | `list` | `check` set to an id runs that watch now. There is no separate check op. |
 | `pause` | `id` required. |
 | `delete` | `id` required. `confirm: true` only after the user agrees. |
@@ -154,18 +157,21 @@ When the turn has "[EOH watch alert]" lines, tell the user. The new items are al
 | --- | --- |
 | `hud` | `visible`: `on`, `off`, `auto`. `layout`: `tactical`, `minimal`, `cyber`. |
 | `summary` | One caption from the Hermes model. `context` is locale, place, altitude, and layer counts. |
+| `pane` | PNG of the open pane, including the drawer, pins, and imagery. |
 
 ## godseye_admin
 
 | op | Use |
 | --- | --- |
-| `doctor` | Read-only health check. It installs nothing. |
+| `doctor` | Health check. It installs nothing. `probe: true` or `detail: "full"` makes one cheap call per keyed provider and returns `ok`, `invalid`, `quota`, or `unreachable`. A TomTom row says to reload the pane so a new key is picked up. |
+| `batch` | `calls` is `[{tool, args}, ...]`, at most 16. `stop_on_error` stops after the first failure. One result per call. |
+| `keys` | `action: "install"` and `file` set to a path. The file is `KEY=VALUE`. Values are never accepted as arguments and never come back in the result. |
 | `status` | Control room: app, relay, panes, WebGL, and feeds. Read-only. Missing keys are names only. |
 | `app_start` | Start the God's Eye View app. Linux only. User-triggered. Waits for HTTP 200. |
 | `app_stop` | Stop that app. Refuses when the port belongs to another process. |
 | `app_restart` | Restart that app. Same ownership rules. An open socket is not ready. |
 | `rebuild` | Rebuild `dist/panel` and reload open panes. A current build reads `config.json` and does not need this for a key change. |
-| `reload` | Re-fetch the panel into the open pane. |
+| `reload` | Re-fetch the panel into the open pane. The result includes `unsavedMarks`. Pass `confirm: true` only after the user agrees to drop marks that could not be snapshotted. |
 | `preview` | One desktop preview tab. `url` to open. `action`: `swap` or `close`. |
 
 ## Rules

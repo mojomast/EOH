@@ -42,24 +42,14 @@ def _route_specs(annotations) -> list[dict]:
 
 
 def resolve_points(args: dict | None, annotations) -> tuple[list, str | None]:
-    """Points from the call, else the newest saved route (optional label match)."""
-    from .routegeom import as_points
-    args = args or {}
-    label = str(args.get("label") or "").strip() or None
-    direct = as_points(args.get("points") or args.get("waypoints") or args.get("stops"))
-    if len(direct) >= 2:
-        return direct, label
-    specs = _route_specs(annotations)
-    if label:
-        needle = label.lower()
-        matched = [spec for spec in specs if needle in str(spec.get("label") or "").lower()]
-        if matched:
-            specs = matched
-    if not specs:
-        return [], label
-    spec = specs[-1]
-    return as_points(spec.get("points") or spec.get("waypoints") or spec.get("stops")), (
-        label or (str(spec.get("label")).strip() if spec.get("label") else None))
+    """Points from the call, else one saved route.
+
+    An id matches one route. A label matches exactly before a unique fuzzy match.
+    Two fuzzy hits are not a route: the dolly must not pick the wrong line.
+    """
+    from .itinerary import choose_route
+    points, label, _err = choose_route(args, annotations)
+    return points, label
 
 
 def plan(points, *, step_m: float | None = None, epsilon_m: float | None = None,
@@ -158,7 +148,10 @@ def run(args: dict | None, session_id: str | None = None, fanout: bool = False, 
 
     caller = call or _default_call
     _clear_halt(session_id)
-    points, label = resolve_points(args, _annotations(relay, session_id))
+    from .itinerary import choose_route
+    points, label, choice_err = choose_route(args, _annotations(relay, session_id))
+    if choice_err:
+        return choice_err
     planned = plan(points) if len(points) >= 2 else None
     use_chunks = bool(planned and (planned["dense"] or planned["chunkCount"] > 1 or planned["pointsOut"] > CHUNK_POINTS))
     was_on = _street_on(relay, session_id) if lighten else False

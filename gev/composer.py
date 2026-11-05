@@ -633,6 +633,7 @@ CLIENT_KEYS = {  # baked into dist/panel at build time (build/vite.js define)
 SERVER_KEYS = {
     "AISSTREAM_API_KEY": "AISStream live vessels",
     "FIRMS_MAP_KEY": "NASA FIRMS active fires (also accepted as FIRMS_API_KEY)",
+    "TOMTOM_API_KEY": "TomTom traffic flow",
 }
 SERVER_KEY_ALIASES = {"FIRMS_MAP_KEY": ("FIRMS_API_KEY", "FIRMS_KEY", "NASA_FIRMS_KEY")}
 SAFE_ION_SCOPES = {"assets:read", "assets:list"}

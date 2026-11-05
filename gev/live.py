@@ -721,13 +721,37 @@ class Relay:
             return {"ok": True, "timeline": public_timeline(tl), "visible": visible_at(tl) if tl else None,
                     "stored": tl}
         if op == "list":
-            return self.scenes.list(key)
+            return self.scenes.list(key, full=bool(body.get("full")))
+        if op == "update":
+            fields = body.get("fields") if isinstance(body.get("fields"), dict) else {}
+            ann_id = str(body.get("id") or "")
+            if not self.scenes.update_annotation(key, ann_id, fields):
+                return {"ok": False, "error": "not_found", "message": f"No annotation {ann_id!r} in this scene.",
+                        "fix": "Use an id from godseye_annotate op=list detail=full."}
+            out = {"ok": True, "updated": ann_id, "redraw": False}
+            if targets:
+                step = self.submit("hermes_pin_update", {"id": ann_id, **fields}, session_id=sid,
+                                   pane_id=targets[0].id, record=False)
+                out["pane"] = targets[0].id
+                out["patched"] = bool(isinstance(step, dict) and step.get("ok"))
+            return out
         if op == "delete":
-            if not self.scenes.delete(key, str(body.get("id") or "")):
+            ids = []
+            if body.get("id"):
+                ids.append(str(body.get("id")))
+            if isinstance(body.get("ids"), list):
+                ids.extend(str(item) for item in body["ids"] if item)
+            ids = list(dict.fromkeys(ids))
+            if not ids:
+                return {"ok": False, "error": "bad_args", "message": "delete needs id or ids.",
+                        "fix": "Pass id, or ids as a list of annotation ids."}
+            gone = self.scenes.delete_many(key, ids)
+            if not gone:
                 listing = self.scenes.list(key)
-                return {"ok": False, "error": "not_found", "message": f"No annotation {body.get('id')!r} in this scene.",
+                return {"ok": False, "error": "not_found", "message": f"No annotation {ids[0]!r} in this scene.",
                         "annotations": listing["annotations"]}
-            out = {"ok": True, "deleted": body.get("id"), "remaining": len(self.scenes.list(key)["annotations"])}
+            out = {"ok": True, "deleted": gone[0] if len(gone) == 1 else gone,
+                   "removed": len(gone), "remaining": len(self.scenes.list(key)["annotations"])}
             if targets:  # redraw what is left on the pane (no geocoding: stored coordinates)
                 steps = [self.submit(n, a, session_id=sid, pane_id=targets[0].id, record=False)
                          for n, a in self.scenes.restore_commands(key, redraw_only=True)]
