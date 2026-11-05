@@ -1,0 +1,428 @@
+"""Composite features on top of the data tools and the live globe: brief-and-show, home view,
+share links, the doctor health check, and the /gev slash command."""
+from __future__ import annotations
+
+import json
+import re
+import shlex
+import subprocess
+import time
+import urllib.request
+from pathlib import Path
+
+from . import config, home, policy
+
+_ROOT = Path(__file__).resolve().parent.parent
+_SHARE_SCRIPT = _ROOT / "scripts" / "share_link.mjs"
+MILITARY = re.compile(r"\b(military|milair|base|bases|navy|naval|air ?force|army|defen[cs]e|warships?|fighters?|"
+                      r"carrier|installations?)\b", re.I)
+# Fallback coordinates when upstream geocoding is unavailable (fly_to_location preset cities and a few more).
+PLACES = {"tokyo": (35.6812, 139.7671), "london": (51.5074, -0.1278), "paris": (48.8566, 2.3522),
+          "new york": (40.7128, -74.006), "nyc": (40.7128, -74.006), "san francisco": (37.7749, -122.4194),
+          "sf": (37.7749, -122.4194), "austin": (30.2672, -97.7431), "dubai": (25.2048, 55.2708),
+          "washington": (38.9072, -77.0369), "dc": (38.9072, -77.0369), "san diego": (32.7157, -117.1611),
+          "los angeles": (34.0522, -118.2437), "taiwan": (23.6978, 120.9605), "singapore": (1.3521, 103.8198),
+          "sydney": (-33.8688, 151.2093), "montreal": (45.5019, -73.5674), "toronto": (43.6532, -79.3832),
+          "honolulu": (21.3069, -157.8583), "norfolk": (36.8508, -76.2859)}
+
+
+def _token() -> str:
+    from . import bridge
+    return bridge.ensure_token()
+
+
+def live_call(name: str, args: dict | None = None, session_id: str | None = None, fanout: bool = False,
+              pane_id: str | None = None) -> dict:
+    from . import live
+    body = {"name": name, "args": args or {}}
+    if session_id:
+        body["session_id"] = str(session_id)
+    if pane_id:
+        body["pane_id"] = pane_id
+    if fanout:
+        body["fanout"] = True
+    return live.call("/cmd", _token(), body)
+
+
+def relay_status() -> dict:
+    from . import live
+    out = live.call("/status", _token(), None, 5)
+    return out if "paneOpen" in out else {"paneOpen": False, "panes": [], "error": out.get("error"),
+                                          "message": out.get("message")}
+
+
+def mcp_call(name: str, args: dict) -> dict:
+    from . import mcp_client
+    return mcp_client.client().call_tool(name, args)
+
+
+def _structured(result: dict) -> dict:
+    sc = (result or {}).get("structuredContent")
+    if isinstance(sc, dict):
+        return sc
+    for c in (result or {}).get("content", []):
+        try:
+            data = json.loads(c.get("text", ""))
+            if isinstance(data, dict):
+                return data
+        except (ValueError, TypeError):
+            continue
+    return {}
+
+
+def _text(result: dict) -> str:
+    parts = [c.get("text", "") for c in (result or {}).get("content", []) if c.get("type") == "text"]
+    return parts[0] if parts else ""
+
+
+def hits_from(data: dict, top_n: int = 5) -> list[dict]:
+    """Rows with coordinates across every brief section, nearest first."""
+    rows = []
+    for key, section in (data.get("sections") or {}).items():
+        for row in ((section or {}).get("data") or {}).get("rows") or []:
+            lat, lon = row.get("lat", row.get("latitude")), row.get("lon", row.get("longitude"))
+            if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                continue
+            label = next((str(row[k]).strip(". ") for k in ("callsign", "name", "title", "place", "label", "id")
+                          if row.get(k)), key)
+            rows.append({"section": key, "label": label[:40], "lat": lat, "lon": lon,
+                         "distance_km": row.get("distance_km")})
+    rows.sort(key=lambda r: (r["distance_km"] is None, r["distance_km"] or 0))
+    return rows[:max(0, int(top_n))]
+
+
+def caption_for(label: str, data: dict) -> str:
+    bits = []
+    for key, section in (data.get("sections") or {}).items():
+        d = (section or {}).get("data") or {}
+        if isinstance(d.get("total"), int):
+            bits.append(f"{d['total']} {key.replace('_', ' ')}")
+        elif key == "weather" and (d.get("weather") or {}).get("conditions"):
+            w = d["weather"]
+            temp = f" {round(w['temperature_c'])}°C" if isinstance(w.get("temperature_c"), (int, float)) else ""
+            bits.append(f"{w['conditions']}{temp}")
+    text = f"{label}: " + " · ".join(bits) if bits else label
+    return text[:120]
+
+
+def _coords(place: str):
+    return PLACES.get((place or "").strip().lower())
+
+
+def brief_and_show(args: dict, session_id: str | None = None, live=None, mcp=None) -> dict:
+    live, mcp = live or live_call, mcp or mcp_call
+    place = str(args.get("place") or "").strip()
+    question = str(args.get("question") or "")
+    top_n = max(0, min(24, int(args.get("top_n", 5))))
+    lat, lon = args.get("lat"), args.get("lon")
+    reason = policy.refuse_reason({"place": place, "question": question})
+    if reason:
+        return {"error": reason}
+    if not place and lat is None:
+        return {"error": "Give a place (or lat and lon)."}
+    military = args.get("military")
+    if military is None:
+        military = bool(MILITARY.search(f"{place} {question}"))
+    tool = "military_awareness" if military else "situation_brief"
+    radius = args.get("radius_km")
+
+    def request(where: dict) -> dict:
+        if tool == "military_awareness":
+            a = {"location": where}
+            if radius:
+                a["radius_km"] = min(250, float(radius))
+            return mcp(tool, a)
+        area = dict(where)
+        if "lat" in area:
+            area["radius_km"] = min(2000, float(radius or 100))
+        return mcp(tool, {"area": area})
+
+    notes = []
+    where = {"lat": float(lat), "lon": float(lon)} if lat is not None and lon is not None else {"place": place}
+    try:
+        result = request(where)
+    except Exception as exc:
+        result = {"isError": True, "content": [{"type": "text", "text": f"God's Eye View call failed: {exc}"}]}
+    if result.get("isError") and "place" in where:  # upstream geocoder down: retry with coordinates
+        pt = _coords(place)
+        if not pt:  # let the open globe geocode it
+            flown = live("fly_to_location", {"query": place, "waitForArrival": True}, session_id)
+            if flown.get("ok"):
+                cam = (_structured_live(live("get_current_view_state", {}, session_id)).get("camera") or {})
+                if isinstance(cam.get("latitude"), (int, float)):
+                    pt = (cam["latitude"], cam["longitude"])
+        if pt:
+            notes.append("place lookup was unavailable; used coordinates for " + place)
+            result = request({"lat": pt[0], "lon": pt[1]})
+    if result.get("isError"):
+        return {"error": _text(result) or "brief failed", "tool": tool}
+    data = _structured(result)
+    brief = _text(result)
+    view = data.get("view") or {}
+    cam = view.get("camera") or {}
+    hits = hits_from(data, top_n)
+    label = place or f"{cam.get('lat')}, {cam.get('lon')}"
+    caption = caption_for(label, data)
+    shown = {"globe_open": False, "flew": False, "layers": [], "annotated": 0, "caption": None}
+    if isinstance(cam.get("lat"), (int, float)):
+        fly = live("fly_to_location", {"latitude": cam["lat"], "longitude": cam["lon"],
+                                        "rangeM": max(100, min(20_000_000, cam.get("altitude_m") or 200_000)),
+                                        "waitForArrival": True}, session_id)
+        if fly.get("error") in ("no_pane", "relay_unavailable"):
+            shown["message"] = ("The God's Eye View globe isn't open, so nothing was shown. Open the God's Eye "
+                                "View pane in Hermes Desktop or the Webapp to see it.")
+        elif fly.get("error") == "pane_busy":
+            shown["message"] = fly.get("message")
+        else:
+            shown.update(globe_open=True, flew=bool(fly.get("ok")), pane=fly.get("pane"))
+            errors = []
+
+            def note(step, r):
+                if not r.get("ok"):
+                    errors.append(f"{step}: {r.get('message') or r.get('error') or (r.get('result') or {}).get('error') or 'failed'}"[:160])
+                return bool(r.get("ok"))
+            if not fly.get("ok"):
+                note("fly", fly)
+            for layer in view.get("layers") or []:
+                r = live("set_layer_visibility", {"layerId": layer, "enabled": True}, session_id)
+                if note(f"layer {layer}", r):
+                    shown["layers"].append(layer)
+            if hits:
+                marks = [{"type": "pin", "latitude": h["lat"], "longitude": h["lon"], "label": h["label"],
+                          "color": "red" if military else "amber"} for h in hits]
+                r = live("annotate_map", {"annotations": marks}, session_id)
+                shown["annotated"] = ((r.get("result") or {}).get("drawn") or len(marks)) if note("annotate", r) else 0
+            r = live("hermes_caption", {"text": caption}, session_id)
+            shown["caption"] = caption if note("caption", r) else None
+            if errors:
+                shown["errors"] = errors
+    out = {"tool": tool, "brief": brief, "hits": hits, "shown": shown}
+    if notes:
+        out["notes"] = notes
+    return out
+
+
+def _structured_live(res: dict) -> dict:
+    r = (res or {}).get("result")
+    return r if isinstance(r, dict) else {}
+
+
+# -- home view -----------------------------------------------------------------------------------
+def view_from_state(state: dict) -> dict:
+    cam = state.get("camera") or {}
+    layers = [l.get("id") for l in state.get("layers") or [] if isinstance(l, dict) and l.get("enabled") is not False and l.get("id")]
+    return {"lat": cam.get("latitude"), "lon": cam.get("longitude"), "altitude_m": cam.get("heightM"),
+            "heading": cam.get("heading") if isinstance(cam.get("heading"), (int, float)) else cam.get("headingDeg"),
+            "pitch": cam.get("pitch") if isinstance(cam.get("pitch"), (int, float)) else cam.get("pitchDeg"),
+            "style": state.get("style"), "layers": layers}
+
+
+def go_home(session_id: str | None = None, live=None) -> dict:
+    live = live or live_call
+    v = home.get_or_default()
+    fly = live("fly_to_location", {"latitude": v["lat"], "longitude": v["lon"],
+                                    "rangeM": max(100, min(20_000_000, v["altitude_m"])), "waitForArrival": True}, session_id)
+    if not fly.get("ok"):
+        return {"ok": False, "home": v, "error": fly.get("error"), "message": fly.get("message")}
+    live("set_visual_style", {"style": v["style"]}, session_id)
+    for layer in v["layers"]:
+        live("set_layer_visibility", {"layerId": layer, "enabled": True}, session_id)
+    return {"ok": True, "home": v, "pane": fly.get("pane")}
+
+
+def set_home(args: dict, session_id: str | None = None, live=None) -> dict:
+    live = live or live_call
+    args = dict(args or {})
+    if args.get("lat") is None or args.get("lon") is None:  # take the current live view
+        st = live("get_current_view_state", {}, session_id)
+        if not st.get("ok"):
+            return {"ok": False, "error": st.get("error"), "message": st.get("message") or
+                    "Give lat and lon, or open the God's Eye View pane to save the current view."}
+        cur = view_from_state(_structured_live(st))
+        args = {**cur, **{k: v for k, v in args.items() if v not in (None, "", [])}}
+    try:
+        return {"ok": True, "home": home.set(args)}
+    except (TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"invalid home view: {exc}"}
+
+
+# -- share links ---------------------------------------------------------------------------------
+def long_link(base: str, v: dict) -> str:
+    q = (f"v=2&lat={v['lat']:.4f}&lon={v['lon']:.4f}&alt={round(v['alt'])}"
+         f"&heading={round(v.get('heading') or 0)}&pitch={round(v.get('pitch') if v.get('pitch') is not None else -90)}&roll=0")
+    if v.get("style"):
+        q += f"&style={v['style']}"
+    return base.rstrip("/") + "/#" + q
+
+
+def share_link(session_id: str | None = None, live=None, encoder=None) -> dict:
+    live = live or live_call
+    st = live("get_current_view_state", {}, session_id)
+    if not st.get("ok"):
+        return {"ok": False, "error": st.get("error"), "message": st.get("message")}
+    cur = view_from_state(_structured_live(st))
+    if not isinstance(cur.get("lat"), (int, float)):
+        return {"ok": False, "error": "no camera in the current view state"}
+    v = {"lat": cur["lat"], "lon": cur["lon"], "alt": cur.get("altitude_m") or 1_000_000,
+         "heading": cur.get("heading"), "pitch": cur.get("pitch"), "style": cur.get("style"),
+         "layers": cur.get("layers"), "base": config.public_url()}
+    try:
+        out = (encoder or encode_share)(v)
+        return {"ok": True, "url": out["url"], "method": "share-code", "view": {k: v[k] for k in ("lat", "lon", "alt", "style", "layers")}}
+    except Exception as exc:
+        return {"ok": True, "url": long_link(v["base"], v), "method": "camera-hash",
+                "note": f"share codec unavailable ({type(exc).__name__}); built from the camera state"}
+
+
+def encode_share(v: dict) -> dict:
+    node, root = config.node_bin(), config.checkout()
+    if not node or not root:
+        raise RuntimeError("checkout or node missing")
+    out = subprocess.run([node, str(_SHARE_SCRIPT), str(root)], input=json.dumps(v), capture_output=True,
+                         text=True, timeout=20, check=True)
+    return json.loads(out.stdout)
+
+
+# -- doctor --------------------------------------------------------------------------------------
+def doctor() -> dict:
+    checks = []
+
+    def add(name, ok, detail, fix=""):
+        checks.append({"check": name, "ok": bool(ok), "detail": detail, **({"fix": fix} if not ok and fix else {})})
+
+    node = config.node_bin()
+    ver = ""
+    if node:
+        try:
+            ver = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=5).stdout.strip()
+        except Exception:
+            ver = ""
+    major = int(re.sub(r"\D.*", "", ver.lstrip("v")) or 0) if ver else 0
+    add("node", major >= 24, f"Node {ver or 'not found'}",
+        "Install Node 24 (e.g. into ~/.local/node24) or set GODSEYE_NODE to a Node 24 binary.")
+    root = config.checkout()
+    add("upstream checkout", root is not None, "found" if root else "not found",
+        "Clone God's Eye View to ~/gods-eye-view (or set GODSEYE_HOME) and run `npm install` there.")
+    up = False
+    try:
+        with urllib.request.urlopen(config.api_base() + "/", timeout=3) as r:
+            up = r.status == 200
+    except Exception:
+        pass
+    add("app reachable", up, f"{config.api_base()} {'answers' if up else 'not answering'}",
+        "Start it: `cd ~/gods-eye-view && npm run dev` (port 4173), or set GODSEYE_API_BASE.")
+    p = config.patched()
+    add("patch #1571 HUD endpoint", p.get("hud"), "applied" if p.get("hud") else "missing",
+        "Apply patches/0001-hud-summary-compatible-endpoint.patch to the checkout (git apply).")
+    add("patch #1572 embed full UI", p.get("fullUi"), "applied" if p.get("fullUi") else "missing",
+        "Apply patches/0002-embed-full-ui.patch to the checkout; without it the pane shows the globe only.")
+    st = relay_status()
+    relay_ok = "error" not in st
+    add("live relay", relay_ok, "running" if relay_ok else (st.get("message") or "not running"),
+        "Restart the Hermes dashboard/gateway with the godseye plugin enabled (the relay runs in its backend).")
+    panes = [x for x in st.get("panes", []) if x.get("open")]
+    age = min((x["lastPollAgeS"] for x in panes), default=None)
+    add("pane connected", bool(panes), f"{len(panes)} open, last poll {age}s ago" if panes else "no pane polling",
+        "Open the God's Eye View pane in Hermes Desktop or the Webapp and keep it visible.")
+    add("public URL", True, "GODSEYE_PUBLIC_URL set" if config.public_url() != config.api_base()
+        else "using the API base for links (set GODSEYE_PUBLIC_URL for links other devices can open)")
+    return {"ok": all(c["ok"] for c in checks), "checks": checks, "panes": st.get("panes", [])}
+
+
+def format_doctor(d: dict) -> str:
+    lines = [("✅ " if d["ok"] else "⚠️ ") + "God's Eye View doctor"]
+    for c in d["checks"]:
+        lines.append(f"{'✓' if c['ok'] else '✗'} {c['check']}: {c['detail']}" + (f"\n    fix: {c['fix']}" if c.get("fix") else ""))
+    return "\n".join(lines)
+
+
+# -- /gev ----------------------------------------------------------------------------------------
+HELP = ("/gev fly <place> · /gev layers [on|off <names>] · /gev status · /gev brief <place> · "
+        "/gev home [set] · /gev share · /gev doctor")
+
+
+def _msg(res: dict, ok: str) -> str:
+    return ok if res.get("ok") else f"⚠️ {res.get('message') or res.get('error') or 'failed'}"
+
+
+def gev_command(raw: str, live=None, mcp=None) -> str:
+    live = live or live_call
+    try:
+        parts = shlex.split(raw or "")
+    except ValueError:
+        parts = (raw or "").split()
+    if not parts or parts[0] in ("help", "-h", "--help"):
+        return HELP
+    cmd, rest = parts[0].lower(), parts[1:]
+    if policy.refuse_reason({"q": " ".join(rest)}):
+        return policy.refuse_reason({"q": " ".join(rest)})
+    if cmd == "fly":
+        if not rest:
+            return "Usage: /gev fly <place>"
+        place = " ".join(rest)
+        return _msg(live("fly_to_location", {"query": place}), f"🌐 Flying to {place}.")
+    if cmd == "layers":
+        if rest and rest[0].lower() in ("on", "off"):
+            on = rest[0].lower() == "on"
+            done = []
+            for name in rest[1:]:
+                r = live("set_layer_visibility", {"layerId": name, "enabled": on})
+                if not r.get("ok"):
+                    return _msg(r, "") + f" ({name})"
+                done.append(name)
+            return f"Layers {'on' if on else 'off'}: {', '.join(done) or '(none given)'}"
+        st = live("get_current_view_state", {})
+        if not st.get("ok"):
+            return _msg(st, "")
+        layers = view_from_state(_structured_live(st))["layers"]
+        return "Layers on: " + (", ".join(layers) or "none")
+    if cmd == "status":
+        st = relay_status()
+        panes = [p for p in st.get("panes", []) if p.get("open")]
+        lines = [f"Panes open: {len(panes)}"] + [
+            f"  {p['id']}: last poll {p['lastPollAgeS']}s ago{' (busy)' if p.get('busy') else ''}" for p in panes]
+        if panes:
+            vs = live("get_current_view_state", {})
+            if vs.get("ok"):
+                v = view_from_state(_structured_live(vs))
+                if isinstance(v.get("lat"), (int, float)):
+                    lines.append(f"View: {v['lat']:.3f}, {v['lon']:.3f} at {round((v.get('altitude_m') or 0) / 1000)} km, "
+                                 f"style {v.get('style') or 'normal'}, layers {', '.join(v['layers']) or 'none'}")
+        else:
+            lines.append(st.get("message") or "Open the God's Eye View pane to drive the live globe.")
+        d = doctor()
+        bad = [c["check"] for c in d["checks"] if not c["ok"]]
+        lines.append("Health: all checks pass" if not bad else "Health: needs attention: " + ", ".join(bad) + " (run /gev doctor)")
+        return "\n".join(lines)
+    if cmd == "brief":
+        if not rest:
+            return "Usage: /gev brief <place>"
+        out = brief_and_show({"place": " ".join(rest)}, live=live, mcp=mcp)
+        if out.get("error"):
+            return f"⚠️ {out['error']}"
+        s = out["shown"]
+        tail = (f"\n🌐 Shown on the globe: {len(s['layers'])} layers, {s['annotated']} marks."
+                if s.get("globe_open") else f"\n{s.get('message', '')}")
+        return out["brief"] + tail
+    if cmd == "home":
+        if rest and rest[0].lower() == "set":
+            nums = []
+            for x in rest[1:]:
+                try:
+                    nums.append(float(x))
+                except ValueError:
+                    pass
+            args = dict(zip(("lat", "lon", "altitude_m"), nums))
+            r = set_home(args, live=live)
+            if r.get("ok"):
+                h = r["home"]
+                return f"🏠 Home saved: {h['lat']}, {h['lon']} at {round(h['altitude_m'] / 1000)} km, style {h['style']}."
+            return _msg(r, "")
+        r = go_home(live=live)
+        return _msg(r, "🏠 Going home.")
+    if cmd == "share":
+        r = share_link(live=live)
+        return r["url"] if r.get("ok") else _msg(r, "")
+    if cmd == "doctor":
+        return format_doctor(doctor())
+    return f"Unknown subcommand '{cmd}'. " + HELP

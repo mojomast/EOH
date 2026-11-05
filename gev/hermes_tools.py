@@ -50,21 +50,33 @@ SYSTEM_PROMPT = (
     "godseye_live_fly_to_location, _set_layer_visibility, _set_visual_style (surveillance = NVG/night vision, thermal, etc.)"
     ", _annotate_map and _move_camera change it. Read the view state before answering "
     "questions about the screen. If a live tool reports no pane, tell the user to open the God's "
-    "Eye View pane; the godseye_* data tools work without it. " + policy.POLICY)
+    "Eye View pane; the godseye_* data tools work without it. godseye_brief_and_show briefs a place and "
+    "shows it in one call; godseye_doctor diagnoses setup. " + policy.POLICY)
 
 
 def load_live_catalog() -> list[dict]:
     return json.loads(LIVE_SNAPSHOT.read_text())
 
 
+FANOUT_PROP = {"type": "boolean", "description": "Send to EVERY open God's Eye View pane instead of only the "
+               "pane next to this chat (default false; only when the user asks for all panes)."}
+
+
+def live_schema(params: dict | None) -> dict:
+    schema = json.loads(json.dumps(params or {"type": "object", "properties": {}}))
+    schema.setdefault("properties", {})["fanout"] = FANOUT_PROP
+    return schema
+
+
 def make_live_handler(name: str):
-    def handler(args: dict, **_kw) -> str:
-        from . import bridge, live
-        args = args or {}
+    def handler(args: dict, **kw) -> str:
+        from . import composer
+        args = dict(args or {})
+        fanout = bool(args.pop("fanout", False))
         reason = policy.refuse_reason(args)
         if reason:
             return json.dumps({"error": reason})
-        out = live.call("/cmd", bridge.ensure_token(), {"name": name, "args": args})
+        out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
         text = json.dumps(out)
         return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
     return handler
@@ -77,12 +89,13 @@ def register_tools(ctx) -> None:
         ctx.register_tool(
             name=name, toolset=TOOLSET,
             schema={"name": name, "description": desc[:4000],
-                    "parameters": tool.get("parameters") or {"type": "object", "properties": {}}},
+                    "parameters": live_schema(tool.get("parameters"))},
             handler=make_live_handler(tool["name"]), description=f"Live globe: {tool['name']}", emoji="🌐")
     try:
         ctx.register_system_prompt_section("godseye.live-globe", SYSTEM_PROMPT, max_chars=1500)
     except Exception:
         pass
+    register_extras(ctx)
 
     for tool in load_catalog():
         name = f"godseye_{tool['name']}"
@@ -108,3 +121,107 @@ def register_tools(ctx) -> None:
                 "parameters": {"type": "object", "properties": {"context": {
                     "type": "object", "description": "HUD context: locale, place, altitude, layer counts."}}}},
         handler=hud_handler, check_fn=_available, description="HUD summary via Hermes", emoji="🛰️")
+
+
+SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "godseye-analyst"
+
+EXTRA_TOOLS = {
+    "godseye_brief_and_show": (
+        "Brief a place AND show it on the live globe in one step: runs situation_brief (or "
+        "military_awareness when the question is about military activity), flies the open God's Eye View "
+        "pane there, turns on the brief's layers, pins the top hits and sets a caption line. Returns the "
+        "brief text plus what was shown; if no pane is open it still returns the brief and says so.",
+        {"type": "object", "properties": {
+            "place": {"type": "string", "description": "Place name, e.g. \"Tokyo\" or \"Strait of Hormuz\"."},
+            "question": {"type": "string", "description": "The user's question (used to pick military_awareness)."},
+            "lat": {"type": "number", "minimum": -90, "maximum": 90},
+            "lon": {"type": "number", "minimum": -180, "maximum": 180},
+            "radius_km": {"type": "number", "minimum": 1, "maximum": 2000},
+            "top_n": {"type": "integer", "minimum": 0, "maximum": 24, "default": 5},
+            "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."}}},
+        "🛰️"),
+    "godseye_doctor": (
+        "Health check for God's Eye View in Hermes: Node 24, upstream checkout, app on :4173, upstream "
+        "patches, live relay, connected panes and last poll age, each with fix text. Read-only.",
+        {"type": "object", "properties": {}}, "🩺"),
+    "godseye_share_link": (
+        "A God's Eye View share link for the current live view (camera, style, layers), on the user's "
+        "public God's Eye View URL. Needs the pane open.",
+        {"type": "object", "properties": {}}, "🔗"),
+    "godseye_home": (
+        "Saved home view of the live globe: action=go flies home, action=set saves the current view (or "
+        "the given lat/lon/altitude_m/style/layers), action=get reads it. The pane also opens at home.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["go", "set", "get"], "default": "go"},
+            "lat": {"type": "number", "minimum": -90, "maximum": 90},
+            "lon": {"type": "number", "minimum": -180, "maximum": 180},
+            "altitude_m": {"type": "number", "minimum": 100, "maximum": 40000000},
+            "style": {"type": "string", "enum": ["normal", "retro", "surveillance", "thermal", "anime", "noir"]},
+            "layers": {"type": "array", "items": {"type": "string"}}}},
+        "🏠"),
+    "godseye_live_panes": (
+        "List open God's Eye View panes (id, bound chat sessions, seconds since last poll, busy). Tells "
+        "'no pane open' apart from 'pane busy'.",
+        {"type": "object", "properties": {}}, "🪟"),
+}
+
+
+def extra_handler(name: str):
+    def handler(args: dict, **kw) -> str:
+        from . import composer, home
+        args, sid = dict(args or {}), kw.get("session_id")
+        try:
+            if name == "godseye_brief_and_show":
+                out = composer.brief_and_show(args, session_id=sid)
+            elif name == "godseye_doctor":
+                out = composer.doctor()
+            elif name == "godseye_share_link":
+                out = composer.share_link(session_id=sid)
+            elif name == "godseye_live_panes":
+                out = composer.relay_status()
+            else:
+                action = args.pop("action", "go")
+                if action == "get":
+                    out = {"ok": True, "home": home.get(), "default": home.DEFAULT}
+                elif action == "set":
+                    out = composer.set_home(args, session_id=sid)
+                else:
+                    out = composer.go_home(session_id=sid)
+        except Exception as exc:
+            out = {"error": f"{name} failed: {type(exc).__name__}: {str(exc)[:300]}"}
+        text = json.dumps(out, ensure_ascii=False)
+        return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
+    return handler
+
+
+def register_extras(ctx) -> dict:
+    """Composer tools, /gev, the analyst skill and home-view state. Each host API is optional:
+    a Hermes build without it simply skips that piece. Returns what was registered."""
+    from . import composer, home
+    done = {"tools": [], "command": False, "skill": False, "state": False}
+    state = getattr(ctx, "state", None)
+    if state is not None and hasattr(state, "get") and hasattr(state, "set"):
+        home.bind(state)
+        done["state"] = True
+    for name, (desc, params, emoji) in EXTRA_TOOLS.items():
+        needs_mcp = name == "godseye_brief_and_show"
+        ctx.register_tool(name=name, toolset=TOOLSET,
+                          schema={"name": name, "description": f"{desc}\n\n{policy.POLICY}", "parameters": params},
+                          handler=extra_handler(name), description=desc.split(":")[0][:80], emoji=emoji,
+                          **({"check_fn": _available} if needs_mcp else {}))
+        done["tools"].append(name)
+    if hasattr(ctx, "register_command"):
+        try:
+            ctx.register_command("gev", composer.gev_command, description="God's Eye View: fly, layers, status, brief, home, share, doctor",
+                                 args_hint="<fly|layers|status|brief|home|share|doctor> [args]")
+            done["command"] = True
+        except Exception:
+            pass
+    if hasattr(ctx, "register_skill") and (SKILL_DIR / "SKILL.md").is_file():
+        try:
+            ctx.register_skill("godseye-analyst", SKILL_DIR / "SKILL.md",
+                               description="God's Eye View analyst playbook: data vs live tools, pane guidance, policy, examples.")
+            done["skill"] = True
+        except Exception:
+            pass
+    return done

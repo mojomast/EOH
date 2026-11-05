@@ -1,5 +1,5 @@
 name: godseye
-version: "0.1.0"
+version: "0.2.0"
 description: >-
   God's Eye View inside Hermes: registers the God's Eye View public-data tools
   (aircraft, ships, satellites, quakes, fires, weather, infrastructure) as
@@ -45,6 +45,11 @@ provides_tools:
   - godseye_military_awareness
   - godseye_show_in_gods_eye_view
   - godseye_hud_summary
+  - godseye_brief_and_show
+  - godseye_doctor
+  - godseye_share_link
+  - godseye_home
+  - godseye_live_panes
   - godseye_live_fly_to_location
   - godseye_live_select_nearest_aircraft
   - godseye_live_adjust_camera_zoom

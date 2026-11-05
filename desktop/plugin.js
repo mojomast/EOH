@@ -5,7 +5,7 @@
 // loads the whole app through JSON-RPC postMessage -> tools/call panel_request, which this pane
 // forwards to the plugin backend (ctx.rest) -> the God's Eye View MCP server. No framing headers,
 // CORS, or allow-same-origin are needed, so Hermes' guest-content sandbox stays as designed.
-import { SandboxedFrame, Button } from '@hermes/plugin-sdk'
+import * as sdk from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useEffect, useRef, useState } from 'react'
 
@@ -16,25 +16,50 @@ const PROTOCOL = '2026-01-26'
 // live-globe agent that runs Hermes tool calls with God's Eye View's own voice action runner.
 // All of that runs only inside the opaque-origin frame.
 
+const { SandboxedFrame, Button } = sdk
+
+// Chat session ids this pane is showing (runtime + stored ids, when the SDK exposes them), so the
+// relay can route a session's tool calls to the pane next to it.
+export function paneSessions(host = sdk.host) {
+  const st = host?.state || {}
+  const ids = ['focusedSessionId', 'activeSessionId', 'focusedStoredSessionId']
+    .map((k) => { try { return st[k]?.get?.() } catch { return null } })
+    .filter((v) => typeof v === 'string' && v)
+  return [...new Set(ids)]
+}
+
+export function newPaneId() {
+  const c = globalThis.crypto
+  return 'pane-' + (c?.randomUUID ? c.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10))
+}
+
 // Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
-// frame, and post the results back. Returns { onMessage, stop }.
-export function createLiveRelay({ ctx, frame }) {
+// frame, and post the results back. Each pane polls with its own id and session ids.
+// Returns { onMessage, stop }.
+export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions() }) {
   let stopped = false
   const pending = new Map()
+  const nextPath = () => {
+    const q = new URLSearchParams({ pane: paneId })
+    const ids = sessions()
+    if (ids.length) q.set('sessions', ids.join(','))
+    return '/live/next?' + q
+  }
   async function loop() {
     while (!stopped) {
       let cmd = null
-      try { cmd = (await ctx.rest('/live/next'))?.command } catch { await new Promise((r) => setTimeout(r, 3000)); continue }
+      try { cmd = (await ctx.rest(nextPath()))?.command } catch { await new Promise((r) => setTimeout(r, 3000)); continue }
       if (!cmd || stopped) continue
       const done = new Promise((resolve) => pending.set(cmd.id, resolve))
       frame()?.postMessage({ type: 'hermes-gev:run', id: cmd.id, name: cmd.name, args: cmd.args }, '*')
       const payload = await Promise.race([done, new Promise((r) => setTimeout(() => r({ ok: false, error: 'pane timeout' }), 55000))])
       pending.delete(cmd.id)
-      ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, payload } }).catch(() => {})
+      ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId, payload } }).catch(() => {})
     }
   }
   loop()
   return {
+    paneId,
     onMessage(event) {
       const win = frame()
       if (!win || event.source !== win || event.data?.type !== 'hermes-gev:result') return false
@@ -110,12 +135,20 @@ function GlobePane({ ctx }) {
   const [err, setErr] = useState('')
   const [hud, setHud] = useState('')
   const [fullUi, setFullUi] = useState(true)
+  const [homeView, setHomeView] = useState(undefined)
   const ref = useRef(null)
+  const paneIdRef = useRef(null)
+  if (!paneIdRef.current) paneIdRef.current = newPaneId()
   const statusRef = useRef(null)
   statusRef.current = status
 
   useEffect(() => {
     ctx.rest('/status').then((st) => { setStatus(st); if (st?.patched && !st.patched.fullUi) setFullUi(false) }).catch(() => setStatus({ appUp: false }))
+  }, [])
+
+  // Cold start opens at the saved home view (/gev home set), else the default globe.
+  useEffect(() => {
+    ctx.rest('/home').then((r) => setHomeView(r?.initialView || null)).catch(() => setHomeView(null))
   }, [])
 
   useEffect(() => {
@@ -125,13 +158,13 @@ function GlobePane({ ctx }) {
   }, [fullUi])
 
   useEffect(() => {
-    if (!src) return
+    if (!src || homeView === undefined) return
     const frame = () => ref.current?.contentWindow
-    const onMessage = createPanelHost({ ctx, frame, status: () => statusRef.current })
-    const live = createLiveRelay({ ctx, frame })
+    const onMessage = createPanelHost({ ctx, frame, initialView: homeView || undefined, status: () => statusRef.current })
+    const live = createLiveRelay({ ctx, frame, paneId: paneIdRef.current })
     const off = ctx.addEventListener(window, 'message', (e) => live.onMessage(e) || onMessage(e))
     return () => { live.stop(); off?.() }
-  }, [src])
+  }, [src, homeView])
 
   const base = status?.frameUrl || status?.apiBase || 'http://localhost:4173'
   const askHud = async () => {
