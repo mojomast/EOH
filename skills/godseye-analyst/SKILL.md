@@ -159,6 +159,10 @@ When the turn has "[EOH watch alert]" lines, tell the user. The new items are al
 | op | Use |
 | --- | --- |
 | `doctor` | Read-only health check. It installs nothing. |
+| `status` | Control room: app, relay, panes, WebGL, and feeds. Read-only. Missing keys are names only. |
+| `app_start` | Start the God's Eye View app. Linux only. User-triggered. Waits for HTTP 200. |
+| `app_stop` | Stop that app. Refuses when the port belongs to another process. |
+| `app_restart` | Restart that app. Same ownership rules. An open socket is not ready. |
 | `rebuild` | Rebuild `dist/panel` and reload open panes. A current build reads `config.json` and does not need this for a key change. |
 | `reload` | Re-fetch the panel into the open pane. |
 | `preview` | One desktop preview tab. `url` to open. `action`: `swap` or `close`. |

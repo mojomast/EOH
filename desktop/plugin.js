@@ -347,6 +347,89 @@ export function createPanelHost({ ctx, frame, initialView, status = () => null }
   }
 }
 
+function ageText(age) {
+  if (typeof age !== 'number' || !Number.isFinite(age)) return 'age unknown'
+  if (age < 90) return Math.round(age) + 's'
+  if (age < 7200) return Math.round(age / 60) + 'm'
+  return Math.round(age / 3600) + 'h'
+}
+
+// Control room drawer. The explicit start/stop, busy line, and error line follow
+// cygnostik/Hermes-Plugin-Gods-Eye-View desktop/plugin.js (MIT). This pane only
+// renders what GET /control returns. It never starts the app on its own.
+function ControlRoom({ room, busy, error, onClose, onAction }) {
+  const life = room?.lifecycle || {}
+  const off = life.supported === false
+  const pending = Boolean(busy || room?.busy)
+  const app = room?.app || {}
+  const relay = room?.relay || {}
+  const pane = room?.pane || {}
+  const gl = room?.rendering || {}
+  const feeds = room?.feeds || {}
+  const line = (label, value) => jsxs('div', { className: 'flex justify-between gap-3', children: [
+    jsx('span', { children: label }),
+    jsx('span', { className: 'truncate text-right', children: value == null || value === '' ? '—' : String(value) })
+  ] })
+  const version = [app.version, app.commit].filter(Boolean).join(' · ')
+  return jsxs('section', {
+    className: 'max-h-64 overflow-auto border-b border-(--ui-stroke-secondary) px-2 py-2 text-xs',
+    role: 'region', 'aria-label': 'Control room',
+    children: [
+      jsxs('div', { className: 'mb-2 flex items-center justify-between gap-2', children: [
+        jsx('strong', { children: 'Control room' }),
+        jsx(Button, { size: 'sm', variant: 'ghost', onClick: onClose, children: 'Close' })
+      ] }),
+      off ? jsx('p', { children: life.detail || 'Lifecycle is unsupported on this host.' }) : null,
+      pending ? jsx('p', { role: 'status', children: `${busy || room.busy}…` }) : null,
+      error ? jsx('p', { role: 'alert', children: error }) : null,
+      !error && room?.lastError?.message ? jsx('p', { role: 'alert', children: room.lastError.message }) : null,
+      jsxs('div', { className: 'grid gap-2 sm:grid-cols-2', children: [
+        jsxs('div', { children: [
+          jsx('div', { className: 'font-medium', children: 'App' }),
+          line('state', app.state || 'unknown'),
+          line('http', app.http),
+          line('version', version),
+          app.url ? jsx('div', { className: 'truncate', title: app.url, children: app.url }) : null
+        ] }),
+        jsxs('div', { children: [
+          jsx('div', { className: 'font-medium', children: 'Relay' }),
+          line('loopback', relay.state || 'unknown'),
+          line('HUD bridge', relay.hudBridge || 'unknown')
+        ] }),
+        jsxs('div', { children: [
+          jsx('div', { className: 'font-medium', children: 'Pane' }),
+          line('connected', pane.connected ?? 0),
+          ...(pane.panes || []).slice(0, 6).map((p) => jsx('div', {
+            className: 'truncate',
+            children: `${p.id || 'pane'} · ${(p.sessions || []).join(', ') || 'no session'} · ${p.heartbeat === 'heartbeat' ? 'heartbeat' : 'poll'} ${ageText(p.lastHeartbeatS)}`
+          }, p.id || p.lastHeartbeatS))
+        ] }),
+        jsxs('div', { children: [
+          jsx('div', { className: 'font-medium', children: 'Rendering' }),
+          line('WebGL', gl.webgl || 'unknown'),
+          line('context losses', gl.contextLosses ?? 0),
+          line('recover', gl.recover == null ? null : (gl.recover ? 'on' : 'off')),
+          line('recreateViewer', gl.recreateViewer == null ? 'unknown' : (gl.recreateViewer ? 'present' : 'absent'))
+        ] })
+      ] }),
+      jsxs('div', { className: 'mt-2', children: [
+        jsx('div', { className: 'font-medium', children: 'Feeds' }),
+        (feeds.items || []).length ? (feeds.items || []).slice(0, 12).map((f) => jsx('div', {
+          className: 'truncate',
+          children: `${f.id}: ${f.state}${typeof f.ageS === 'number' ? ' · ' + ageText(f.ageS) : ''}${f.state === 'error' && f.detail ? ' · ' + String(f.detail).slice(0, 80) : ''}`
+        }, f.id)) : jsx('div', { children: 'no feed report yet' }),
+        (feeds.missingKeys || []).length ? jsx('div', { children: 'missing ' + feeds.missingKeys.join(', ') }) : null
+      ] }),
+      jsxs('div', { className: 'mt-2 flex flex-wrap gap-2', children: [
+        jsx(Button, { size: 'sm', disabled: off || pending, onClick: () => onAction('start'), children: (busy || room?.busy) === 'start' ? 'Starting…' : 'Start' }),
+        jsx(Button, { size: 'sm', disabled: off || pending, onClick: () => onAction('stop'), children: (busy || room?.busy) === 'stop' ? 'Stopping…' : 'Stop' }),
+        jsx(Button, { size: 'sm', disabled: off || pending, onClick: () => onAction('restart'), children: (busy || room?.busy) === 'restart' ? 'Restarting…' : 'Restart' })
+      ] }),
+      !off && life.detail ? jsx('p', { className: 'mt-2 text-(--ui-text-tertiary)', children: life.detail }) : null
+    ]
+  })
+}
+
 function GlobePane({ ctx }) {
   const [status, setStatus] = useState(null)
   const [src, setSrc] = useState(null)
@@ -356,6 +439,10 @@ function GlobePane({ ctx }) {
   const [fullUi, setFullUi] = useState(true)
   const [homeView, setHomeView] = useState(undefined)
   const [gl, setGl] = useState(null)
+  const [roomOpen, setRoomOpen] = useState(false)
+  const [room, setRoom] = useState(null)
+  const [roomBusy, setRoomBusy] = useState('')
+  const [roomErr, setRoomErr] = useState('')
   const [nonce, setNonce] = useState(0)
   const [epoch, setEpoch] = useState(0)
   const ref = useRef(null)
@@ -381,6 +468,33 @@ function GlobePane({ ctx }) {
     const t = setInterval(pull, 15000)
     return () => { live = false; clearInterval(t) }
   }, [])
+
+  useEffect(() => {
+    if (!roomOpen) return
+    let live = true
+    const pull = () => ctx.rest('/control').then((r) => {
+      if (live && r && typeof r === 'object') setRoom(r)
+    }).catch((e) => { if (live) setRoomErr(String(e?.message || e)) })
+    pull()
+    const t = setInterval(pull, 10000)
+    return () => { live = false; clearInterval(t) }
+  }, [roomOpen])
+
+  const controlAction = async (action) => {
+    if (roomBusy || room?.busy || room?.lifecycle?.supported === false) return
+    setRoomBusy(action)
+    setRoomErr('')
+    try {
+      const result = await ctx.rest('/control/app', { method: 'POST', body: { action }, timeoutMs: 120000 })
+      if (!result || result.ok === false) setRoomErr(result?.message || result?.error || 'The request failed.')
+      const next = await ctx.rest('/control').catch(() => null)
+      if (next && typeof next === 'object') setRoom(next)
+    } catch (e) {
+      setRoomErr(String(e?.message || e))
+    } finally {
+      setRoomBusy('')
+    }
+  }
 
   // Cold start opens at the saved home view (/gev home set), else the default globe.
   useEffect(() => {
@@ -458,12 +572,16 @@ function GlobePane({ ctx }) {
           jsx('span', { children: status?.appUp ? 'live' : `app not running (${base})` }),
           jsx('span', { className: 'truncate', title: paneIdRef.current,
             children: (status?.panes || []).find((p) => p.id === paneIdRef.current)?.label || paneIdRef.current }),
+          jsx(Button, { size: 'sm', variant: 'ghost', 'aria-expanded': roomOpen, onClick: () => setRoomOpen((v) => !v), children: roomOpen ? 'Hide control room' : 'Control room' }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: askHud, children: 'HUD (Hermes)' }),
           status?.patched?.fullUi === false ? jsx('span', { title: 'Full UI needs patches/0002 on your God\'s Eye View checkout', children: 'globe only' }) : jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => setFullUi((v) => !v), children: fullUi ? 'Globe only' : 'Full UI' }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => ctx.os.openExternal(base + '/'), children: 'Open full app' }),
           jsx('span', { className: 'truncate', children: hud || err })
         ]
       }),
+      roomOpen ? jsx(ControlRoom, {
+        room, busy: roomBusy, error: roomErr, onClose: () => setRoomOpen(false), onAction: controlAction
+      }) : null,
       gl
         ? jsxs('div', {
           className: 'flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm', style: { minHeight: 520 },

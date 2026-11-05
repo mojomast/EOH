@@ -153,6 +153,27 @@ async def doctor():
     return await asyncio.to_thread(composer.doctor)
 
 
+@router.get("/control")
+async def control_room():
+    """Live control-room status. Does not start or stop the app."""
+    import asyncio
+    from gev import control_room as room
+    return await asyncio.to_thread(room.status)
+
+
+@router.post("/control/app")
+async def control_room_app(body: dict):
+    """User-triggered start, stop, or restart of the God's Eye View app."""
+    import asyncio
+    from gev import control_room as room
+    action = str((body or {}).get("action") or "")
+    if action not in ("start", "stop", "restart"):
+        return {"ok": False, "code": "bad_action", "error": "bad_action",
+                "message": "action must be start, stop, or restart.",
+                "fix": "POST /control/app with action start, stop, or restart. GET /control does not change the app."}
+    return await asyncio.to_thread(room.app_action, action)
+
+
 @router.post("/live/result")
 async def live_result(body: dict):
     import asyncio

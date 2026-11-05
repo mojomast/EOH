@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- EOH Control room. The desktop pane opens a collapsible section (`GET /control`, `POST /control/app`). `godseye_admin` `op=status` reads the same payload: the God's Eye View app (URL, HTTP status, version or commit when exposed), the loopback relay and HUD bridge, connected panes and last heartbeat, WebGL (ok or lost, context-loss count, recover on or off, `recreateViewer` present or absent), and each public feed's last fetch. Missing `AISSTREAM_API_KEY` and `FIRMS_MAP_KEY` are names only. The room reuses the doctor checks.
+- User-triggered `op=app_start`, `op=app_stop`, and `op=app_restart`. On Linux a loaded `gods-eye-view.service` user unit is controlled with `systemctl --user`. Otherwise the plugin starts Node on the checkout's `vite.js` and signals it only when the Node executable, the checkout path, and the listen port all match. A foreign listener is refused and nothing is killed. Ready means HTTP 200 on `GODSEYE_API_BASE`. macOS and Windows show status and report lifecycle as unsupported. The catalog stays at 11 tools. The registered schemas are 6670 `o200k_base` tokens (27017 bytes, 6519 `cl100k_base`), up 34 `o200k_base` tokens from 6636. The drawer follows cygnostik/Hermes-Plugin-Gods-Eye-View (`desktop/plugin.js`, `dashboard/plugin_api.py`, MIT) and does not copy that plugin's engine, key bridge, or update flow.
+
 ## 0.2.0 — 2026-11-05
 
 The user-facing name is Eye Of Hermes (EOH). Plugin id `godseye`, the `godseye_` tool prefix, `/gev`, routes, and the repository name are unchanged.

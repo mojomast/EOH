@@ -218,6 +218,14 @@ For watch alerts that should start a turn immediately, set Hermes `plugins.entri
 
 `/gev doctor`, or `godseye_admin` `op=doctor`, is read-only. It checks Node, the checkout, that the app answers, patches 0001 and 0002, the live relay, connected panes and last-poll age, client-key presence (in `config.json` or, on an older build, the bundle), server-key presence, ion token scopes, panel freshness (`PANEL_STALE` / `KEY_MISSING`), the active map stack, layer feed states from `feedProvenance`, the annotation count, and whether WebGL recovery is on. Every failed check includes a fix. It installs nothing.
 
+### Control room
+
+The desktop pane has a collapsible Control room (`GET /control`, `POST /control/app`). `godseye_admin` `op=status` reads the same payload. It shows the God's Eye View app (HTTP status, version or commit when the app exposes one), the loopback relay and HUD bridge, connected panes and last heartbeat, WebGL (ok or lost, context-loss count, recover on or off, `recreateViewer` present or absent), and each public feed's last fetch (ok, error, or age). Missing `AISSTREAM_API_KEY` and `FIRMS_MAP_KEY` are listed by name. Values are not returned. The room reuses the doctor checks.
+
+`op=app_start`, `op=app_stop`, and `op=app_restart` change the app only when called. On Linux, a loaded `gods-eye-view.service` user unit (`scripts/install-service.sh`) is started with `systemctl --user`. Otherwise the plugin launches Node on the checkout's `vite.js`. A stop signals that process only when the Node executable, the checkout path, and the listen port all match. A port owned by anything else is refused, and nothing is killed. Ready means HTTP 200 on `GODSEYE_API_BASE`, not an open socket. macOS and Windows show status and report lifecycle as unsupported. The plugin does not install the systemd unit.
+
+The drawer follows the control-room idea in [cygnostik/Hermes-Plugin-Gods-Eye-View](https://github.com/cygnostik/Hermes-Plugin-Gods-Eye-View) (`desktop/plugin.js` and `dashboard/plugin_api.py`, MIT). This plugin does not copy that project's engine, key bridge, or update flow.
+
 ## Try these
 
 - "What am I looking at?"
@@ -240,7 +248,7 @@ Framing presets on `godseye_view` `op=fly`: `street` is about 150 m at pitch −
 
 `plugin.yaml` registers **11** tools, all in the `godseye` toolset. Each takes a required `op`. The map is [`docs/COMPOSABLE-TOOLS.md`](docs/COMPOSABLE-TOOLS.md).
 
-The 11 registered schemas are **6636** `o200k_base` tokens (**26879** bytes, **6485** `cl100k_base`). The same eleven tools on `feat/v0.2` at `9c922d0`, before `op=timeline`, were **6504** `o200k_base` tokens (**26374** bytes, **6358** `cl100k_base`). The catalog on `feat/v0.2` at `90097b3`, before the composable cut, was **82** tools and **26574** `o200k_base` tokens (**112644** bytes, **26199** `cl100k_base`). Figures are tiktoken 0.14.0 on compact JSON (`name`, `description`, `parameters`), in registration order. `evals/measure_schemas.py` reprints the current catalog. Its same-tree baseline, which registers the phase B names again and keeps only `godseye_view` and `godseye_query`, is **83** tools and **27337** `o200k_base` tokens. The slider's absorbed name is registered in that baseline, and `godseye_view` / `godseye_query` include `show`, `state`, `terrain`, and `features`.
+The 11 registered schemas are **6670** `o200k_base` tokens (**27017** bytes, **6519** `cl100k_base`). That is **+34** `o200k_base` tokens, **+138** bytes, and **+34** `cl100k_base` tokens against the previous eleven-tool catalog (**6636** / **26879** / **6485**), from the control-room ops on `godseye_admin`. The same eleven tools on `feat/v0.2` at `9c922d0`, before `op=timeline`, were **6504** `o200k_base` tokens (**26374** bytes, **6358** `cl100k_base`). The catalog on `feat/v0.2` at `90097b3`, before the composable cut, was **82** tools and **26574** `o200k_base` tokens (**112644** bytes, **26199** `cl100k_base`). Figures are tiktoken 0.14.0 on compact JSON (`name`, `description`, `parameters`), in registration order. `evals/measure_schemas.py` reprints the current catalog. Its same-tree baseline, which registers the phase B names again and keeps only `godseye_view` and `godseye_query`, is **87** tools and **27774** `o200k_base` tokens (**117763** bytes, **27389** `cl100k_base`). The four control-room names are phase B, so this reconstruction registers them; the previous baseline was **83** tools and **27337** `o200k_base` tokens. The slider's absorbed name is registered in that baseline, and `godseye_view` / `godseye_query` include `show`, `state`, `terrain`, and `features`.
 
 The names those ops replaced are not registered. `gev/router.py` `dispatch_legacy` still runs a saved call that uses one of them. Scenes, tours, `/gev`, the relay, and the pane keep bare action names such as `fly_to_location`. They do not use the retired Hermes names. `godseye_nav` `op=timeline` is the time slider. Its sub-action is the argument `timeline`.
 
@@ -308,7 +316,7 @@ Every name in `plugin.yaml`, once.
 - `godseye_scene` — Save, list, load, delete (needs `confirm=true`), report, export (GeoJSON, KML, or `format=pack`), restore, tour, and cinematic playback.
 - `godseye_watch` — Create, list (`check` runs one now), pause, or delete (needs `confirm=true`). Feeds: earthquakes, fires, flights, ships, places.
 - `godseye_capture` — HUD visibility and layout, and a one-line caption from the Hermes model.
-- `godseye_admin` — Read-only doctor, rebuild `dist/panel`, reload the pane, or one desktop preview tab.
+- `godseye_admin` — Read-only doctor, control room (`status`, `app_start`, `app_stop`, `app_restart`), rebuild `dist/panel`, reload the pane, or one desktop preview tab.
 
 </details>
 
