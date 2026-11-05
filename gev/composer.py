@@ -94,8 +94,9 @@ def hits_from(data: dict, top_n: int = 5) -> list[dict]:
 DRAWER_KEYS = ("title", "description_md", "images", "links")
 
 
-def hit_drawer(hit: dict, place: str) -> dict:
-    """Default pin-drawer content for a brief hit: its section, source, distance and position."""
+def hit_drawer(hit: dict, place: str, intent: str | None = None) -> dict:
+    """Default pin-drawer content for a brief hit, shaped by the user's intent when given."""
+    from . import enrich
     sec = str(hit.get("section") or "")
     lines = [f"**{sec.replace('_', ' ').title()}** near {place}" if sec else f"Near {place}"]
     if SECTION_SOURCES.get(sec):
@@ -103,7 +104,19 @@ def hit_drawer(hit: dict, place: str) -> dict:
     if isinstance(hit.get("distance_km"), (int, float)):
         lines.append(f"Distance: {hit['distance_km']:.1f} km")
     lines.append(f"Position: `{hit['lat']:.5f}, {hit['lon']:.5f}`")
-    return {"title": str(hit.get("label") or sec)[:120], "description_md": "\n\n".join(lines)}
+    base = {
+        "type": "pin", "title": str(hit.get("label") or sec)[:120],
+        "label": hit.get("label") or sec, "latitude": hit.get("lat"), "longitude": hit.get("lon"),
+        "description_md": "\n\n".join(lines),
+        "section": sec, "source": SECTION_SOURCES.get(sec), "distance_km": hit.get("distance_km"),
+        **{k: hit.get(k) for k in ("confidence", "magnitude", "mag", "frp", "callsign", "mmsi",
+                                   "shipname", "detection_time", "acq_date", "time", "depth_km")
+           if hit.get(k) is not None},
+    }
+    # Keep the classic brief body; enrich only adds intent-relevant facts not already present.
+    return enrich.ensure_drawer(base, intent=intent, mode="light")
+
+
 
 
 # Section key -> short public data-source label for caption lines (never "worldwide").
@@ -238,11 +251,12 @@ def brief_and_show(args: dict, session_id: str | None = None, live=None, mcp=Non
                     shown["layers"].append(layer)
             if hits:
                 details = [d if isinstance(d, dict) else {} for d in (args.get("pin_details") or [])]
+                intent = args.get("intent") or args.get("context") or question or place
                 marks = [{"type": "pin", "latitude": h["lat"], "longitude": h["lon"], "label": h["label"],
-                          "color": "red" if military else "amber", **hit_drawer(h, label),
+                          "color": "red" if military else "amber", **hit_drawer(h, label, intent=intent),
                           **({k: v for k, v in details[i].items() if k in DRAWER_KEYS} if i < len(details) else {})}
                          for i, h in enumerate(hits)]
-                r = live("annotate_map", {"annotations": marks}, session_id)
+                r = live("annotate_map", {"annotations": marks, "intent": intent, "persist": True}, session_id)
                 shown["annotated"] = ((r.get("result") or {}).get("drawn") or len(marks)) if note("annotate", r) else 0
             r = live("hermes_caption", {"text": caption}, session_id)
             shown["caption"] = caption if note("caption", r) else None
@@ -438,7 +452,9 @@ def format_doctor(d: dict) -> str:
 
 # -- /gev ----------------------------------------------------------------------------------------
 HELP = ("/gev fly <place> · /gev layers [on|off <names>] · /gev status · /gev brief <place> · "
-        "/gev home [set] · /gev share · /gev doctor")
+        "/gev home [set] · /gev share · /gev doctor · /gev research [light|full] · "
+        "/gev save <name> · /gev list · /gev load <name> · /gev delete <name> --confirm · "
+        "/gev report [name]")
 
 
 def _msg(res: dict, ok: str) -> str:
@@ -525,6 +541,53 @@ def gev_command(raw: str, live=None, mcp=None) -> str:
         return r["url"] if r.get("ok") else _msg(r, "")
     if cmd == "doctor":
         return format_doctor(doctor())
+    if cmd == "research":
+        mode = (rest[0].lower() if rest and rest[0].lower() in ("light", "full") else "full")
+        out = research_pins_op({"mode": mode, "all": True}, session_id=None)
+        if not out.get("ok"):
+            return f"⚠️ {out.get('message') or out.get('error') or 'research failed'}"
+        return f"🔎 Researched {out.get('updated', 0)}/{out.get('researched', 0)} pins (mode={mode})."
+    if cmd == "save":
+        if not rest:
+            return "Usage: /gev save <name>"
+        out = investigation_op("save", None, args={"name": " ".join(rest)})
+        return (f"💾 Saved investigation {out['name']} → {out['path']}" if out.get("ok")
+                else f"⚠️ {out.get('message') or out.get('error')}")
+    if cmd == "list":
+        out = investigation_op("list", None, args={})
+        if not out.get("ok"):
+            return f"⚠️ {out.get('error')}"
+        if not out.get("investigations"):
+            return "No saved investigations."
+        lines = [f"📚 {out['count']} investigation(s):"]
+        for it in out["investigations"]:
+            lines.append(f"  · {it['name']} — {it.get('pins', 0)} pins, {it.get('routes', 0)} routes")
+        return "\n".join(lines)
+    if cmd == "load":
+        if not rest:
+            return "Usage: /gev load <name>"
+        out = investigation_op("load", None, args={"name": " ".join(rest), "restore": True})
+        return (f"📂 Loaded {out.get('name')} ({out.get('pins', 0)} pins)." if out.get("ok")
+                else f"⚠️ {out.get('message') or out.get('error')}")
+    if cmd == "delete":
+        confirm = False
+        parts = list(rest)
+        if parts and parts[-1] in ("--confirm", "confirm", "--yes"):
+            confirm = True
+            parts = parts[:-1]
+        if not parts:
+            return "Usage: /gev delete <name> --confirm"
+        out = investigation_op("delete", None, args={"name": " ".join(parts), "confirm": confirm})
+        return (f"🗑️ Deleted {out.get('deleted')}." if out.get("ok")
+                else f"⚠️ {out.get('message') or out.get('error')}")
+    if cmd == "report":
+        rargs = {"capture": True}
+        if rest:
+            rargs["name"] = " ".join(rest)
+        out = investigation_op("report", None, args=rargs)
+        if not out.get("ok"):
+            return f"⚠️ {out.get('message') or out.get('error')}"
+        return f"📄 Report:\n  HTML: {out['html']}\n  Markdown: {out['markdown']}"
     return f"Unknown subcommand '{cmd}'. " + HELP
 
 
@@ -789,3 +852,69 @@ def remediate_map_stack(out: dict) -> dict:
     if not (res or {}).get("ok", out.get("ok")) and re.search(r"token|key|ion", err, re.I):
         out = {**out, "remediation": MAP_STACK_FIX}
     return out
+
+
+# -- research + investigations -----------------------------------------------------------------
+def _relay_scenes():
+    """In-process relay SceneStore when the relay runs in this process; else disk-backed store."""
+    from . import live as live_mod
+    from .scene import SceneStore, default_path
+    rel = getattr(live_mod, "_relay", None)
+    if rel is not None:
+        return rel.scenes
+    return SceneStore(default_path())
+
+
+def research_pins_op(args: dict, session_id: str | None = None, live=None) -> dict:
+    from . import research
+    live = live or live_call
+    scenes = _relay_scenes()
+    key = str(session_id) if session_id else (scenes.pick([]) or "default")
+    return research.research_pins(
+        scenes, key,
+        ids=args.get("ids"), labels=args.get("labels"),
+        all_pins=bool(args.get("all", True)),
+        agent_notes=args.get("agent_notes"),
+        live=lambda n, a: live(n, a, session_id),
+        persist=bool(args.get("persist", True)),
+        mode=str(args.get("mode") or "full"),
+    )
+
+
+def investigation_op(op: str, session_id: str | None = None, args: dict | None = None, live=None) -> dict:
+    from . import investigations
+    args = dict(args or {})
+    live = live or live_call
+    scenes = _relay_scenes()
+    key = str(session_id) if session_id else (scenes.pick([]) or "default")
+    try:
+        if op == "save":
+            return investigations.save(scenes, key, args.get("name") or "",
+                                       notes=args.get("notes"), views=args.get("views"),
+                                       meta={"session": key})
+        if op == "list":
+            return investigations.list_all()
+        if op == "load":
+            restore = bool(args.get("restore", True))
+            return investigations.load(
+                scenes, key, args.get("name") or "",
+                live=(lambda n, a: live(n, a, session_id)) if restore else None,
+                restore=restore)
+        if op == "delete":
+            return investigations.delete(args.get("name") or "", confirm=bool(args.get("confirm")))
+        if op == "report":
+            share = share_link(session_id=session_id, live=live) if args.get("share") else None
+            shot = note = None
+            if args.get("capture", True):
+                cap = investigations.capture_map(lambda n, a: live(n, a, session_id))
+                if cap.get("ok"):
+                    shot = cap["dataUrl"]
+                else:
+                    note = cap.get("note")
+            return investigations.export_report(
+                args.get("name"),
+                scene_store=None if args.get("name") else scenes,
+                session_key=key, screenshot_data_url=shot, screenshot_note=note, share=share)
+        return {"ok": False, "error": "bad op"}
+    except ValueError as exc:
+        return {"ok": False, "error": "bad_args", "message": str(exc)}

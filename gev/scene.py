@@ -62,7 +62,7 @@ class SceneStore:
 
     @staticmethod
     def _has(scene: dict) -> bool:
-        return bool(scene.get("annotations") or scene.get("camera"))
+        return bool(scene.get("annotations") or scene.get("camera") or scene.get("shapes"))
 
     @staticmethod
     def _drawer(sc: dict, args: dict, result: dict) -> bool:
@@ -88,6 +88,29 @@ class SceneStore:
             sc["updated"] = time.time()
             self._save()
 
+    FILTER_KEYS = ("categories", "min_rating", "open_now", "include_unknown", "cluster")
+
+    @classmethod
+    def _filters(cls, sc: dict, args: dict, result: dict) -> bool:
+        """Keep the pane's pin filters (categories / min_rating / open_now / cluster) in the scene."""
+        if str((args or {}).get("action") or "set") in ("state", "expand"):
+            return False
+        f = result.get("filters") if isinstance(result.get("filters"), dict) else None
+        if f is None:
+            return False
+        f = {k: f.get(k) for k in cls.FILTER_KEYS if k in f}
+        default = {"categories": [], "min_rating": None, "open_now": False, "include_unknown": True, "cluster": True}
+        sc["filters"] = None if all(f.get(k, v) == v for k, v in default.items()) else f
+        return True
+
+    def note_filters(self, key: str | None, filters: dict | None) -> None:
+        """The user toggled a filter chip in the pane (reported by the pane)."""
+        with self.lock:
+            sc = self.scene(key)
+            self._filters(sc, {"action": "set"}, {"filters": filters if isinstance(filters, dict) else {}})
+            sc["updated"] = time.time()
+            self._save()
+
     # -- recording -----------------------------------------------------------------------------
     def record(self, key: str | None, name: str, args: dict, res: dict) -> None:
         if not isinstance(res, dict) or not res.get("ok"):
@@ -103,6 +126,10 @@ class SceneStore:
                 sc["drawer"] = None
             elif name == "hermes_pin_drawer":
                 changed = self._drawer(sc, args, result)
+            elif name == "hermes_pin_filter":
+                changed = self._filters(sc, args, result)
+            elif name == "hermes_draw":
+                changed = self._shape(sc, args or {}, result)
             elif name == "hermes_caption":
                 sc["caption"] = (args or {}).get("text") or None
             elif name in ("get_current_view_state", "fly_to_location", "move_camera"):
@@ -112,6 +139,27 @@ class SceneStore:
             if changed:
                 sc["updated"] = time.time()
                 self._save()
+
+    @staticmethod
+    def _shape(sc: dict, args: dict, result: dict) -> bool:
+        """Hermes-drawn lines/polygons (measurements, isochrones): kept so a reopened pane redraws them."""
+        shapes = sc.setdefault("shapes", {})
+        action = str(args.get("action") or "add")
+        if action == "add" and isinstance(result.get("shape"), dict):
+            sh = result["shape"]
+            shapes[sh["id"]] = {"action": "add", "id": sh["id"], "kind": sh.get("kind"), "points": sh.get("points"),
+                                "label": args.get("label", sh.get("label")), "color": args.get("color"),
+                                **({"labelAt": args["labelAt"]} if args.get("labelAt") else {})}
+            while len(shapes) > 40:
+                shapes.pop(next(iter(shapes)))
+            return True
+        if action == "remove":
+            return shapes.pop(str(args.get("id") or ""), None) is not None
+        if action == "clear" and args.get("who", "all") in ("all", "hermes"):
+            had = bool(shapes)
+            shapes.clear()
+            return had
+        return False
 
     def _add_annotations(self, sc: dict, args: dict, result: dict) -> None:
         items = result.get("items") if isinstance(result.get("items"), list) else []
@@ -157,6 +205,7 @@ class SceneStore:
         with self.lock:
             sc = self.scene(key)
             return {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
+                    "filters": sc.get("filters"),
                     "annotations": [{"id": a["id"], "type": a["spec"].get("type", "pin"),
                                      "label": a["spec"].get("label") or a["spec"].get("target"),
                                      "latitude": a["spec"].get("latitude"), "longitude": a["spec"].get("longitude")}
@@ -178,6 +227,64 @@ class SceneStore:
                 return True
             return False
 
+
+    def annotations(self, key: str | None) -> list[dict]:
+        """Full annotation records (id + spec) for research / investigations."""
+        with self.lock:
+            return [{"id": a["id"], "paneId": a.get("paneId"), "spec": dict(a.get("spec") or {})}
+                    for a in self.scene(key).get("annotations") or []]
+
+    def update_annotation(self, key: str | None, ann_id: str, fields: dict) -> bool:
+        """Merge drawer/fields into an annotation spec by scene id (a1, a2, ...) or paneId."""
+        if not isinstance(fields, dict) or not ann_id:
+            return False
+        with self.lock:
+            sc = self.scene(key)
+            for a in sc["annotations"]:
+                if a["id"] == ann_id or a.get("paneId") == ann_id:
+                    spec = dict(a.get("spec") or {})
+                    for k, v in fields.items():
+                        if v is None:
+                            continue
+                        if k in ("description_md", "title", "label") or k in ("images", "links", "rows"):
+                            spec[k] = v
+                        elif k not in ("id", "flyTo"):
+                            spec[k] = v
+                    a["spec"] = spec
+                    sc["updated"] = time.time()
+                    self._save()
+                    return True
+            return False
+
+    def dump(self, key: str | None) -> dict:
+        with self.lock:
+            sc = self.scene(key)
+            return {"scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "caption": sc.get("caption"),
+                    "drawer": sc.get("drawer"), "updated": sc.get("updated"),
+                    "annotations": [{"id": a["id"], "paneId": a.get("paneId"), "spec": dict(a.get("spec") or {})}
+                                    for a in sc.get("annotations") or []]}
+
+    def load_into(self, key: str | None, data: dict) -> dict:
+        """Replace the session scene with a saved investigation / dump."""
+        with self.lock:
+            sc = self.scene(key)
+            anns = []
+            for a in (data.get("annotations") or []):
+                if not isinstance(a, dict):
+                    continue
+                spec = dict(a.get("spec") or a)
+                aid = str(a.get("id") or f"a{next(self.ids)}")
+                if not (aid.startswith("a") and aid[1:].isdigit()):
+                    aid = f"a{next(self.ids)}"
+                anns.append({"id": aid, "spec": spec, "paneId": a.get("paneId")})
+            sc["annotations"] = anns[-MAX_ITEMS:]
+            sc["camera"] = data.get("camera")
+            sc["caption"] = data.get("caption")
+            sc["drawer"] = data.get("drawer")
+            sc["updated"] = time.time()
+            self._save()
+            return {"ok": True, "scene": key or DEFAULT_KEY, "annotations": len(sc["annotations"])}
+
     def restore_commands(self, key: str | None, redraw_only: bool = False, clear: bool = False) -> list[tuple[str, dict]]:
         """Commands that rebuild the scene in a fresh pane, in order."""
         with self.lock:
@@ -193,14 +300,18 @@ class SceneStore:
                                                   "rangeM": cam.get("heightM")}))
             specs = [a["spec"] for a in sc["annotations"]]
             if redraw_only or clear:
-                cmds.append(("clear_annotations", {}))
+                cmds.append(("clear_annotations", {}))  # filters stay; re-applied after the redraw
             for i in range(0, len(specs), 24):
                 cmds.append(("annotate_map", {"annotations": specs[i:i + 24], "persist": True}))
+            if sc.get("filters") and specs:
+                cmds.append(("hermes_pin_filter", dict(sc["filters"])))
             dr = sc.get("drawer")
             if dr and specs:
                 cmds.append(("hermes_pin_drawer", {"action": "open", "latitude": dr["latitude"],
                                                    "longitude": dr["longitude"], "label": dr.get("label"),
                                                    "flyTo": False}))
+            for sh in (sc.get("shapes") or {}).values():
+                cmds.append(("hermes_draw", dict(sh)))
             if sc.get("caption") and not redraw_only:
                 cmds.append(("hermes_caption", {"text": sc["caption"]}))
             return cmds

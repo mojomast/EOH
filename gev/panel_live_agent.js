@@ -94,6 +94,22 @@
     return { ok: true, action: 'hermes_frame', camera: pose() }
   }
 
+
+  // PNG data URL of the Cesium canvas (may fail when tiles taint the WebGL canvas).
+  const capture = () => {
+    const canvas = window.__godsEyeView?.viewer?.scene?.canvas
+    if (!canvas) return { ok: false, action: 'hermes_capture', error: 'no canvas', note: 'viewer not ready' }
+    try {
+      const dataUrl = canvas.toDataURL('image/png')
+      if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_capture', error: 'empty capture' }
+      return { ok: true, action: 'hermes_capture', mime: 'image/png', dataUrl,
+        width: canvas.width, height: canvas.height }
+    } catch (e) {
+      return { ok: false, action: 'hermes_capture', error: String(e && e.message || e),
+        note: 'Canvas may be tainted by cross-origin imagery; screenshot unavailable.' }
+    }
+  }
+
   // ---- framing presets (fly_to_location framing) ----------------------------------------
   const FRAMING = { street: [150, -15], rooftop: [450, -30], district: [2500, -45] }
   const MIN_RANGE_M = 100
@@ -154,7 +170,7 @@
   const ptName = (pt) => pt?.target ?? pt?.name ?? null
   const hasCoords = (pt) => Number.isFinite(pt?.latitude) && Number.isFinite(pt?.longitude)
   // Rewrite Hermes-only annotation features into upstream specs; remember what to add afterwards.
-  const DRAWER_KEYS = ['description_md', 'images', 'links']
+  const DRAWER_KEYS = ['description_md', 'images', 'links', 'tags']  // tags = POI facets for filters
   const PIN_TYPES = new Set(['pin', 'marker', 'point', 'highlight', 'card'])
   const prepAnnotate = (args) => {
     const extras = []
@@ -356,13 +372,19 @@
     if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
     let payload
     try {
-      if (m.name === 'hermes_pin_drawer') {
+      if (m.name === 'hermes_pin_drawer' || m.name === 'hermes_pin_filter') {
         await ready()
-        payload = window.__hermesPins ? window.__hermesPins.command(m.args || {}) : { ok: false, error: 'pin layer not loaded' }
+        const P = window.__hermesPins
+        payload = !P ? { ok: false, error: 'pin layer not loaded' } : m.name === 'hermes_pin_filter' ? P.filterCommand(m.args || {}) : P.command(m.args || {})
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
-      if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame') {
-        payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : sceneInfo()
+      if (m.name === 'hermes_context' || m.name === 'hermes_draw' || m.name === 'hermes_compare') {
+        await ready()
+        payload = window.__hermesContext ? window.__hermesContext.command(m.name, m.args || {}) : { ok: false, error: 'context layer not loaded' }
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
+      if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame' || m.name === 'hermes_capture') {
+        payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : m.name === 'hermes_capture' ? capture() : sceneInfo()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       const run = await ready()

@@ -161,12 +161,36 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
         ctx.rest('/live/drawer', { method: 'POST', body: { pane: paneId, pin: ok ? { latitude: pin.latitude, longitude: pin.longitude, label: String(pin.label ?? '').slice(0, 120) } : null } }).catch(() => {})
         return true
       }
+      if (event.data?.type === 'hermes-gev:filters') {  // a filter chip was toggled: persist it with the scene
+        const f = event.data.detail?.filters
+        if (f && typeof f === 'object') ctx.rest('/live/filters', { method: 'POST', body: { pane: paneId, filters: {
+          categories: (Array.isArray(f.categories) ? f.categories : []).slice(0, 16).map((c) => String(c).slice(0, 40)),
+          min_rating: Number.isFinite(f.min_rating) ? f.min_rating : null, open_now: Boolean(f.open_now),
+          include_unknown: f.include_unknown !== false, cluster: f.cluster !== false } } }).catch(() => {})
+        return true
+      }
+      if (event.data?.type === 'hermes-gev:ask') {  // "Ask Hermes" in the pane: see askHermes()
+        askHermes(ctx, event.data.prompt).then((r) => { try { win.postMessage({ type: 'hermes-gev:ask-result', ...r }, '*') } catch {} })
+        return true
+      }
       if (event.data?.type !== 'hermes-gev:result') return false
       pending.get(event.data.id)?.(event.data.payload)
       return true
     },
     stop() { stopped = true; clearInterval(pinger) }
   }
+}
+
+// "Ask Hermes" (pane toolbar / pin drawer). The desktop plugin SDK has no API to submit or prefill a
+// chat message (runAction only allows view/navigation ids such as composer.focus), so the prompt is
+// copied to the clipboard and the composer focused: the user pastes (Ctrl/Cmd+V) and sends.
+export async function askHermes(ctx, prompt) {
+  const text = String(prompt || '').slice(0, 2000)
+  if (!text) return { ok: false, error: 'empty prompt' }
+  let copied = false, focused = false
+  try { copied = Boolean(await ctx.os?.writeClipboard?.(text)) } catch {}
+  try { focused = ctx.runAction?.('composer.focus')?.ok !== false && typeof ctx.runAction === 'function' } catch {}
+  return { ok: copied, copied, focused, prompt: text }
 }
 
 // Release the frame's WebGL context now instead of at GC (see gev/panel_live_agent.js).

@@ -1,19 +1,23 @@
-"""One-line map state injected before each model turn.
+"""Per-turn context injected before each model turn.
 
 Hermes plugins register ``pre_llm_call`` (see NousResearch/hermes-agent
-``ctx.register_hook``). The callback returns ``{"context": "<line>"}``, which the
-host appends to the current user message. The line is built from the relay's cached
-pane snapshot (heartbeat or the last view-state result) plus the scene's pin count
-and open drawer. It does not call the pane, so a busy globe is not queued behind a
-state poll.
+``ctx.register_hook``). Hosts keep one callback per hook name, so the map line and
+area-watch alerts share this callback. It returns ``{"context": "..."}``, which the
+host appends to the current user message, or ``None`` when there is nothing to add.
 
-Set ``GODSEYE_TURN_STATE=0`` to disable. Hosts without ``register_hook`` skip this
-and the tools keep working.
+The map line is built from the relay's cached pane snapshot (heartbeat or the last
+view-state result) plus the scene's pin count and open drawer. It does not call the
+pane, so a busy globe is not queued behind a state poll. Watch alerts are the
+undelivered rows drained from the watch store for this chat.
+
+Set ``GODSEYE_TURN_STATE=0`` to drop the map line. Alerts still go out through the
+same hook. Hosts without ``register_hook`` skip both, and the tools keep working.
 """
 from __future__ import annotations
 
 import os
 import re
+import weakref
 
 ENV = "GODSEYE_TURN_STATE"
 MAX_BYTES = 300
@@ -83,12 +87,19 @@ def absorb_result(name: str, args: dict | None, res: dict | None) -> dict:
         return {}
     cam = result.get("camera") if isinstance(result, dict) and isinstance(result.get("camera"), dict) else {}
     out: dict = {}
+    center = cam.get("center") if isinstance(cam.get("center"), dict) else {}
+    pos = cam.get("position") if isinstance(cam.get("position"), dict) else {}
     lat = cam.get("targetLat", cam.get("latitude"))
     lon = cam.get("targetLon", cam.get("longitude"))
-    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+    if not isinstance(lat, (int, float)) or isinstance(lat, bool) or not isinstance(lon, (int, float)) or isinstance(lon, bool):
+        lat = center.get("lat", pos.get("lat"))
+        lon = center.get("lon", pos.get("lon"))
+    if isinstance(lat, (int, float)) and not isinstance(lat, bool) and isinstance(lon, (int, float)) and not isinstance(lon, bool):
         out["lat"] = round(float(lat), 4)
         out["lon"] = round(float(lon), 4)
-    rng = cam.get("rangeM", cam.get("heightM"))
+    rng = cam.get("rangeM")
+    if not isinstance(rng, (int, float)) or isinstance(rng, bool):
+        rng = cam.get("heightM", pos.get("heightM"))
     if isinstance(rng, (int, float)) and not isinstance(rng, bool):
         out["rangeM"] = max(0, min(40_000_000, int(rng)))
     pitch = cam.get("pitchDeg", cam.get("pitch"))
@@ -110,6 +121,13 @@ def absorb_result(name: str, args: dict | None, res: dict | None) -> dict:
         cleaned = sanitize_snapshot({"layers": ids}).get("layers")
         if cleaned:
             out["layers"] = cleaned
+    if name == "hermes_context" and isinstance(result, dict):
+        pins = result.get("pins")
+        if isinstance(pins, list):
+            out["pins"] = len(pins)
+        sel = result.get("selectedPin")
+        if isinstance(sel, dict) and sel.get("label"):
+            out["drawer"] = str(sel["label"])[:40]
     return sanitize_snapshot(out) if out else {}
 
 
@@ -194,33 +212,71 @@ def fetch_line(session_id: str | None) -> str | None:
     return line if isinstance(line, str) and line.startswith("EOH ") else None
 
 
+def _alert_text(session_id) -> str:
+    """Queued area-watch alerts for this chat. Empty when the store is unavailable."""
+    try:
+        from . import watch
+        return watch.alerts_context(watch.store().drain_alerts(session_id)) or ""
+    except Exception:
+        return ""
+
+
 def pre_llm_call(session_id=None, user_message=None, conversation_history=None,
                  is_first_turn=None, model=None, platform=None, **_kwargs):
-    """Hermes pre_llm_call hook. Return {"context": line} or None to inject nothing.
+    """Hermes pre_llm_call hook. Return {"context": text} or None to inject nothing.
 
     Hermes calls this positionally (session_id, user_message, history, is_first_turn,
-    model, platform). Keyword calls work too.
+    model, platform). Keyword calls work too. The text is the map line, queued watch
+    alerts, or both separated by a blank line.
     """
-    if not enabled():
+    parts: list[str] = []
+    if enabled():
+        try:
+            line = fetch_line(session_id)
+        except Exception:
+            line = None
+        if isinstance(line, str) and line and len(line.encode("utf-8")) <= MAX_BYTES:
+            parts.append(line)
+    alerts = _alert_text(session_id)
+    if alerts:
+        parts.append(alerts)
+    if not parts:
         return None
-    try:
-        line = fetch_line(session_id)
-    except Exception:
-        return None
-    if not line or len(line.encode("utf-8")) > MAX_BYTES:
-        return None
-    return {"context": line}
+    return {"context": "\n\n".join(parts)}
 
 
-def register(ctx) -> bool:
-    """Register the hook when this Hermes build has one and the switch is on."""
-    if not enabled() or ctx is None:
+_hooked: "weakref.WeakSet[object]" = weakref.WeakSet()
+
+
+def ensure_hook(ctx) -> bool:
+    """Register this module's callback once. A second registration would replace it."""
+    if ctx is None:
         return False
     hook = getattr(ctx, "register_hook", None)
     if not callable(hook):
         return False
     try:
+        if ctx in _hooked:
+            return True
+    except TypeError:
+        pass
+    try:
         hook("pre_llm_call", pre_llm_call)
     except Exception:
         return False
+    try:
+        _hooked.add(ctx)
+    except TypeError:
+        pass
     return True
+
+
+def register(ctx) -> bool:
+    """Register the shared hook when the map-line switch is on.
+
+    Area-watch delivery registers the same callback when the switch is off, so
+    alerts still reach the turn.
+    """
+    if not enabled() or ctx is None:
+        return False
+    return ensure_hook(ctx)

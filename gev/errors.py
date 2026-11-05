@@ -75,6 +75,86 @@ TABLE: dict[str, dict[str, str]] = {
         "message": "The tool failed.",
         "fix": "Read message, fix the arguments, and retry once. If it still fails, call godseye_doctor.",
     },
+    "routing_unavailable": {
+        "message": "The public routing service did not answer.",
+        "fix": "Retry once. For a straight-line distance use godseye_measure with op=distance (not op=route). Do not invent a travel time or draw a circle as a substitute for an isochrone. Optionally set GODSEYE_OSRM_URL or GODSEYE_VALHALLA_URL.",
+    },
+    "wayback_unavailable": {
+        "message": "Esri World Imagery Wayback config is unreachable.",
+        "fix": "Retry godseye_live_compare action=list_dates once. If it still fails, compare left=osm or left=current instead of a wayback date.",
+    },
+    "no_focus": {
+        "message": "There is no focus point on the pane.",
+        "fix": "Pass lat and lon, or ask the user to click a pin or the spot, then retry. godseye_live_context shows the current focus.",
+    },
+    "no_drawing": {
+        "message": "No drawn shape is on the pane.",
+        "fix": "Ask the user to draw a line, box or polygon, or pass points (or pins) to godseye_measure instead of use_drawn.",
+    },
+    "pin_not_found": {
+        "message": "No pin on the pane matched that id or label.",
+        "fix": "Call godseye_live_list_annotations or godseye_live_context and retry with an id or label from that list.",
+    },
+    "unsupported_side": {
+        "message": "That compare side is a map stack, which cannot be split.",
+        "fix": "Use left/right of current, osm, or wayback:YYYY[-MM]. Map stacks cannot be split.",
+    },
+    "confirm_required": {
+        "message": "Refusing to delete without confirm=true.",
+        "fix": "Call the delete tool again with the same name and confirm=true only if the user asked to delete it.",
+    },
+    "CONFIRM_REQUIRED": {
+        "message": "Deleting this drops saved state. Confirm with the user first.",
+        "fix": "Ask the user, then call godseye_watch_delete (or godseye_investigation_delete) again with the same id and confirm=true.",
+    },
+    "not_found": {
+        "message": "Nothing with that name or id was found.",
+        "fix": "Read message for which list to use. Investigations: godseye_investigation_list. Pins: godseye_live_list_annotations. Watches: godseye_watch_list. Retry with a name or id from that list.",
+    },
+    "NOT_FOUND": {
+        "message": "No watch with that id.",
+        "fix": "Call godseye_watch_list and retry with an id from that list.",
+    },
+    "no_pins": {
+        "message": "No matching pins are in this scene.",
+        "fix": "Pin the places first (godseye_find_places pin=true or godseye_live_annotate_map), then call godseye_research_pins. Pass ids from godseye_live_list_annotations if you named specific pins.",
+    },
+    "geocoder_unavailable": {
+        "message": "Nominatim reverse geocoding failed.",
+        "fix": "Retry godseye_live_context or godseye_what_is_here once. Do not invent the place name.",
+    },
+    "osm_unavailable": {
+        "message": "Nearby place lookup failed.",
+        "fix": "Retry once. If Overpass is down, call godseye_what_is_here with nearby=false for the reverse geocode only, or use godseye_find_places which rotates public mirrors.",
+    },
+    "no_match": {
+        "message": "No named place at this coordinate.",
+        "fix": "Use the lat/lon as given. nearby places may still name what is around the point.",
+    },
+    "bad_points": {
+        "message": "The points do not fit this measurement.",
+        "fix": "Pass at least 2 {lat, lon} points for distance or route, or 3+ for area. Or pass pins / use_drawn from godseye_live_context.",
+    },
+    "bad_args": {
+        "message": "The arguments are not valid.",
+        "fix": "Read message and retry with lat/lon in range, a valid area, and mode walk, bike or drive.",
+    },
+    "bad_mode": {
+        "message": "mode must be walk, bike or drive.",
+        "fix": "Retry with mode set to walk, bike or drive.",
+    },
+    "bad_focus": {
+        "message": "The focus point could not be read.",
+        "fix": "Pass lat and lon, or click the spot on the globe, then retry.",
+    },
+    "BAD_AREA": {
+        "message": "The watch area is not valid.",
+        "fix": "Pass area as {bbox:[south,west,north,east]}, {polygon:[[lat,lon],...]}, {lat,lon,radius_km}, or {view:true} with the Eye Of Hermes (EOH) pane open.",
+    },
+    "BAD_FEEDS": {
+        "message": "The watch feeds are not valid.",
+        "fix": "feeds must be one or more of earthquakes, fires, flights, ships, pois.",
+    },
 }
 
 _TOKEN = re.compile(r"token|api[_ ]?key|\bion\b|not authorized|unauthori[sz]ed", re.I)
@@ -120,7 +200,11 @@ def classify(out: dict, tool: str | None = None) -> str:
         if hinted:
             break
     if hinted in ("OVERPASS_NOT_CONFIGURED", "AREA_TOO_LARGE", "KEY_MISSING", "PANEL_STALE",
-                  "PANEL_MISSING", "ION_SCOPES", "no_pane", "pane_busy", "relay_unavailable", "timeout"):
+                  "PANEL_MISSING", "ION_SCOPES", "no_pane", "pane_busy", "relay_unavailable", "timeout",
+                  "routing_unavailable", "wayback_unavailable", "no_focus", "no_drawing", "pin_not_found",
+                  "unsupported_side", "confirm_required", "CONFIRM_REQUIRED", "not_found", "NOT_FOUND",
+                  "no_pins", "geocoder_unavailable", "osm_unavailable", "no_match", "bad_points",
+                  "bad_args", "bad_mode", "bad_focus", "BAD_AREA", "BAD_FEEDS"):
         return hinted
     if tool == "set_map_stack" and _TOKEN.search(blob):
         return "MAP_STACK_KEY"

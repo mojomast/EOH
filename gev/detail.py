@@ -45,6 +45,14 @@ LARGE_LIVE = {
 LARGE_EXTRA = {
     "godseye_brief_and_show", "godseye_find_places", "godseye_poi_details",
     "godseye_live_list_annotations",
+    # Context / measure / research. Small numeric answers (one distance leg, a contour
+    # summary) stay intact; geometry, catalogs and notes shrink.
+    "godseye_live_context", "godseye_what_is_here", "godseye_measure",
+    "godseye_isochrone", "godseye_live_draw", "godseye_live_compare",
+    "godseye_research_pins",
+    "godseye_investigation_list", "godseye_investigation_load", "godseye_investigation_report",
+    "godseye_live_filter_pins",
+    "godseye_watch_list", "godseye_watch_create",
 }
 
 IMAGE_TOOLS = {"get_cctv_snapshot", "get_weather_map", "get_recent_imagery", "find_imagery", "control_cctv"}
@@ -53,7 +61,10 @@ _ID_KEYS = ("id", "icao24", "mmsi", "noradId", "norad", "camera_id", "callsign",
             "label", "osm_id", "place_id", "uuid", "areaId")
 _KEEP = {"ok", "pane", "code", "message", "fix", "error", "detail", "hint", "fanout", "remediation"}
 _BLOB_KEYS = {"image", "screenshot", "snapshot", "data", "base64", "png", "jpeg", "dataurl", "data_url"}
-_GEOM_KEYS = {"geometry", "geom", "coordinates", "rings", "polygon", "positions"}
+_GEOM_KEYS = {"geometry", "geom", "coordinates", "rings", "polygon", "positions", "line", "points"}
+# Object lists at or under this serialized size stay (a distance leg, contour summaries,
+# open/closed pin rows). Larger catalogs collapse to a count and ids.
+_KEEP_LIST_BYTES = 2000
 _B64 = re.compile(r"^[A-Za-z0-9+/=\s]+$")
 CONCISE_CAP = 8000
 FULL_CAP = 400_000
@@ -118,6 +129,11 @@ def shrink_value(value, depth: int = 0):
             rows = value
             if any("enabled" in x or "visible" in x for x in value):
                 rows = [x for x in value if x.get("enabled") is not False and x.get("visible") is not False]
+                if not rows:
+                    return {"count": 0, "ids": []}
+            shrunk = [shrink_value(x, depth + 1) for x in rows]
+            if len(json.dumps(shrunk, default=str)) <= _KEEP_LIST_BYTES:
+                return shrunk
             ids = [i for i in (_ident(x) for x in rows) if i]
             out = {"count": len(rows), "ids": ids[:12]}
             if len(ids) > 12:
@@ -154,6 +170,13 @@ def shrink_tool(payload: dict) -> tuple[dict, bool]:
         if key in _KEEP:
             out[key] = val
             continue
+        low = str(key).lower()
+        if low in _GEOM_KEYS and isinstance(val, (list, dict)):
+            raw = json.dumps(val, default=str)
+            if len(raw) > 180:
+                out[key] = {"omitted": key, "bytes": len(raw)}
+                changed = True
+                continue
         nxt = shrink_value(val)
         if json.dumps(nxt, default=str, sort_keys=True) != json.dumps(val, default=str, sort_keys=True):
             changed = True

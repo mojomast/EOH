@@ -255,6 +255,14 @@ class Relay:
 
     def submit(self, name: str, args: dict, wait: float = RESULT_WAIT_S, session_id: str | None = None,
                pane_id: str | None = None, fanout: bool = False, record: bool = True) -> dict:
+        if name == "annotate_map" and isinstance(args, dict):
+            try:
+                from . import enrich
+                intent = args.get("intent") or args.get("context")
+                args = {**args, "annotations": enrich.enrich_annotations(
+                    args.get("annotations") or [], intent=intent, mode="light")}
+            except Exception:
+                args = dict(args or {})
         with self.cond:
             targets = self.targets(session_id, pane_id, fanout)
             if not targets:
@@ -289,6 +297,17 @@ class Relay:
         pane.last_session = key
         self.scenes.record(key, name, args, res)
         self._absorb_snapshot(pane, name, args, res)
+        if name == "annotate_map" and isinstance(res, dict) and res.get("ok"):
+            try:
+                from . import enrich
+                result = res.get("result") if isinstance(res.get("result"), dict) else res
+                intent = (args or {}).get("intent") or (args or {}).get("context")
+                enrich.after_annotate(
+                    self.scenes, key, args or {}, result or {},
+                    intent=intent,
+                    live=lambda n, a: self.submit(n, a, session_id=session_id, pane_id=pane.id, record=True))
+            except Exception:
+                pass
         if name in ("fly_to_location", "move_camera") and isinstance(res, dict) and res.get("ok"):
             with self.cond:  # follow up with the real camera pose (lat/lon/height/pitch)
                 self._internal(pane, "get_current_view_state", {},
@@ -353,6 +372,15 @@ class Relay:
             return {"ok": False, "error": "unknown pane"}
         pin = body.get("pin") if isinstance(body.get("pin"), dict) else None
         self.scenes.note_drawer(pane.last_session or self.scene_key(None, pane), pin)
+        return {"ok": True}
+
+    def filters_event(self, body: dict) -> dict:
+        """The user toggled a pin filter chip in the pane: keep it in the scene."""
+        pane = self.panes.get(str(body.get("pane") or ""))
+        if not pane:
+            return {"ok": False, "error": "unknown pane"}
+        f = body.get("filters") if isinstance(body.get("filters"), dict) else {}
+        self.scenes.note_filters(pane.last_session or self.scene_key(None, pane), f)
         return {"ok": True}
 
     # -- scene + tour operations ---------------------------------------------------------------
@@ -488,6 +516,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.tour_op(body))
             if self.path == "/panes":
                 return self._send(200, relay.panes_op(body))
+            if self.path == "/filters":
+                return self._send(200, relay.filters_event(body))
             if self.path == "/drawer":
                 return self._send(200, relay.drawer_event(body))
             if self.path == "/state":
@@ -502,15 +532,17 @@ def make_handler(relay: Relay, token: str):
 
 
 _server = None
+_relay = None
 
 
 def start_in_thread(token: str) -> bool:
-    global _server
+    global _server, _relay
     if _server is not None:
         return True
     try:
         from .scene import SceneStore, default_path
-        _server = ThreadingHTTPServer(("127.0.0.1", port()), make_handler(Relay(SceneStore(default_path())), token))
+        _relay = Relay(SceneStore(default_path()))
+        _server = ThreadingHTTPServer(("127.0.0.1", port()), make_handler(_relay, token))
     except OSError:
         return False
     threading.Thread(target=_server.serve_forever, name="godseye-live-relay", daemon=True).start()

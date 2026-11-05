@@ -128,6 +128,13 @@ async def live_result(body: dict):
     return await asyncio.to_thread(live.call, "/result", bridge.ensure_token(), body, 15)
 
 
+@router.post("/live/filters")
+async def live_filters(body: dict):
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/filters", bridge.ensure_token(), body, 15)
+
+
 @router.post("/live/drawer")
 async def live_drawer(body: dict):
     import asyncio

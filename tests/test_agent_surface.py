@@ -146,9 +146,15 @@ def test_detail_schema_only_on_large_tools():
     assert "detail" in c.tools["godseye_live_analyst_query"]["schema"]["parameters"]["properties"]
     assert "detail" in c.tools["godseye_get_cctv_snapshot"]["schema"]["parameters"]["properties"]
     assert "detail" in c.tools["godseye_find_places"]["schema"]["parameters"]["properties"]
+    for name in ("godseye_live_context", "godseye_measure", "godseye_isochrone", "godseye_live_compare",
+                 "godseye_live_draw", "godseye_research_pins", "godseye_investigation_load",
+                 "godseye_live_filter_pins", "godseye_watch_list", "godseye_watch_create"):
+        assert "detail" in c.tools[name]["schema"]["parameters"]["properties"], name
     assert "detail" not in c.tools["godseye_doctor"]["schema"]["parameters"]["properties"]
     assert "detail" not in c.tools["godseye_live_fly_to_location"]["schema"]["parameters"]["properties"]
     assert "detail" not in c.tools["godseye_hud_summary"]["schema"]["parameters"]["properties"]
+    assert "detail" not in c.tools["godseye_watch_delete"]["schema"]["parameters"]["properties"]
+    assert "detail" not in c.tools["godseye_investigation_delete"]["schema"]["parameters"]["properties"]
 
 
 def _aircraft_result(n=40):
@@ -292,6 +298,29 @@ def test_fixit_errors_for_the_common_failures(monkeypatch):
                          tool="get_earthquakes")
     assert up["code"] == "upstream_down" and "npm run dev" in up["fix"]
 
+    from gev.measure import _routing_down
+    route_down = errors.annotate(_routing_down("OSRM", "connection refused"), tool="godseye_measure")
+    assert route_down["code"] == "routing_unavailable"
+    assert "op=distance" in route_down["fix"] and "circle" in route_down["fix"]
+    side = errors.annotate({"ok": False, "error": "unsupported_side",
+                            "message": "'photoreal': map stacks cannot be split."}, tool="godseye_live_compare")
+    assert side["code"] == "unsupported_side" and "wayback" in side["fix"]
+    confirm = errors.annotate({"ok": False, "code": "CONFIRM_REQUIRED",
+                              "error": "Deleting 'Watch w-1' drops its last-seen state. Ask the user, then call again with confirm=true."},
+                             tool="godseye_watch_delete")
+    assert confirm["code"] == "CONFIRM_REQUIRED" and "confirm=true" in confirm["fix"]
+    soft = errors.annotate({"ok": False, "error": "confirm_required",
+                            "message": "Refusing to delete without confirm=true."}, tool="godseye_investigation_delete")
+    assert soft["code"] == "confirm_required" and soft["code"] != "refused"
+    missing = errors.annotate({"ok": False, "code": "NOT_FOUND", "error": "no watch 'w-9'"}, tool="godseye_watch_pause")
+    assert missing["code"] == "NOT_FOUND" and "godseye_watch_list" in missing["fix"]
+    feeds = errors.annotate({"ok": False, "code": "BAD_FEEDS", "error": "feeds must be a non-empty subset of earthquakes"},
+                           tool="godseye_watch_create")
+    assert feeds["code"] == "BAD_FEEDS" and "earthquakes" in feeds["fix"]
+    nearby = errors.annotate({"ok": False, "error": "osm_unavailable",
+                             "message": "Nearby lookup failed: Overpass timed out"}, tool="godseye_what_is_here")
+    assert nearby["code"] == "osm_unavailable"
+
 
 def test_success_payloads_are_not_rewritten_as_errors():
     out = errors.annotate({"ok": True, "result": {"label": "Tokyo"}}, tool="fly_to_location")
@@ -343,3 +372,133 @@ def test_mapstate_http(monkeypatch):
         assert "pane=connected" in line and "cam=10.0000,20.0000" in line and "drawer=none" in line
     finally:
         srv.shutdown()
+
+
+def test_hermes_context_updates_the_map_line_from_look_at():
+    r = live.Relay()
+    r.next(wait=0, pane_id="P", sessions=["chat"])
+    r._record("chat", r.panes["P"], "hermes_context", {}, {"ok": True, "camera": {
+        "position": {"lat": 40.0, "lon": -70.0, "heightM": 50000},
+        "center": {"lat": 45.501, "lon": -73.567},
+        "rangeM": 800, "headingDeg": 12, "pitchDeg": -40,
+    }, "pins": [{"id": "a", "label": "Port"}], "selectedPin": {"label": "Port"}})
+    line = r.map_line("chat")
+    assert "pane=connected" in line and "cam=45.5010,-73.5670" in line
+    assert "r=800m" in line and "h=12" in line and "p=-40" in line
+    assert "pins=1" in line and "drawer=Port" in line
+
+
+def test_map_line_and_watch_alerts_share_one_hook(monkeypatch):
+    class Ctx:
+        def __init__(self):
+            self.hooks = {}
+            self.n = 0
+
+        def register_hook(self, name, cb):
+            self.n += 1
+            self.hooks[name] = cb
+
+    ctx = Ctx()
+    assert turn_state.register(ctx) is True
+    assert hermes_tools.bind_watch_delivery(ctx)["hook"] is True
+    assert ctx.n == 1 and ctx.hooks["pre_llm_call"] is turn_state.pre_llm_call
+
+    monkeypatch.setattr(turn_state, "fetch_line", lambda sid: "EOH pane=connected pins=0 drawer=none")
+    pending = {"left": True}
+
+    class Store:
+        def drain_alerts(self, sid):
+            pending["sid"] = sid
+            if pending["left"]:
+                pending["left"] = False
+                return [{"id": "al-1"}]
+            return []
+
+    monkeypatch.setattr("gev.watch.store", lambda: Store())
+    monkeypatch.setattr("gev.watch.alerts_context", lambda alerts: "[EOH watch alert] quake" if alerts else "")
+    both = ctx.hooks["pre_llm_call"]("chat-9", "hi", [], False, "model", "cli")
+    assert "EOH pane=connected" in both["context"] and "[EOH watch alert] quake" in both["context"]
+    assert pending["sid"] == "chat-9"
+    again = ctx.hooks["pre_llm_call"](session_id="chat-9")
+    assert again == {"context": "EOH pane=connected pins=0 drawer=none"}
+
+    monkeypatch.setenv("GODSEYE_TURN_STATE", "0")
+    pending["left"] = True
+    alerts_only = turn_state.pre_llm_call(session_id="chat-9")
+    assert alerts_only["context"] == "[EOH watch alert] quake"
+    assert "EOH pane" not in alerts_only["context"]
+
+
+def test_new_tools_keep_small_numbers_and_shrink_geometry(monkeypatch):
+    small = json.loads(hermes_tools.extra_handler("godseye_measure")(
+        {"points": [[45.50, -73.57], [45.51, -73.56]], "draw": False}))
+    assert small["ok"] is True and small["op"] == "distance"
+    assert isinstance(small["legs"], list) and "m" in small["legs"][0]
+    assert isinstance(small["meters"], (int, float))
+
+    def fake_route(pts, mode=None):
+        return {"ok": True, "op": "route", "mode": mode or "walk", "meters": 1000.0, "minutes": 12.0,
+                "label": "1.0 km", "line": [[45.0 + i * 0.01, -73.0] for i in range(40)]}
+
+    monkeypatch.setattr("gev.measure.route", fake_route)
+    full = json.loads(hermes_tools.extra_handler("godseye_measure")(
+        {"points": [[45.50, -73.57], [45.51, -73.56]], "op": "route", "draw": False, "detail": "full"}))
+    concise = json.loads(hermes_tools.extra_handler("godseye_measure")(
+        {"points": [[45.50, -73.57], [45.51, -73.56]], "op": "route", "draw": False}))
+    assert len(full["line"]) == 40 and full["meters"] == 1000.0
+    assert concise["line"]["omitted"] == "line" and concise["meters"] == 1000.0
+    assert concise["detail"] == "concise" and len(concise_bytes(concise)) < len(concise_bytes(full))
+
+    def fake_iso(args):
+        poly = [[45.5 + (i % 5) * 0.01, -73.5 + (i % 7) * 0.01] for i in range(80)]
+        return {"ok": True, "center": {"lat": 45.5, "lon": -73.57}, "mode": "walk", "minutes": [15],
+                "approximate": True, "contours": [{"minutes": 15, "polygon": poly, "areaKm2": 1.2}]}
+
+    monkeypatch.setattr("gev.measure.isochrone", fake_iso)
+    iso = json.loads(hermes_tools.extra_handler("godseye_isochrone")(
+        {"lat": 45.5, "lon": -73.57, "minutes": [15], "draw": False, "include_polygon": True}))
+    assert iso["contours"][0]["minutes"] == 15 and iso["contours"][0]["areaKm2"] == 1.2
+    assert iso["contours"][0]["polygon"]["omitted"] == "polygon"
+    iso_full = json.loads(hermes_tools.extra_handler("godseye_isochrone")(
+        {"lat": 45.5, "lon": -73.57, "minutes": [15], "draw": False, "include_polygon": True, "detail": "full"}))
+    assert len(iso_full["contours"][0]["polygon"]) == 80
+
+    monkeypatch.setattr("gev.measure.wayback_releases", lambda: [
+        {"release": 300 - i, "date": f"20{i:02d}-06-01", "title": "World Imagery"} for i in range(1, 31)])
+    dates = json.loads(hermes_tools.extra_handler("godseye_live_compare")({"action": "list_dates"}))
+    assert dates["newest"]["release"] == 299 and dates["dates"]["count"] == 30
+    assert len(dates["dates"]["items"]) == 8
+    dates_full = json.loads(hermes_tools.extra_handler("godseye_live_compare")(
+        {"action": "list_dates", "detail": "full"}))
+    assert isinstance(dates_full["dates"], list) and len(dates_full["dates"]) == 30
+
+    def fake_live(name, args, session_id=None, fanout=False):
+        assert name == "hermes_pin_filter" and "detail" not in args
+        hidden = [{"id": f"p{i}", "label": f"Place {i}", "latitude": 45.0, "longitude": -73.0,
+                   "description": "x" * 300} for i in range(30)]
+        return {"ok": True, "total": 32, "shown": 2, "filters": {"categories": ["cafe"]},
+                "hidden": hidden,
+                "openState": [{"id": f"p{i}", "open": "open" if i % 2 == 0 else "closed"} for i in range(12)]}
+
+    monkeypatch.setattr("gev.composer.live_call", fake_live)
+    filt = json.loads(hermes_tools.extra_handler("godseye_live_filter_pins")({"action": "state"}))
+    assert filt["hidden"]["count"] == 30 and "p0" in filt["hidden"]["ids"]
+    assert filt["openState"][1]["open"] == "closed" and filt["shown"] == 2
+
+    note = "Field notes about the harbor. " * 80
+
+    def fake_inv(op, sid, **kw):
+        assert op == "load"
+        return {"ok": True, "name": "case", "pins": 1, "notes": note}
+
+    monkeypatch.setattr("gev.composer.investigation_op", fake_inv)
+    loaded = json.loads(hermes_tools.extra_handler("godseye_investigation_load")({"name": "case"}))
+    assert loaded["notes"].startswith("Field notes about the harbor.") and loaded["notes"].endswith("…")
+    assert len(loaded["notes"]) < 450
+    loaded_full = json.loads(hermes_tools.extra_handler("godseye_investigation_load")(
+        {"name": "case", "detail": "full"}))
+    assert loaded_full["notes"] == note
+
+
+def concise_bytes(obj) -> bytes:
+    return json.dumps(obj).encode()
