@@ -61,6 +61,12 @@ provides_tools:
   - godseye_live_run_tour
   - godseye_live_tour_status
   - godseye_live_pin_drawer
+  - godseye_research_pins
+  - godseye_investigation_save
+  - godseye_investigation_list
+  - godseye_investigation_load
+  - godseye_investigation_delete
+  - godseye_investigation_report
   - godseye_live_stop_tour
   - godseye_live_fly_to_location
   - godseye_live_select_nearest_aircraft

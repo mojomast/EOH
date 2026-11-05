@@ -94,6 +94,22 @@
     return { ok: true, action: 'hermes_frame', camera: pose() }
   }
 
+
+  // PNG data URL of the Cesium canvas (may fail when tiles taint the WebGL canvas).
+  const capture = () => {
+    const canvas = window.__godsEyeView?.viewer?.scene?.canvas
+    if (!canvas) return { ok: false, action: 'hermes_capture', error: 'no canvas', note: 'viewer not ready' }
+    try {
+      const dataUrl = canvas.toDataURL('image/png')
+      if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_capture', error: 'empty capture' }
+      return { ok: true, action: 'hermes_capture', mime: 'image/png', dataUrl,
+        width: canvas.width, height: canvas.height }
+    } catch (e) {
+      return { ok: false, action: 'hermes_capture', error: String(e && e.message || e),
+        note: 'Canvas may be tainted by cross-origin imagery; screenshot unavailable.' }
+    }
+  }
+
   // ---- framing presets (fly_to_location framing) ----------------------------------------
   const FRAMING = { street: [150, -15], rooftop: [450, -30], district: [2500, -45] }
   const MIN_RANGE_M = 100
@@ -299,8 +315,8 @@
         payload = window.__hermesPins ? window.__hermesPins.command(m.args || {}) : { ok: false, error: 'pin layer not loaded' }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
-      if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame') {
-        payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : sceneInfo()
+      if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame' || m.name === 'hermes_capture') {
+        payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : m.name === 'hermes_capture' ? capture() : sceneInfo()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       const run = await ready()

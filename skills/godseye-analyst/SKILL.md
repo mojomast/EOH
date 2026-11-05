@@ -17,6 +17,9 @@ of tools:
 | Something is off (no data, no pane, blank globe) | `godseye_doctor` |
 | A link someone else can open | `godseye_share_link` |
 | The user's usual starting view | `godseye_home` (`go` / `set` / `get`) |
+| Research a pin's drawer (summary, photos, sources) | `godseye_research_pins` |
+| Save / load a whole investigation | `godseye_investigation_save` / `_load` / `_list` / `_delete` |
+| Export an HTML+Markdown report | `godseye_investigation_report` |
 
 ## Rules
 
@@ -56,15 +59,48 @@ of tools:
 `godseye_live_set_visual_style {style: "surveillance"}`.
 
 **"List ramen places in Montreal" / "tell me about that pin."**
-`godseye_find_places {query: "ramen restaurants in Montreal", pin: true}` pins them with drawer content
-(address, hours, website, links). To add your own notes to a pin, include `title`, `description_md`
-(markdown), `images:[{url, alt}]` and `links:[{url, label}]` (http/https only) in its `annotate_map`
-spec. Show one with `godseye_live_pin_drawer {action: "open", label: "Sumo Ramen", flyTo: true}`;
-close with `{action: "close"}`. The user can also click any pin. Never put private URLs in a drawer.
+`godseye_find_places {query: "ramen restaurants in Montreal", pin: true, intent: "ramen near me"}`
+pins them with drawer content shaped by the request (cuisine, hours, menu/website). Always pass
+`intent` and fill `description_md` / `images` / `links` when you know more. Show one with
+`godseye_live_pin_drawer {action: "open", label: "Sumo Ramen", flyTo: true}`; close with
+`{action: "close"}`. Never put private URLs in a drawer.
 
 **"Save this as my home view" / "go home"** → `godseye_home {action: "set"}` / `{action: "go"}`.
 
 **"Send me a link to this."** → `godseye_share_link`.
 
+
+## Pins always carry drawer content
+
+**Every pin you create must have non-empty drawer content tailored to the user's request.**
+
+1. Pass `intent` (or `context`) on every pin-creating call — `godseye_live_annotate_map`,
+   `godseye_find_places {pin:true}`, `godseye_brief_and_show`, `godseye_live_run_tour` — set to the
+   user's request in their words (e.g. `"ramen near me"`, `"FIRMS fires last 24h"`).
+2. Always fill `description_md` yourself when you know the facts. Prefer the facts the request
+   cares about: cuisine / hours / price / menu link for food; detection time / confidence / source
+   for fires; magnitude / depth for quakes; callsign / altitude for aircraft; etc. Add `images[]`
+   and `links[]` (http/https only) when you have them.
+3. The plugin light-enriches every pin automatically (cached, fast) from tags already on the pin.
+   Call `godseye_research_pins {mode:"full"}` when the user asks for a deeper pass (Wikipedia /
+   Wikidata / Commons / website meta). `mode:"light"` is the default enrichment path.
+4. If a pin somehow lands empty, the plugin auto-enriches it in the background and pushes the
+   update to the pane drawer — still pass `intent` so that pass is relevant.
+5. This plugin cannot call Hermes `web_search`. When free sources are thin, run your own web
+   search and pass verified snippets as `agent_notes` on `godseye_research_pins`, or rewrite the
+   pin via `annotate_map`. Never invent facts; mark missing data as unavailable.
+
+**"Research these pins" / "fill in the drawers."**
+`godseye_research_pins {mode:"full"}` (or `{ids:["a1","a2"]}`). Then open one with
+`godseye_live_pin_drawer`.
+
+**"Save this investigation as Montreal Ramen" / "load it" / "export a report."**
+`godseye_investigation_save {name:"Montreal Ramen", notes:"..."}` →
+`godseye_investigation_load {name:"Montreal Ramen"}` →
+`godseye_investigation_report {name:"Montreal Ramen", capture:true}`.
+Delete only with `godseye_investigation_delete {name:"...", confirm:true}`.
+
 Slash command for quick control: `/gev fly <place>`, `/gev layers [on|off names]`,
-`/gev status`, `/gev brief <place>`, `/gev home [set]`, `/gev share`, `/gev doctor`.
+`/gev status`, `/gev brief <place>`, `/gev home [set]`, `/gev share`, `/gev doctor`,
+`/gev research [light|full]`, `/gev save|list|load <name>`, `/gev delete <name> --confirm`,
+`/gev report [name]`.

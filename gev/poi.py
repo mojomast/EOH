@@ -408,9 +408,15 @@ def drawer_fields(p: dict) -> dict:
     return {k: v for k, v in out.items() if v}
 
 
-def pin_annotations(pois: list[dict], label_prefix: str = "") -> list[dict]:
-    return [{"type": "pin", "target": p["name"][:200], "latitude": p["lat"], "longitude": p["lon"],
-             "label": f"{label_prefix}{p['name']}"[:80], **drawer_fields(p)} for p in pois[:24]]
+def pin_annotations(pois: list[dict], label_prefix: str = "", intent: str | None = None) -> list[dict]:
+    """Build annotate_map pins with drawer content shaped by the user's intent."""
+    from . import enrich
+    out = []
+    for p in pois[:24]:
+        base = {"type": "pin", "target": p["name"][:200], "latitude": p["lat"], "longitude": p["lon"],
+                "label": f"{label_prefix}{p['name']}"[:80], **drawer_fields(p)}
+        out.append(enrich.ensure_drawer(base, intent=intent or p.get("name"), mode="light", extra=p))
+    return out
 
 
 # --- P2: details ------------------------------------------------------------
