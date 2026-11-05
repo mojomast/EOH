@@ -25,7 +25,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "timeout": {
         "message": "The Eye Of Hermes (EOH) pane did not answer in time.",
-        "fix": "Retry this call once. If it times out again, call godseye_live_panes and godseye_doctor before changing arguments.",
+        "fix": "Retry this call once. If it times out again, call godseye_view op=panes and godseye_doctor before changing arguments.",
     },
     "MAP_STACK_KEY": {
         "message": "set_map_stack failed because a client map key is missing or not in the pane bundle.",
@@ -53,11 +53,11 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "OVERPASS_DOWN": {
         "message": "Every Overpass endpoint failed or rate-limited this call.",
-        "fix": "Retry godseye_find_places once after a short wait; it rotates public Overpass mirrors and can fall back to Nominatim. Do not invent places. For in-pane osm_query, set OVERPASS_UPSTREAMS in ~/.config/gods-eye-view.env and restart the app.",
+        "fix": "Retry godseye_query op=find_places once after a short wait; it rotates public Overpass mirrors and can fall back to Nominatim. Do not invent places. For in-pane osm, set OVERPASS_UPSTREAMS in ~/.config/gods-eye-view.env and restart the app.",
     },
     "OSM_UNAVAILABLE": {
         "message": "Place search could not reach Overpass or Nominatim.",
-        "fix": "Retry godseye_find_places once. Do not invent places. If this was osm_query inside the pane, call godseye_find_places instead.",
+        "fix": "Retry godseye_query op=find_places once. Do not invent places. If this was osm inside the pane, call godseye_query op=find_places instead.",
     },
     "AREA_TOO_LARGE": {
         "message": "The area is too large for the pane's OSM search.",
@@ -85,7 +85,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "no_focus": {
         "message": "There is no focus point on the pane.",
-        "fix": "Pass lat and lon, or ask the user to click a pin or the spot, then retry. godseye_live_context shows the current focus.",
+        "fix": "Pass lat and lon, or ask the user to click a pin or the spot, then retry. godseye_query op=context shows the current focus.",
     },
     "no_drawing": {
         "message": "No drawn shape is on the pane.",
@@ -93,7 +93,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "pin_not_found": {
         "message": "No pin on the pane matched that id or label.",
-        "fix": "Call godseye_live_list_annotations or godseye_live_context and retry with an id or label from that list.",
+        "fix": "Call godseye_live_list_annotations or godseye_query op=context and retry with an id or label from that list.",
     },
     "unsupported_side": {
         "message": "That compare side is a map stack, which cannot be split.",
@@ -117,15 +117,15 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "no_pins": {
         "message": "No matching pins are in this scene.",
-        "fix": "Pin the places first (godseye_find_places pin=true or godseye_live_annotate_map), then call godseye_research_pins. Pass ids from godseye_live_list_annotations if you named specific pins.",
+        "fix": "Pin the places first (godseye_query op=find_places pin=true or godseye_live_annotate_map), then call godseye_research_pins. Pass ids from godseye_live_list_annotations if you named specific pins.",
     },
     "geocoder_unavailable": {
         "message": "Nominatim reverse geocoding failed.",
-        "fix": "Retry godseye_live_context or godseye_what_is_here once. Do not invent the place name.",
+        "fix": "Retry godseye_query op=context or op=what_is_here once. Do not invent the place name.",
     },
     "osm_unavailable": {
         "message": "Nearby place lookup failed.",
-        "fix": "Retry once. If Overpass is down, call godseye_what_is_here with nearby=false for the reverse geocode only, or use godseye_find_places which rotates public mirrors.",
+        "fix": "Retry once. If Overpass is down, call godseye_query op=what_is_here with nearby=false for the reverse geocode only, or use godseye_query op=find_places which rotates public mirrors.",
     },
     "no_match": {
         "message": "No named place at this coordinate.",
@@ -133,7 +133,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "bad_points": {
         "message": "The points do not fit this measurement.",
-        "fix": "Pass at least 2 {lat, lon} points for distance or route, or 3+ for area. Or pass pins / use_drawn from godseye_live_context.",
+        "fix": "Pass at least 2 {lat, lon} points for distance or route, or 3+ for area. Or pass pins / use_drawn from godseye_query op=context.",
     },
     "bad_args": {
         "message": "The arguments are not valid.",
@@ -154,6 +154,14 @@ TABLE: dict[str, dict[str, str]] = {
     "BAD_FEEDS": {
         "message": "The watch feeds are not valid.",
         "fix": "feeds must be one or more of earthquakes, fires, flights, ships, pois.",
+    },
+    "invalid_geojson": {
+        "message": "The export did not validate as GeoJSON (RFC 7946).",
+        "fix": "Retry godseye_investigation_export. If it fails again, export a saved investigation by name from godseye_investigation_list.",
+    },
+    "invalid_kml": {
+        "message": "The export did not validate as KML.",
+        "fix": "Retry godseye_investigation_export. If it fails again, export format=geojson only and say the KML step failed.",
     },
 }
 

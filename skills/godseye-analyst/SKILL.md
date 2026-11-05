@@ -1,13 +1,13 @@
 ---
 name: godseye-analyst
-description: Eye Of Hermes (EOH) analyst playbook (built on God's Eye View). Prefer godseye_view and godseye_query. Legacy godseye_* names still work. Public-data-only policy, pane handling, and example sequences.
+description: Eye Of Hermes (EOH) analyst playbook (built on God's Eye View). Prefer godseye_view and godseye_query. Public-data-only policy, pane handling, and example sequences.
 ---
 
 # Eye Of Hermes (EOH) analyst playbook
 
 Eye Of Hermes (EOH) is a Hermes front end for God's Eye View, a live 3D globe of **public** aircraft (ADS-B), ships (AIS), satellites, earthquakes, fires, weather, cyclones and mapped infrastructure.
 
-Prefer two composable tools. Pass `op` every time. Legacy names in the appendix call the same handlers.
+Prefer two composable tools. Pass `op` every time.
 
 ## godseye_view
 
@@ -105,32 +105,14 @@ Read the `EOH pane=` line. `godseye_query` `{op:"context"}`. Answer from `focus`
 
 Pass `intent` (or `context`) on every pin-creating call: `find_places` with `pin: true`, `brief_and_show`, `godseye_live_annotate_map`, and `godseye_live_run_tour`. Set it to the user's request. Fill `description_md`, `images`, and `links` (http/https only) when you know them. Open one drawer with `godseye_live_pin_drawer` `{action:"open", label:"Sumo Ramen"}`. Light enrichment runs automatically. `godseye_research_pins` `{mode:"full"}` is the deeper pass. This plugin cannot call Hermes `web_search`; pass verified snippets as `agent_notes`. Never invent facts.
 
-**"Save this investigation" / "load it" / "export a report."**
-`godseye_investigation_save`, `godseye_investigation_load`, `godseye_investigation_report`. Delete only with `godseye_investigation_delete` `{confirm:true}`.
+**"Save this investigation as Montreal Ramen" / "load it" / "export a report."**
+`godseye_investigation_save {name:"Montreal Ramen"}`, then `godseye_investigation_load {name:"Montreal Ramen"}`.
+`godseye_investigation_report {name:"Montreal Ramen", capture:true}` writes HTML and Markdown.
+`godseye_investigation_export {name:"Montreal Ramen", format:"pack"}` writes GeoJSON and KML, plus a zip of the report and any saved screenshots. Omit `name` to export the current scene. Google photoreal tile imagery is not included.
+Delete only with `godseye_investigation_delete {name:"...", confirm:true}`.
 
-Slash command: `/gev fly`, `layers`, `status`, `brief`, `home`, `share`, `doctor`, `research`, `save`, `list`, `load`, `delete`, `report`.
+Slash command: `/gev fly`, `layers`, `status`, `brief`, `home`, `share`, `doctor`, `research`, `save`, `list`, `load`, `delete`, `report`, `export`.
 
-## Legacy names
+## Internal mapping
 
-Phase A names below still work. Prefer the composable op. The full map, including tools that are not composable yet (layers, feeds, annotate, nav, track, scene, watch, capture, state, admin), is `docs/COMPOSABLE-TOOLS.md`.
-
-| Legacy name | Call instead |
-| --- | --- |
-| `godseye_live_fly_to_location` | `godseye_view` `op=fly` |
-| `godseye_live_move_camera` | `godseye_view` `op=move` |
-| `godseye_live_adjust_camera_zoom` | `godseye_view` `op=zoom` |
-| `godseye_live_zoom_to_globe` | `godseye_view` `op=globe` |
-| `godseye_home` | `godseye_view` `op=home` |
-| `godseye_share_link` | `godseye_view` `op=share` |
-| `godseye_live_panes` | `godseye_view` `op=panes` |
-| `godseye_find_places` | `godseye_query` `op=find_places` |
-| `godseye_live_osm_query` | `godseye_query` `op=osm` |
-| `godseye_live_context` | `godseye_query` `op=context` |
-| `godseye_what_is_here` | `godseye_query` `op=what_is_here` |
-| `godseye_situation_brief` | `godseye_query` `op=brief` |
-| `godseye_brief_and_show` | `godseye_query` `op=brief_and_show` |
-| `godseye_live_analyst_query` | `godseye_query` `op=analyst` |
-| `godseye_military_awareness` | `godseye_query` `op=military` |
-| `godseye_poi_details` | `godseye_query` `op=poi` |
-| `godseye_live_resolve_area` | `godseye_query` `op=resolve_area` |
-| `godseye_live_get_entity_context` | `godseye_query` `op=entity` |
+The names these two tools replaced are not tools. Do not call them. `gev/router.py` `dispatch_legacy` maps a saved call that still uses one onto the op above. Scenes, tours, `/gev`, the relay, and the pane keep bare action names such as `fly_to_location`. The full map, including tools that are not composable yet (layers, feeds, annotate, nav, track, scene, watch, capture, state, admin), is `docs/COMPOSABLE-TOOLS.md`.

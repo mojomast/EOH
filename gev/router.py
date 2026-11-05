@@ -187,6 +187,8 @@ CATALOG: tuple[Target, ...] = (
     _t("godseye_investigation_load", "godseye_scene", "load", "extra", "later", "load an investigation"),
     _t("godseye_investigation_delete", "godseye_scene", "delete", "extra", "later", "delete requires confirm=true"),
     _t("godseye_investigation_report", "godseye_scene", "report", "extra", "later", "HTML and Markdown report"),
+    _t("godseye_investigation_export", "godseye_scene", "export", "extra", "later",
+       "GeoJSON and KML, optional pack; not folded into view or query"),
     _t("godseye_live_restore_scene", "godseye_scene", "restore", "extra", "later", "re-apply this chat's scene"),
     _t("godseye_live_run_tour", "godseye_scene", "tour", "extra", "later", "start a guided tour"),
     _t("godseye_live_tour_status", "godseye_scene", "tour_status", "extra", "later", "poll a tour job"),
@@ -281,8 +283,17 @@ def phase_a_ops(composable: str) -> list[str]:
     return [t.op for t in CATALOG if t.composable == composable and t.phase == "A"]
 
 
+def absorbed(legacy: str) -> bool:
+    """True when this Hermes name is implemented as a godseye_view or godseye_query op.
+
+    Those names are not registered. dispatch_legacy is the only entry that still accepts them.
+    """
+    target = BY_LEGACY.get(legacy)
+    return target is not None and target.phase == "A"
+
+
 def deprecation_note(legacy: str) -> str | None:
-    """Model-facing note for a phase A alias. None if the name is not routed yet."""
+    """Internal mapping phrase. Not written into any schema the model sees."""
     target = BY_LEGACY.get(legacy)
     if target is None or target.phase != "A":
         return None
@@ -290,13 +301,30 @@ def deprecation_note(legacy: str) -> str | None:
 
 
 def alias_handler(legacy: str):
-    """Legacy tool entry. Forwards arguments unchanged to the original handler."""
+    """Retired-name entry. Forwards arguments unchanged to the op's handler."""
     spec = BY_LEGACY[legacy]
 
     def handler(args: dict, **kw) -> str:
         return invoke(spec, dict(args or {}), **kw)
 
     return handler
+
+
+def dispatch_legacy(name: str, args: dict | None = None, **kw) -> str:
+    """Run a retired Hermes tool name through the op that replaced it.
+
+    Scenes, tours, /gev, the relay, and the pane use bare pane actions
+    (fly_to_location, move_camera, get_current_view_state) and never see this.
+    A saved call that still names godseye_live_fly_to_location or another
+    absorbed tool comes here instead of the model catalog.
+    """
+    if not absorbed(name):
+        return json.dumps({
+            "ok": False, "error": "unknown_tool", "code": "unknown_tool",
+            "message": "That name is not a registered tool.",
+            "fix": "Use godseye_view or godseye_query.",
+        })
+    return alias_handler(name)(args or {}, **kw)
 
 
 def composable_handler(composable: str):
@@ -711,10 +739,7 @@ def view_schema() -> dict:
     }
     return _schema("godseye_view", _tool_description(
         "godseye_view",
-        "Move the Eye Of Hermes (EOH) camera, home view, share link, or pane list. "
-        "One op per call. Legacy godseye_live_fly_to_location, godseye_live_move_camera, "
-        "godseye_live_adjust_camera_zoom, godseye_live_zoom_to_globe, godseye_home, "
-        "godseye_share_link, and godseye_live_panes call the same handlers."), props)
+        "Move the Eye Of Hermes (EOH) camera, home view, share link, or pane list. One op per call."), props)
 
 
 def query_schema() -> dict:
@@ -806,9 +831,6 @@ def query_schema() -> dict:
     return _schema("godseye_query", _tool_description(
         "godseye_query",
         "Look up places, the open view, and situation briefs. One op per call. "
-        "Legacy godseye_find_places, godseye_live_osm_query, godseye_live_context, godseye_what_is_here, "
-        "godseye_situation_brief, godseye_brief_and_show, godseye_live_analyst_query, godseye_military_awareness, "
-        "godseye_poi_details, godseye_live_resolve_area, and godseye_live_get_entity_context call the same handlers. "
         "Public aircraft, vessels, places, and hazards only. Do not search for a person."), props)
 
 

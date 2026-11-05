@@ -16,6 +16,19 @@ MAX_ITEMS = 96
 POINT_TYPES = {"pin", "highlight", "label", "area", "card"}
 
 
+def stored_shapes(raw) -> dict:
+    """Investigation snapshots store shapes as a list; the scene keeps them by id."""
+    if isinstance(raw, dict):
+        return {str(k): dict(v) for k, v in raw.items() if isinstance(v, dict)}
+    if isinstance(raw, list):
+        out = {}
+        for i, item in enumerate(raw):
+            if isinstance(item, dict):
+                out[str(item.get("id") or i)] = dict(item)
+        return out
+    return {}
+
+
 def default_path() -> Path:
     home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
     return home / "plugin-data" / "godseye" / "scenes.json"
@@ -281,6 +294,7 @@ class SceneStore:
             sc["camera"] = data.get("camera")
             sc["caption"] = data.get("caption")
             sc["drawer"] = data.get("drawer")
+            sc["shapes"] = stored_shapes(data.get("shapes"))
             sc["updated"] = time.time()
             self._save()
             return {"ok": True, "scene": key or DEFAULT_KEY, "annotations": len(sc["annotations"])}

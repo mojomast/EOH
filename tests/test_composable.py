@@ -17,9 +17,11 @@ from gev import hermes_tools, router  # noqa: E402
 from gev.selection_eval import load_golden, score  # noqa: E402
 
 ROW = re.compile(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| (A|later) \| (.*) \|$")
-# Measured on this tree before phase A (compact schema JSON, tiktoken o200k_base).
-BASELINE_BYTES = 128269
-BASELINE_O200K = 30133
+# Re-measured after godseye_investigation_export landed on feat/v0.2.
+# baseline = that catalog (absorbed names included, view/query absent).
+# after = the catalog the model sees (18 names dropped, two composable tools added).
+# Filled in by test_measure once measure_schemas.py has been run; the assertions
+# below check the relationship, and the PR body records the token counts.
 
 
 class Ctx:
@@ -96,7 +98,10 @@ def _schema_ok(schema: dict, args: dict):
 def test_catalog_matches_plugin_yaml_and_handler_family():
     provided = set(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     legacy = {t.legacy for t in router.CATALOG}
-    assert legacy == provided - {"godseye_view", "godseye_query"}
+    hidden = {t.legacy for t in router.CATALOG if t.phase == "A"}
+    assert hidden.isdisjoint(provided)
+    assert legacy - hidden == provided - {"godseye_view", "godseye_query"}
+    assert "godseye_investigation_export" in provided
     assert len(legacy) == len(router.CATALOG)
     live = {"godseye_live_" + t["name"] for t in hermes_tools.load_live_catalog()}
     mcp = {"godseye_" + t["name"] for t in hermes_tools.load_catalog()}
@@ -129,23 +134,31 @@ def test_design_doc_lists_every_tool():
         assert (target.composable, target.op, target.phase, target.note) == (composable, op, phase, note)
 
 
-def test_phase_a_aliases_are_deprecated_and_others_are_not():
+def test_phase_a_names_are_not_registered():
     ctx = _ctx()
     assert set(ctx.tools) == set(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
+    retired = []
     for target in router.CATALOG:
-        desc = ctx.tools[target.legacy]["schema"]["description"]
-        note = router.deprecation_note(target.legacy)
         if target.phase == "A":
-            assert note and desc.startswith(note + "."), target.legacy
+            retired.append(target.legacy)
+            assert target.legacy not in ctx.tools, target.legacy
+            assert router.absorbed(target.legacy)
             assert target.composable in {"godseye_view", "godseye_query"}
         else:
-            assert note is None
+            assert target.legacy in ctx.tools, target.legacy
+            assert not router.absorbed(target.legacy)
+            desc = ctx.tools[target.legacy]["schema"]["description"]
             assert not desc.startswith("deprecated:"), target.legacy
+    assert len(retired) == 18
+    for name, tool in ctx.tools.items():
+        blob = json.dumps(tool["schema"])
+        assert "deprecated: use godseye_" not in blob
+        for old in retired:
+            assert old not in blob, (name, old)
     for name in ("godseye_view", "godseye_query"):
         schema = ctx.tools[name]["schema"]
         assert schema["parameters"]["required"] == ["op"]
         assert schema["parameters"]["properties"]["op"]["enum"] == router.phase_a_ops(name)
-        assert "deprecated:" not in schema["description"][:20]
 
 
 def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
@@ -189,7 +202,7 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         args = samples[(target.composable, target.op)]
         seen.clear()
         ctx.tools[target.composable]["handler"]({"op": target.op, **args}, session_id="s")
-        ctx.tools[target.legacy]["handler"](dict(args), session_id="s")
+        router.dispatch_legacy(target.legacy, dict(args), session_id="s")
         assert len(seen) == 2, target.legacy
         kind, name, forwarded, sid = seen[0]
         assert seen[0] == seen[1]
@@ -235,7 +248,8 @@ def test_alias_fly_matches_composable_fly_without_style(monkeypatch):
 
     monkeypatch.setattr("gev.composer.live_call", live_call)
     ctx = _ctx()
-    alias = ctx.tools["godseye_live_fly_to_location"]["handler"](
+    alias = router.dispatch_legacy(
+        "godseye_live_fly_to_location",
         {"query": "Tokyo", "framing": "street", "fanout": True}, session_id="chat")
     composable = ctx.tools["godseye_view"]["handler"](
         {"op": "fly", "query": "Tokyo", "framing": "street", "fanout": True}, session_id="chat")
@@ -313,33 +327,43 @@ def test_golden_set_matches_schemas_and_the_router(monkeypatch):
         assert "op" not in forwarded
 
 
+def test_retired_name_is_not_a_registered_tool():
+    missing = json.loads(router.dispatch_legacy("godseye_doctor", {}))
+    assert missing["code"] == "unknown_tool"
+
+
 def test_system_prompt_teaches_the_new_tools_first():
     text = hermes_tools.SYSTEM_PROMPT
     assert "godseye_view" in text and "godseye_query" in text
-    assert text.index("godseye_view") < text.index("Legacy")
+    assert "Legacy" not in text
+    assert "godseye_live_fly_to_location" not in text
     assert len(text) <= 1500
 
 
 def test_skill_teaches_new_tools_and_keeps_the_policy():
     text = (ROOT / "skills/godseye-analyst/SKILL.md").read_text()
     assert text.startswith("---\nname: godseye-analyst")
-    assert "Public assets and events only" in text and "no_pane" in text and "godseye_brief_and_show" in text
-    assert text.index("godseye_view") < text.index("Legacy names")
-    assert "godseye_query" in text and "op=context" in text
+    assert "Public assets and events only" in text and "no_pane" in text and "brief_and_show" in text
+    assert "godseye_view" in text and "godseye_query" in text and "op=context" in text
+    assert "dispatch_legacy" in text
+    assert "Legacy names" not in text
+    for target in router.CATALOG:
+        if target.phase == "A":
+            assert target.legacy not in text, target.legacy
 
 
-def test_measure_schemas_reconstructs_the_prechange_size():
+def test_measure_schemas_shrinks_the_catalog():
     sys.path.insert(0, str(ROOT / "evals"))
     import measure_schemas
     report = measure_schemas.measure()
-    assert report["baseline"]["tools"] == 97
-    assert report["after"]["tools"] == 99
-    assert report["baseline"]["bytes"] == BASELINE_BYTES
-    assert report["composable_only"]["bytes"] < report["phase_a_legacy_without_notes"]["bytes"]
-    assert report["after"]["bytes"] > report["baseline"]["bytes"]
-    if report["baseline"]["tokens"]:
-        assert report["baseline"]["tokens"]["o200k_base"] == BASELINE_O200K
-        assert report["composable_only"]["tokens"]["o200k_base"] < report["phase_a_legacy_without_notes"]["tokens"]["o200k_base"]
+    assert report["baseline"]["tools"] == report["after"]["tools"] + 16
+    assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
+    assert report["composable_only"]["tools"] == 2
+    assert report["phase_a_legacy"]["tools"] == 18
+    assert report["composable_only"]["bytes"] < report["phase_a_legacy"]["bytes"]
+    assert report["after"]["bytes"] < report["baseline"]["bytes"]
+    assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]
+    assert report["after"]["tokens"]["cl100k_base"] < report["baseline"]["tokens"]["cl100k_base"]
 
 
 def test_live_selection_script_skips_without_a_key_and_in_ci():

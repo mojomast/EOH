@@ -1,8 +1,10 @@
 # Composable tools
 
-Phase A of the tool consolidation. Eye Of Hermes still registers every existing `godseye_*` name. It also registers two composable tools, `godseye_view` and `godseye_query`. Both take a required `op` and call the same handlers the old names use (`make_live_handler`, `make_handler`, or `extra_handler` in `gev/hermes_tools.py`).
+Phase A of the tool consolidation. The model catalog registers `godseye_view` and `godseye_query`. Both take a required `op` and call the same handlers the old names used (`make_live_handler`, `make_handler`, or `extra_handler` in `gev/hermes_tools.py`). The 18 names those ops replaced are not registered and are not listed in `plugin.yaml` `provides_tools`.
 
-A phase A alias description starts with `deprecated: use godseye_view op=fly` (or `godseye_query`). The alias handler forwards its arguments unchanged into the router, so existing callers and the analyst skill keep working. Tools whose composable home is not registered yet are unchanged and are not marked deprecated. Marking them would point at a tool that does not exist.
+`router.dispatch_legacy(name, args)` is the internal map. It accepts one of those retired Hermes names and runs the op's handler with the original arguments. Saved scenes, tours, `/gev`, the relay, and the pane scripts do not use Hermes tool names. They keep the bare pane actions (`fly_to_location`, `move_camera`, `get_current_view_state`, `hermes_context`). Those paths are unchanged.
+
+Tools whose composable home is not registered yet stay registered under their current names. `godseye_investigation_export` is one of them. It is not folded into `godseye_view` or `godseye_query`.
 
 The other ten composable tools in the target set (`godseye_layers`, `godseye_feeds`, `godseye_annotate`, `godseye_nav`, `godseye_track`, `godseye_scene`, `godseye_watch`, `godseye_capture`, `godseye_state`, `godseye_admin`) are mapped below and are not implemented in this change.
 
@@ -29,7 +31,7 @@ The starting table is in the 2026-11-05 research note, section 1. These rows dif
 - **`zoom_to_globe` is `op=globe`**, not `zoom`. The live tool's own description says a relative zoom cannot reach the whole Earth.
 - **`fly_route` stays on `godseye_nav`.** It dollies along a route that was already drawn. It is not a camera fly.
 - **`resolve_area`, `poi_details`, and `get_entity_context` are query ops.** `resolve_area` is how `analyst` and `osm` get an `areaId`. `poi_details` is the one-venue step after `find_places`. Entity context is the "entity" role in the research note.
-- **`get_terrain_height` and `get_map_features` are query ops, phase later.** They are point lookups, not feeds. They are not in the phase A query set, so their names are not deprecated.
+- **`get_terrain_height` and `get_map_features` are query ops, phase later.** They are point lookups, not feeds. They are not the same call as `what_is_here`, so they stay registered.
 - **`show_in_gods_eye_view` is `godseye_view` `op=show`, phase later.** The payload is a composed scene (area, layers, style, marks, follow). Putting that schema on `godseye_view` now would undo the size cut. `fly` plus `style` covers "fly to Tokyo NVG".
 - **Panels, Contacts mode, sonar, and detection sit with layers.** They change pane chrome or a visual overlay. Cockpit sits with track. Cinematic `control_scene` sits with scene (`op=playback`), separate from investigation save/load. CCTV control and radio sit with feeds.
 - **Two satellite-pass tools.** `godseye_next_satellite_pass` is the MCP call (`op=next_pass`, no pane). `godseye_live_next_satellite_pass` is the pane catalog (`op=satellite_pass`). `godseye_live_next_iss_pass` is `op=iss_pass`.
@@ -129,6 +131,7 @@ Phase `A` is implemented. Phase `later` is the target only.
 | `godseye_investigation_load` | `godseye_scene` | `load` | later | load an investigation |
 | `godseye_investigation_delete` | `godseye_scene` | `delete` | later | delete requires confirm=true |
 | `godseye_investigation_report` | `godseye_scene` | `report` | later | HTML and Markdown report |
+| `godseye_investigation_export` | `godseye_scene` | `export` | later | GeoJSON and KML, optional pack; not folded into view or query |
 | `godseye_live_restore_scene` | `godseye_scene` | `restore` | later | re-apply this chat's scene |
 | `godseye_live_run_tour` | `godseye_scene` | `tour` | later | start a guided tour |
 | `godseye_live_tour_status` | `godseye_scene` | `tour_status` | later | poll a tour job |

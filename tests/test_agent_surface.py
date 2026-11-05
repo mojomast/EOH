@@ -143,15 +143,14 @@ def test_detail_schema_only_on_large_tools():
     hermes_tools.register_tools(c)
     air = c.tools["godseye_aircraft_in_area"]["schema"]["parameters"]["properties"]["detail"]
     assert air["enum"] == ["concise", "full"] and air["default"] == "concise"
-    assert "detail" in c.tools["godseye_live_analyst_query"]["schema"]["parameters"]["properties"]
+    assert "detail" in c.tools["godseye_query"]["schema"]["parameters"]["properties"]
     assert "detail" in c.tools["godseye_get_cctv_snapshot"]["schema"]["parameters"]["properties"]
-    assert "detail" in c.tools["godseye_find_places"]["schema"]["parameters"]["properties"]
-    for name in ("godseye_live_context", "godseye_measure", "godseye_isochrone", "godseye_live_compare",
+    for name in ("godseye_measure", "godseye_isochrone", "godseye_live_compare",
                  "godseye_live_draw", "godseye_research_pins", "godseye_investigation_load",
                  "godseye_live_filter_pins", "godseye_watch_list", "godseye_watch_create"):
         assert "detail" in c.tools[name]["schema"]["parameters"]["properties"], name
     assert "detail" not in c.tools["godseye_doctor"]["schema"]["parameters"]["properties"]
-    assert "detail" not in c.tools["godseye_live_fly_to_location"]["schema"]["parameters"]["properties"]
+    assert "detail" not in c.tools["godseye_view"]["schema"]["parameters"]["properties"]
     assert "detail" not in c.tools["godseye_hud_summary"]["schema"]["parameters"]["properties"]
     assert "detail" not in c.tools["godseye_watch_delete"]["schema"]["parameters"]["properties"]
     assert "detail" not in c.tools["godseye_investigation_delete"]["schema"]["parameters"]["properties"]
@@ -282,7 +281,7 @@ def test_fixit_errors_for_the_common_failures(monkeypatch):
     over = errors.annotate({"ok": False, "code": "OSM_UNAVAILABLE",
                             "error": "All Overpass endpoints failed: overpass-api.de timed out"},
                            tool="godseye_find_places")
-    assert over["code"] == "OVERPASS_DOWN" and "godseye_find_places" in over["fix"]
+    assert over["code"] == "OVERPASS_DOWN" and "op=find_places" in over["fix"]
     assert "invent" in over["fix"]
     configured = errors.annotate({"ok": False, "code": "OVERPASS_NOT_CONFIGURED", "error": "OVERPASS_NOT_CONFIGURED"},
                                  tool="osm_query")
