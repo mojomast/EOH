@@ -315,6 +315,11 @@
         payload = window.__hermesPins ? window.__hermesPins.command(m.args || {}) : { ok: false, error: 'pin layer not loaded' }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
+      if (m.name === 'hermes_context' || m.name === 'hermes_draw' || m.name === 'hermes_compare') {
+        await ready()
+        payload = window.__hermesContext ? window.__hermesContext.command(m.name, m.args || {}) : { ok: false, error: 'context layer not loaded' }
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
       if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame' || m.name === 'hermes_capture') {
         payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : m.name === 'hermes_capture' ? capture() : sceneInfo()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
