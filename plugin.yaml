@@ -44,3 +44,36 @@ provides_tools:
   - godseye_military_awareness
   - godseye_show_in_gods_eye_view
   - godseye_hud_summary
+  - godseye_live_fly_to_location
+  - godseye_live_select_nearest_aircraft
+  - godseye_live_adjust_camera_zoom
+  - godseye_live_zoom_to_globe
+  - godseye_live_set_layer_visibility
+  - godseye_live_show_data_layers_menu
+  - godseye_live_set_panel_open
+  - godseye_live_set_context_mode
+  - godseye_live_control_cockpit
+  - godseye_live_set_visual_style
+  - godseye_live_get_entity_context
+  - godseye_live_get_current_view_state
+  - godseye_live_set_hud
+  - godseye_live_set_cyber_sonar
+  - godseye_live_set_detection
+  - godseye_live_set_map_stack
+  - godseye_live_set_post_processing
+  - godseye_live_control_scene
+  - godseye_live_control_cctv
+  - godseye_live_control_radio
+  - godseye_live_track_entity
+  - godseye_live_stop_tracking
+  - godseye_live_frame_overhead
+  - godseye_live_annotate_map
+  - godseye_live_clear_annotations
+  - godseye_live_move_camera
+  - godseye_live_fly_route
+  - godseye_live_analyst_query
+  - godseye_live_resolve_area
+  - godseye_live_find_imagery
+  - godseye_live_osm_query
+  - godseye_live_next_iss_pass
+  - godseye_live_next_satellite_pass

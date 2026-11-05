@@ -39,7 +39,51 @@ def make_handler(name: str):
     return handler
 
 
+LIVE_SNAPSHOT = Path(__file__).with_name("live_tools_snapshot.json")
+LIVE_PREFIX = "godseye_live_"
+
+SYSTEM_PROMPT = (
+    "God's Eye View (live 3D globe of public aircraft, ships, satellites, hazards and weather) "
+    "may be open in the user's Hermes pane. godseye_live_* tools act on that live globe: "
+    "godseye_live_get_current_view_state / godseye_live_get_entity_context answer 'what am I looking "
+    "at'; godseye_live_analyst_query counts or lists what is loaded (e.g. flights in view); "
+    "godseye_live_fly_to_location, _set_layer_visibility, _set_visual_style (surveillance = NVG/night vision, thermal, etc.)"
+    ", _annotate_map and _move_camera change it. Read the view state before answering "
+    "questions about the screen. If a live tool reports no pane, tell the user to open the God's "
+    "Eye View pane; the godseye_* data tools work without it. " + policy.POLICY)
+
+
+def load_live_catalog() -> list[dict]:
+    return json.loads(LIVE_SNAPSHOT.read_text())
+
+
+def make_live_handler(name: str):
+    def handler(args: dict, **_kw) -> str:
+        from . import bridge, live
+        args = args or {}
+        reason = policy.refuse_reason(args)
+        if reason:
+            return json.dumps({"error": reason})
+        out = live.call("/cmd", bridge.ensure_token(), {"name": name, "args": args})
+        text = json.dumps(out)
+        return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
+    return handler
+
+
 def register_tools(ctx) -> None:
+    for tool in load_live_catalog():
+        name = LIVE_PREFIX + tool["name"]
+        desc = f"[Live globe in the open God's Eye View pane] {tool.get('description', '')}\n\n{policy.POLICY}"
+        ctx.register_tool(
+            name=name, toolset=TOOLSET,
+            schema={"name": name, "description": desc[:4000],
+                    "parameters": tool.get("parameters") or {"type": "object", "properties": {}}},
+            handler=make_live_handler(tool["name"]), description=f"Live globe: {tool['name']}", emoji="🌐")
+    try:
+        ctx.register_system_prompt_section("godseye.live-globe", SYSTEM_PROMPT, max_chars=1500)
+    except Exception:
+        pass
+
     for tool in load_catalog():
         name = f"godseye_{tool['name']}"
         desc = f"{tool.get('description', '')}\n\n{policy.POLICY}"

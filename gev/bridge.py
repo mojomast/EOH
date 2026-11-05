@@ -125,6 +125,11 @@ def start_in_thread() -> bool:
     return True
 
 
+def start_live_relay() -> bool:
+    from . import live
+    return live.start_in_thread(ensure_token())
+
+
 def main() -> None:
     agent_dir = os.environ.get("HERMES_AGENT_DIR")
     if agent_dir and agent_dir not in sys.path:

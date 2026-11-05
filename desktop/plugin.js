@@ -48,8 +48,65 @@ export const PANEL_WORKER_SHIM = `<script>(() => {
 // panels instead of the clean embedded globe.
 const FULL_UI_TAG = '<script>window.GEV_EMBED_FULL_UI = true</script>'
 
+// Live-globe agent: runs Hermes tool calls inside the frame with God's Eye View's own
+// voice-agent action runner (window.__godsEyeView.voiceCommands.runner) and answers the
+// parent. Only messages from the hosting parent window are accepted.
+export const LIVE_AGENT_SCRIPT = `<script>(() => {
+  const ready = async () => {
+    for (let i = 0; i < 150; i++) {
+      const run = window.__godsEyeView?.voiceCommands?.runner
+      if (typeof run === 'function') return run
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    throw new Error('God\\'s Eye View is still loading')
+  }
+  const safe = (v) => { try { return JSON.parse(JSON.stringify(v ?? null)) } catch { return String(v) } }
+  addEventListener('message', async (event) => {
+    const m = event.data
+    if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
+    let payload
+    try {
+      const run = await ready()
+      const ctl = new AbortController()
+      const timer = setTimeout(() => ctl.abort(), 45000)
+      try { payload = { ok: true, result: safe(await run(String(m.name), m.args || {}, { signal: ctl.signal })) } }
+      finally { clearTimeout(timer) }
+    } catch (e) { payload = { ok: false, error: String(e?.message || e) } }
+    window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+  })
+})()</script>`
+
+// Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
+// frame, and post the results back. Returns { onMessage, stop }.
+export function createLiveRelay({ ctx, frame }) {
+  let stopped = false
+  const pending = new Map()
+  async function loop() {
+    while (!stopped) {
+      let cmd = null
+      try { cmd = (await ctx.rest('/live/next'))?.command } catch { await new Promise((r) => setTimeout(r, 3000)); continue }
+      if (!cmd || stopped) continue
+      const done = new Promise((resolve) => pending.set(cmd.id, resolve))
+      frame()?.postMessage({ type: 'hermes-gev:run', id: cmd.id, name: cmd.name, args: cmd.args }, '*')
+      const payload = await Promise.race([done, new Promise((r) => setTimeout(() => r({ ok: false, error: 'pane timeout' }), 55000))])
+      pending.delete(cmd.id)
+      ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, payload } }).catch(() => {})
+    }
+  }
+  loop()
+  return {
+    onMessage(event) {
+      const win = frame()
+      if (!win || event.source !== win || event.data?.type !== 'hermes-gev:result') return false
+      pending.get(event.data.id)?.(event.data.payload)
+      return true
+    },
+    stop() { stopped = true }
+  }
+}
+
 export function preparePanelHtml(html, { fullUi = true } = {}) {
-  const head = PANEL_BASE_TAG + (fullUi ? FULL_UI_TAG : '') + PANEL_WORKER_SHIM
+  const head = PANEL_BASE_TAG + (fullUi ? FULL_UI_TAG : '') + PANEL_WORKER_SHIM + LIVE_AGENT_SCRIPT
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + head) : head + html
 }
 
@@ -134,8 +191,11 @@ function GlobePane({ ctx }) {
 
   useEffect(() => {
     if (!src) return
-    const onMessage = createPanelHost({ ctx, frame: () => ref.current?.contentWindow, status: () => statusRef.current })
-    return ctx.addEventListener(window, 'message', onMessage)
+    const frame = () => ref.current?.contentWindow
+    const onMessage = createPanelHost({ ctx, frame, status: () => statusRef.current })
+    const live = createLiveRelay({ ctx, frame })
+    const off = ctx.addEventListener(window, 'message', (e) => live.onMessage(e) || onMessage(e))
+    return () => { live.stop(); off?.() }
   }, [src])
 
   const base = status?.frameUrl || status?.apiBase || 'http://localhost:4173'

@@ -120,3 +120,35 @@ def test_bridge_round_trip(tmp_path):
         assert code == 200 and data["choices"][0]["message"]["content"] == "pong:hi"
     finally:
         srv.shutdown()
+
+
+def test_live_relay_no_pane_and_roundtrip():
+    import threading
+    from gev import live
+    r = live.Relay()
+    assert r.submit("get_current_view_state", {})["error"] == "no_pane"
+    r.last_poll = __import__("time").monotonic()
+    out = {}
+    t = threading.Thread(target=lambda: out.update(r.submit("fly_to_location", {"query": "Tokyo"}, wait=5)))
+    t.start()
+    cmd = r.next(wait=2)
+    assert cmd["name"] == "fly_to_location"
+    r.result(cmd["id"], {"ok": True, "result": {"label": "Tokyo"}})
+    t.join(3)
+    assert out["result"]["label"] == "Tokyo"
+
+
+def test_live_tools_registered_with_prompt():
+    from gev import hermes_tools as h
+    names = [t["name"] for t in h.load_live_catalog()]
+    assert "fly_to_location" in names and "get_current_view_state" in names
+    assert "set_voice_inactivity_timeout" not in names
+    assert "no pane" in h.SYSTEM_PROMPT.lower() or "open the god's eye view pane" in h.SYSTEM_PROMPT.lower()
+
+
+def test_live_relay_unpicked_command_reports_no_pane(monkeypatch):
+    import time
+    from gev import live
+    monkeypatch.setattr(live, "PICKUP_S", 0.2)
+    r = live.Relay(); r.last_poll = time.monotonic()
+    assert r.submit("zoom_to_globe", {}, wait=5)["error"] == "no_pane"

@@ -14,6 +14,10 @@ try:  # serve God's Eye View's own HUD (GEV_HUD_SUMMARY_BASE_URL) from this Herm
     bridge.start_in_thread()
 except Exception:
     pass
+try:  # live-globe relay between Hermes tools and the open pane
+    bridge.start_live_relay()
+except Exception:
+    pass
 
 router = APIRouter()
 _llm = None
@@ -72,3 +76,17 @@ async def tool(body: dict):
         return await asyncio.to_thread(mcp_client.client().call_tool, name, body.get("arguments") or {})
     except Exception as exc:
         return {"isError": True, "content": [{"type": "text", "text": str(exc)[:300]}]}
+
+
+@router.get("/live/next")
+async def live_next():
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/next", bridge.ensure_token(), None, live.POLL_WAIT_S + 10)
+
+
+@router.post("/live/result")
+async def live_result(body: dict):
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/result", bridge.ensure_token(), body, 15)
