@@ -1,0 +1,24 @@
+"""Settings from env (never secrets): where the God's Eye View checkout and app live."""
+import os
+import shutil
+from pathlib import Path
+
+DEFAULT_API_BASE = "http://localhost:4173"
+
+
+def api_base() -> str:
+    return os.environ.get("GODSEYE_API_BASE", DEFAULT_API_BASE).rstrip("/")
+
+
+def checkout() -> Path | None:
+    raw = os.environ.get("GODSEYE_HOME", "")
+    path = Path(raw).expanduser() if raw else Path.home() / "gods-eye-view"
+    return path if (path / "server/mcp/stdio.js").is_file() else None
+
+
+def node_bin() -> str | None:
+    raw = os.environ.get("GODSEYE_NODE")
+    if raw and Path(raw).expanduser().is_file():
+        return str(Path(raw).expanduser())
+    local = Path.home() / ".local/node24/bin/node"
+    return str(local) if local.is_file() else shutil.which("node")
