@@ -61,6 +61,7 @@
     const v = window.__godsEyeView?.viewer
     if (!v) return { ok: false, error: 'viewer not ready' }
     const cam = v.camera, c = v.canvas
+    try { cam.cancelFlight?.() } catch {}  // an unfinished flyTo would overwrite the pose
     const hit = cam.pickEllipsoid({ x: c.clientWidth / 2, y: c.clientHeight / 2 }, v.scene.globe.ellipsoid)
     if (!hit) return { ok: false, error: 'nothing under the screen centre' }
     const p = cam.positionWC
@@ -69,8 +70,152 @@
     const heading = typeof args?.headingDeg === 'number' ? rad(args.headingDeg) : cam.heading
     cam.lookAt(hit, { heading, pitch: rad(Number(args?.pitchDeg ?? -15)), range })
     cam.lookAtTransform(cam.transform.constructor.IDENTITY)  // release the lock so orbit/fly still work
-    window.__godsEyeView.requestRender?.()
+    try { v.scene.requestRender?.() } catch {}
     return { ok: true, action: 'hermes_frame', camera: pose() }
+  }
+
+  // ---- framing presets (fly_to_location framing) ----------------------------------------
+  const FRAMING = { street: [150, -15], rooftop: [450, -30], district: [2500, -45] }
+  const MIN_RANGE_M = 100
+  // ---- cards / multi-line labels: HTML callouts anchored to a resolved point ---------------
+  const cards = new Map()   // key -> { el, lat, lon }
+  let cardLayer = null, cardHook = null
+  const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+  const placeCards = () => {
+    const v = window.__godsEyeView?.viewer
+    if (!v || !cardLayer) return
+    const C3 = v.camera.positionWC.constructor
+    const cam = v.camera.positionWC
+    for (const c of cards.values()) {
+      const pos = C3.fromDegrees(c.lon, c.lat, 0)
+      const xy = v.scene.cartesianToCanvasCoordinates?.(pos)
+      // hide when behind the globe: camera->point must not pass the horizon (dot test on the normal)
+      const n = { x: pos.x, y: pos.y, z: pos.z }, d = { x: pos.x - cam.x, y: pos.y - cam.y, z: pos.z - cam.z }
+      const facing = n.x * d.x + n.y * d.y + n.z * d.z < 0
+      if (!xy || !facing) { c.el.style.display = 'none'; continue }
+      c.el.style.display = 'block'
+      c.el.style.transform = `translate(${Math.round(xy.x)}px, ${Math.round(xy.y)}px) translate(-50%, calc(-100% - 14px))`
+    }
+  }
+  const ensureCardLayer = () => {
+    const v = window.__godsEyeView?.viewer
+    if (!cardLayer) {
+      cardLayer = document.createElement('div')
+      cardLayer.id = 'hermes-gev-cards'
+      cardLayer.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483646;pointer-events:none'
+      document.body.appendChild(cardLayer)
+    }
+    if (v && !cardHook) cardHook = v.scene.postRender.addEventListener(placeCards)
+  }
+  const addCard = (key, lat, lon, spec) => {
+    ensureCardLayer()
+    removeCard(key)
+    const el = document.createElement('div')
+    el.style.cssText = 'position:absolute;left:0;top:0;min-width:120px;max-width:260px;padding:6px 9px;border-radius:5px;' +
+      `border:1px solid ${spec.color || 'rgba(120,255,200,.6)'};background:rgba(0,12,8,.84);color:#d8fff0;` +
+      'font:12px/1.35 ui-monospace,Menlo,monospace;box-shadow:0 2px 10px rgba(0,0,0,.5);white-space:nowrap'
+    const lines = spec.lines || []
+    const rows = spec.rows || []
+    el.innerHTML = (spec.title ? `<div style="font-weight:700;color:#8fffd0;margin-bottom:${rows.length || lines.length ? 3 : 0}px">${esc(spec.title)}</div>` : '') +
+      lines.map((l) => `<div>${esc(l)}</div>`).join('') +
+      rows.map((r) => `<div style="display:flex;gap:12px;justify-content:space-between"><span>${esc(r.text)}</span>` +
+        `<span style="color:#ffd27a">${esc(r.price ?? '')}</span></div>`).join('')
+    cardLayer.appendChild(el)
+    cards.set(key, { el, lat, lon })
+    placeCards()
+    try { window.__godsEyeView?.viewer?.scene?.requestRender?.() } catch {}
+  }
+  function removeCard(key) { const c = cards.get(key); if (c) { c.el.remove(); cards.delete(key) } }
+  const clearCards = () => { for (const k of [...cards.keys()]) removeCard(k) }
+  const splitLines = (label) => (Array.isArray(label) ? label : String(label ?? '').split(/\r?\n/))
+    .map((x) => String(x).trim()).filter(Boolean).slice(0, 3)
+  const ptName = (pt) => pt?.target ?? pt?.name ?? null
+  const hasCoords = (pt) => Number.isFinite(pt?.latitude) && Number.isFinite(pt?.longitude)
+  // Rewrite Hermes-only annotation features into upstream specs; remember what to add afterwards.
+  const prepAnnotate = (args) => {
+    const extras = []
+    const anns = (args.annotations || []).map((a, i) => {
+      if (!a || typeof a !== 'object') return a
+      const t = String(a.type || 'pin').toLowerCase()
+      if (t === 'card') {
+        const rows = (Array.isArray(a.rows) ? a.rows : []).slice(0, 8).map((r) => ({ text: String(r?.text ?? '').slice(0, 60), price: r?.price == null ? '' : String(r.price).slice(0, 16) }))
+        const title = String(a.title ?? a.label ?? ptName(a) ?? '').slice(0, 60)
+        extras[i] = { kind: 'card', spec: { title, rows, color: a.color } }
+        const { rows: _r, title: _t, ...rest } = a
+        return { ...rest, type: 'pin', label: title || undefined }
+      }
+      if (a.label != null && (Array.isArray(a.label) || /\n/.test(String(a.label)))) {
+        const lines = splitLines(a.label)
+        if (lines.length > 1) {
+          extras[i] = { kind: 'card', spec: { title: lines[0], lines: lines.slice(1), color: a.color } }
+          return { ...a, label: lines[0] }
+        }
+        return { ...a, label: lines[0] || undefined }
+      }
+      return a
+    })
+    const flyAll = args.flyTo === 'all'
+    return { args: { ...args, annotations: anns, flyTo: flyAll ? false : args.flyTo }, extras, flyAll }
+  }
+  const finishAnnotate = async (run, args, prep, result, signal) => {
+    const items = Array.isArray(result?.items) ? result.items : []
+    const anchors = []
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i], spec = args.annotations?.[i] || {}, extra = prep.extras[i]
+      if (it?.ok && Number.isFinite(it.latitude)) anchors.push([it.latitude, it.longitude])
+      if (it?.ok && extra?.kind === 'card' && Number.isFinite(it.latitude)) {
+        addCard(it.id || `card-${i}`, it.latitude, it.longitude, extra.spec)
+        it.card = true
+      }
+      // Partial route: draw the contiguous resolvable runs, name what is missing.
+      if (it && !it.ok && String(spec.type).toLowerCase() === 'route' && Array.isArray(spec.points)) {
+        const missing = new Set(it.failedTargets || [])
+        const runs = [[]]
+        for (const pt of spec.points) {
+          if (!hasCoords(pt) && missing.has(ptName(pt) || 'a waypoint')) runs.push([])
+          else runs[runs.length - 1].push(pt)
+        }
+        const legs = runs.filter((r) => r.length >= 2)
+        let drawn = 0
+        for (const pts of legs) {
+          try {
+            const r = await run('annotate_map', { annotations: [{ ...spec, points: pts, label: spec.label }], persist: args.persist !== false }, { signal })
+            const li = r?.items?.[0]
+            if (li?.ok) { drawn++; if (Number.isFinite(li.latitude)) anchors.push([li.latitude, li.longitude]) }
+          } catch {}
+        }
+        for (const pt of spec.points) if (hasCoords(pt)) anchors.push([pt.latitude, pt.longitude])
+        it.missingWaypoints = [...missing]
+        it.legsDrawn = drawn
+        it.legsPossible = legs.length
+        if (drawn) {
+          it.ok = true
+          it.partial = true
+          result.drawn = (result.drawn || 0) + 1
+          result.failed = Math.max(0, (result.failed || 0) - 1)
+          result.partial = true
+          result.ok = true
+        }
+        result.missingWaypoints = [...(result.missingWaypoints || []), ...missing]
+      }
+    }
+    if (prep.flyAll && anchors.length) {
+      const lat0 = anchors.reduce((s, a) => s + a[0], 0) / anchors.length
+      const lon0 = anchors.reduce((s, a) => s + a[1], 0) / anchors.length
+      const R = 6371000, rad = (d) => d * Math.PI / 180
+      let far = 0
+      for (const [la, lo] of anchors) {
+        const x = rad(lo - lon0) * Math.cos(rad((la + lat0) / 2)), y = rad(la - lat0)
+        far = Math.max(far, Math.hypot(x, y) * R)
+      }
+      const rangeM = Math.max(800, Math.min(20_000_000, Math.round(far * 2.6 + 400)))
+      try {
+        await run('fly_to_location', { latitude: lat0, longitude: lon0, rangeM, waitForArrival: true }, { signal })
+        frame({ pitchDeg: -55, rangeM })
+        result.framedAll = { count: anchors.length, rangeM }
+      } catch (e) { result.framedAll = { error: String(e?.message || e) } }
+    }
+    return result
   }
   const safe = (v) => { try { return JSON.parse(JSON.stringify(v ?? null)) } catch { return String(v) } }
   // WebGL lifecycle. Browsers cap live WebGL contexts (~16) and free a removed frame's context
@@ -114,7 +259,20 @@
       const ctl = new AbortController()
       const timer = setTimeout(() => ctl.abort(), 45000)
       try {
-        const result = safe(await run(String(m.name), m.args || {}, { signal: ctl.signal }))
+        let args = m.args || {}, prep = null, fr = null
+        if (m.name === 'annotate_map') { prep = prepAnnotate(args); args = prep.args }
+        if (m.name === 'clear_annotations') clearCards()
+        if (m.name === 'fly_to_location' && FRAMING[args.framing]) {
+          fr = FRAMING[args.framing]
+          const { framing, ...rest } = args
+          args = { ...rest, rangeM: Math.max(MIN_RANGE_M, Number(rest.rangeM) || fr[0]), waitForArrival: true }
+        }
+        let result = safe(await run(String(m.name), args, { signal: ctl.signal }))
+        if (prep) result = await finishAnnotate(run, args, prep, result, ctl.signal)
+        if (fr && result && result.ok !== false) {
+          const f = frame({ pitchDeg: fr[1], rangeM: args.rangeM })
+          result.framing = { name: m.args.framing, pitchDeg: fr[1], rangeM: args.rangeM, ok: f.ok }
+        }
         if (result && typeof result === 'object' && (m.name === 'get_current_view_state' || m.name === 'fly_to_location' || m.name === 'move_camera')) {
           const p = pose()
           if (p) result.camera = { ...(result.camera || {}), ...p, ...(result.camera?.heightM != null ? { heightM: result.camera.heightM } : {}) }

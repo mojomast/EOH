@@ -15,6 +15,7 @@ FRAMING = {  # rangeM default, pitch set exactly after arrival (hermes_frame)
     "district": (2500, -45),
 }
 TILT_SETTLE_S = 2.0
+PITCH_TOL = 3.0
 ORBIT_SPEEDS = {"slow", "normal", "fast"}
 MAX_STOPS = 24
 _ids = itertools.count(1)
@@ -101,11 +102,17 @@ class Tour:
                     fly.update(latitude=stop["lat"], longitude=stop["lon"])
                 else:
                     fly["query"] = stop["name"]
+                if sp["orbit"] and i:
+                    self._do("move_camera", {"motion": "stop"})  # a running orbit fights the next flight
                 if not self._do("fly_to_location", fly).get("ok"):
                     continue
-                self._do("hermes_frame", {"pitchDeg": pitch, "rangeM": fly["rangeM"]})
-                self.sleep(TILT_SETTLE_S)
-                pose = (self._do("get_current_view_state", {}).get("result") or {}).get("camera") or {}
+                pose = {}
+                for _attempt in range(3):  # exact framing, verified (a late flight can overwrite it)
+                    self._do("hermes_frame", {"pitchDeg": pitch, "rangeM": fly["rangeM"]})
+                    self.sleep(TILT_SETTLE_S)
+                    pose = (self._do("get_current_view_state", {}).get("result") or {}).get("camera") or {}
+                    if not isinstance(pose.get("pitchDeg"), (int, float)) or abs(pose["pitchDeg"] - pitch) <= PITCH_TOL:
+                        break
                 self.visited.append({"stop": stop.get("name"), "pitchDeg": pose.get("pitchDeg"),
                                      "heightM": round(pose["heightM"]) if isinstance(pose.get("heightM"), (int, float)) else None,
                                      "rangeM": pose.get("rangeM")})

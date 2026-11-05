@@ -15,6 +15,11 @@
 - Guided tours: `godseye_live_run_tour` (street/rooftop/district framing with exact pitch, optional orbit, dwell, optional route between stops) runs server-side as one job, with `godseye_live_tour_status` and `godseye_live_stop_tour`. A tour always ends with the camera stopped.
 - Doctor panel checks: `PANEL_MISSING`, `PANEL_STALE`, `KEY_MISSING`, `ION_SCOPES` (local JWT decode, values never shown), plus the active map stack and the scene annotation count. `godseye_rebuild_panel` rebuilds `dist/panel` from `~/.config/gods-eye-view.env` and reloads open panes. `set_map_stack` failures include remediation text.
 - View state now returns pitch, heading, look-at target and range (pane-side shim).
+- `fly_to_location` takes `framing: street|rooftop|district` (150 m/-15°, 450 m/-30°, 2500 m/-45°; `rangeM` overrides, minimum 100 m). It waits for arrival, then sets the pitch exactly, and returns pitchDeg/headingDeg with the camera.
+- Annotations: multi-line labels (newline string or list, 2-3 lines) and a `card` type (title plus rows `[{text, price}]`, anchored to a point) drawn as callouts over the globe. Partial routes draw the resolvable runs of waypoints and name the missing one(s) in `missingWaypoints`/`failedLabels`; they never bridge a gap. `flyTo: "all"` frames every mark in the call.
+
+### Fixed (tours)
+- The final tour stop could end at the flight's default -35° instead of the framing pitch. The cause was an unfinished flight or a running orbit overwriting the exact framing. Framing now cancels any in-flight flight, the orbit is stopped before each next flight, and the pose is verified and re-framed (up to 3 tries) until the pitch holds.
 
 ### Fixed
 - Resizing the window could crash the globe, ending in "Error constructing CesiumWidget: The browser supports WebGL, but initialization failed". The cause was the pane being remounted when the layout changed. Each remount started a new Cesium viewer while the old frame's WebGL context was freed only at GC, so contexts leaked until the browser refused new ones. v0.1.0 had the same problem. The pane is now `lifecycleKeepAlive`, the panel document is cached across remounts, and the frame releases its context on `pagehide`/dispose (`WEBGL_lose_context` + `viewer.destroy()`). Context loss and Cesium's error dialog now show a "click to reload the globe" card instead of a dead dialog.
