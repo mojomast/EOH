@@ -17,6 +17,8 @@ api_version: 1
 provides_hooks:
   - pre_llm_call
 provides_tools:
+  - godseye_view
+  - godseye_query
   - godseye_live_filter_pins
   - godseye_watch_create
   - godseye_watch_list

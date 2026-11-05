@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "note": "Natural-language tasks for phase A tool selection. arguments is the reference call. shape is what a live model must satisfy (a bit looser than the reference).",
+  "tasks": [
+    {
+      "id": "fly-tokyo-nvg",
+      "task": "fly to Tokyo NVG",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "fly",
+        "arguments": {"op": "fly", "query": "Tokyo", "style": "surveillance"},
+        "shape": {
+          "required": ["style"],
+          "fields": {"style": {"enum": ["surveillance", "nvg", "night", "night vision", "night-vision", "nightvision"]}},
+          "one_of": [
+            {"query": {"type": "string", "contains": "tokyo"}},
+            {"locationId": {"enum": ["tokyo"]}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "what-am-i-looking-at",
+      "task": "what am I looking at",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "context",
+        "arguments": {"op": "context"},
+        "shape": {"fields": {"describe": {"type": "boolean"}}}
+      }
+    },
+    {
+      "id": "ramen-near-me",
+      "task": "ramen near me",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "find_places",
+        "arguments": {"op": "find_places", "query": "ramen near me", "here": true, "pin": true, "intent": "ramen near me"},
+        "shape": {
+          "one_of": [
+            {"query": {"type": "string", "contains": "ramen"}},
+            {"cuisine": {"type": "string", "contains": "ramen"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "brief-this-area",
+      "task": "brief me on this area",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "brief",
+        "arguments": {"op": "brief", "here": true},
+        "shape": {
+          "one_of": [
+            {"here": {"equals": true}},
+            {"place": {"type": "string"}},
+            {"area": {"type": "object"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "zoom-in-a-little",
+      "task": "zoom in a little",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "zoom",
+        "arguments": {"op": "zoom", "direction": "in", "amount": "little"},
+        "shape": {
+          "required": ["direction", "amount"],
+          "fields": {
+            "direction": {"enum": ["in"]},
+            "amount": {"enum": ["little", "medium"]}
+          }
+        }
+      }
+    },
+    {
+      "id": "whole-earth",
+      "task": "zoom all the way out to the whole Earth",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "globe",
+        "arguments": {"op": "globe"},
+        "shape": {}
+      }
+    },
+    {
+      "id": "orbit-slowly",
+      "task": "orbit the view slowly",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "move",
+        "arguments": {"op": "move", "motion": "orbit", "speed": "slow", "mode": "continuous"},
+        "shape": {
+          "required": ["motion"],
+          "fields": {
+            "motion": {"enum": ["orbit"]},
+            "speed": {"enum": ["slow", "normal"]}
+          }
+        }
+      }
+    },
+    {
+      "id": "go-home",
+      "task": "go home",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "home",
+        "arguments": {"op": "home", "action": "go"},
+        "shape": {"fields": {"action": {"enum": ["go"]}}}
+      }
+    },
+    {
+      "id": "share-this-view",
+      "task": "send me a link to this view",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "share",
+        "arguments": {"op": "share"},
+        "shape": {}
+      }
+    },
+    {
+      "id": "list-panes",
+      "task": "which Eye Of Hermes panes are open",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "panes",
+        "arguments": {"op": "panes"},
+        "shape": {}
+      }
+    },
+    {
+      "id": "osm-hospitals",
+      "task": "OSM hospitals in the current view",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "osm",
+        "arguments": {"op": "osm", "what": "hospitals"},
+        "shape": {"required": ["what"], "fields": {"what": {"type": "string", "contains": "hospital"}}}
+      }
+    },
+    {
+      "id": "flights-in-view",
+      "task": "how many flights are in view",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "analyst",
+        "arguments": {"op": "analyst", "layers": ["flights"], "scope": {"kind": "view"}},
+        "shape": {
+          "required": ["layers"],
+          "fields": {
+            "layers": {"type": "array", "contains_item": "flights"},
+            "scope": {"type": "object", "subset": {"kind": "view"}}
+          }
+        }
+      }
+    },
+    {
+      "id": "what-is-at-coordinate",
+      "task": "what is at latitude 35.68 longitude 139.69",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "what_is_here",
+        "arguments": {"op": "what_is_here", "lat": 35.68, "lon": 139.69},
+        "shape": {
+          "required": ["lat", "lon"],
+          "fields": {"lat": {"type": "number"}, "lon": {"type": "number"}}
+        }
+      }
+    },
+    {
+      "id": "brief-and-show-tokyo",
+      "task": "what's going on around Tokyo? show me",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "brief_and_show",
+        "arguments": {"op": "brief_and_show", "place": "Tokyo"},
+        "shape": {
+          "one_of": [
+            {"place": {"type": "string", "contains": "tokyo"}},
+            {"query": {"type": "string", "contains": "tokyo"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "military-san-diego",
+      "task": "military contacts near San Diego",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "military",
+        "arguments": {"op": "military", "location": {"place": "San Diego"}},
+        "shape": {
+          "one_of": [
+            {"location": {"type": "object"}},
+            {"place": {"type": "string", "contains": "diego"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "poi-sumo-ramen",
+      "task": "details for Sumo Ramen in Montreal",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "poi",
+        "arguments": {"op": "poi", "name": "Sumo Ramen", "city": "Montreal"},
+        "shape": {
+          "required": ["name"],
+          "fields": {"name": {"type": "string", "contains": "ramen"}, "city": {"type": "string", "contains": "montreal"}}
+        }
+      }
+    },
+    {
+      "id": "outline-bagmati",
+      "task": "outline the area of Bagmati province",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "resolve_area",
+        "arguments": {"op": "resolve_area", "query": "Bagmati province", "draw": true},
+        "shape": {
+          "required": ["query"],
+          "fields": {"query": {"type": "string", "contains": "bagmati"}, "draw": {"equals": true}}
+        }
+      }
+    },
+    {
+      "id": "selected-entity",
+      "task": "what entity is selected on the globe",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "entity",
+        "arguments": {"op": "entity", "scope": "selected"},
+        "shape": {"fields": {"scope": {"enum": ["selected", "auto"]}}}
+      }
+    },
+    {
+      "id": "fly-street-level",
+      "task": "fly to latitude 35.68 longitude 139.69 at street level",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "fly",
+        "arguments": {"op": "fly", "latitude": 35.68, "longitude": 139.69, "framing": "street"},
+        "shape": {
+          "required": ["framing"],
+          "fields": {
+            "framing": {"enum": ["street"]},
+            "latitude": {"type": "number"},
+            "longitude": {"type": "number"}
+          }
+        }
+      }
+    }
+  ]
+}

@@ -58,19 +58,35 @@ LIVE_SNAPSHOT = Path(__file__).with_name("live_tools_snapshot.json")
 LIVE_PREFIX = "godseye_live_"
 
 SYSTEM_PROMPT = (
-    "Eye Of Hermes (EOH), built on God's Eye View (live 3D globe of public aircraft, ships, satellites, hazards and weather) "
-    "may be open in the user's Hermes pane. godseye_live_* tools act on that live globe: "
-    "godseye_live_context answers 'what am I looking at' (camera, focus, nearby); "
-    "godseye_live_analyst_query counts or lists what is loaded (e.g. flights in view); "
-    "godseye_live_fly_to_location, _set_layer_visibility, _set_visual_style (surveillance = NVG/night vision, thermal, etc.)"
-    ", _annotate_map and _move_camera change it. Each turn may include one EOH map line "
-    "(pane connected or busy, camera center, range, pitch, heading, layers, pin count, open drawer) "
-    "and [EOH watch alert] lines when a watch fires; "
+    "Eye Of Hermes (EOH), a live 3D globe of public aircraft, ships, satellites, hazards and weather, "
+    "may be open in the user's Hermes pane. Prefer godseye_view (op=fly|move|zoom|globe|home|share|panes; "
+    "fly style=surveillance is NVG) and godseye_query (op=find_places|osm|context|what_is_here|brief|"
+    "brief_and_show|analyst|military|poi|resolve_area|entity). Legacy godseye_* names still work. "
+    "Each turn may include one EOH map line (pane connected or busy, camera center, range, pitch, heading, "
+    "layers, pin count, open drawer) and [EOH watch alert] lines when a watch fires; "
     "trust the map line instead of calling godseye_live_get_current_view_state only to orient. "
-    "Large tools default to detail=concise (ids and counts, no screenshots); pass detail=full for full objects or images. "
+    "Large tools default to detail=concise; pass detail=full for full objects or images. "
     "Failures return code, message and fix: do what fix says. "
-    "If a live tool reports no pane, tell the user to open the Eye Of Hermes (EOH) pane; the godseye_* data tools work without it. "
-    "godseye_brief_and_show briefs a place and shows it in one call; godseye_doctor diagnoses setup. " + policy.POLICY)
+    "If a live tool reports no pane, tell the user to open the Eye Of Hermes (EOH) pane. Data tools work "
+    "without it. godseye_query op=brief_and_show briefs a place and shows it; godseye_doctor diagnoses setup. "
+    + policy.POLICY)
+
+
+def _noted(name: str, text: str, limit: int | None = None) -> str:
+    """Prefix a phase A alias with the composable op the model should call instead."""
+    from . import router
+    note = router.deprecation_note(name)
+    if note:
+        text = f"{note}. {text}"
+    return text[:limit] if limit is not None else text
+
+
+def _bound(name: str, handler):
+    """Phase A aliases enter the op router, which calls this same handler family."""
+    from . import router
+    if router.deprecation_note(name):
+        return router.alias_handler(name)
+    return handler
 
 
 def load_live_catalog() -> list[dict]:
@@ -194,15 +210,16 @@ def make_live_handler(name: str):
 def register_tools(ctx) -> None:
     for tool in load_live_catalog():
         name = LIVE_PREFIX + tool["name"]
-        desc = f"[Live globe in the open EOH pane] {tool.get('description', '')}\n\n{policy.POLICY}"
+        desc = _noted(name, f"[Live globe in the open EOH pane] {tool.get('description', '')}\n\n{policy.POLICY}", 4000)
         params = extend_live_schema(tool["name"], live_schema(tool.get("parameters")))
         if tool["name"] in detail.LARGE_LIVE:
             params = detail.add_detail(params)
         ctx.register_tool(
             name=name, toolset=TOOLSET,
-            schema={"name": name, "description": desc[:4000],
+            schema={"name": name, "description": desc,
                     "parameters": params},
-            handler=make_live_handler(tool["name"]), description=f"Live globe: {tool['name']}", emoji="🌐")
+            handler=_bound(name, make_live_handler(tool["name"])),
+            description=_noted(name, f"Live globe: {tool['name']}"), emoji="🌐")
     try:
         ctx.register_system_prompt_section("godseye.live-globe", SYSTEM_PROMPT, max_chars=1500)
     except Exception:
@@ -215,15 +232,15 @@ def register_tools(ctx) -> None:
 
     for tool in load_catalog():
         name = f"godseye_{tool['name']}"
-        desc = f"{tool.get('description', '')}\n\n{policy.POLICY}"
+        desc = _noted(name, f"{tool.get('description', '')}\n\n{policy.POLICY}")
         params = tool.get("inputSchema") or {"type": "object", "properties": {}}
         if tool["name"] in detail.LARGE_DATA:
             params = detail.add_detail(params)
         ctx.register_tool(
             name=name, toolset=TOOLSET,
             schema={"name": name, "description": desc, "parameters": params},
-            handler=make_handler(tool["name"]), check_fn=_available,
-            description=tool.get("title", ""), emoji="🌍")
+            handler=_bound(name, make_handler(tool["name"])), check_fn=_available,
+            description=_noted(name, tool.get("title", "") or name), emoji="🌍")
 
     def hud_handler(args: dict, **_kw) -> str:
         try:
@@ -239,6 +256,8 @@ def register_tools(ctx) -> None:
                 "parameters": {"type": "object", "properties": {"context": {
                     "type": "object", "description": "HUD context: locale, place, altitude, layer counts."}}}},
         handler=hud_handler, check_fn=_available, description="HUD summary via Hermes", emoji="🛰️")
+    from . import router
+    router.register_composable(ctx)
 
 
 SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "godseye-analyst"
@@ -713,8 +732,10 @@ def register_extras(ctx) -> dict:
         if name in detail.LARGE_EXTRA:
             params = detail.add_detail(params)
         ctx.register_tool(name=name, toolset=TOOLSET,
-                          schema={"name": name, "description": f"{desc}\n\n{policy.POLICY}", "parameters": params},
-                          handler=extra_handler(name), description=desc.split(":")[0][:80], emoji=emoji,
+                          schema={"name": name, "description": _noted(name, f"{desc}\n\n{policy.POLICY}"),
+                                  "parameters": params},
+                          handler=_bound(name, extra_handler(name)),
+                          description=_noted(name, desc.split(":")[0][:80]), emoji=emoji,
                           **({"check_fn": _available} if needs_mcp else {}))
         done["tools"].append(name)
     try:
