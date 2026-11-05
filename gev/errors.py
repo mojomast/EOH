@@ -155,6 +155,14 @@ TABLE: dict[str, dict[str, str]] = {
         "message": "The watch feeds are not valid.",
         "fix": "feeds must be one or more of earthquakes, fires, flights, ships, pois.",
     },
+    "invalid_geojson": {
+        "message": "The export did not validate as GeoJSON (RFC 7946).",
+        "fix": "Retry godseye_investigation_export. If it fails again, export a saved investigation by name from godseye_investigation_list.",
+    },
+    "invalid_kml": {
+        "message": "The export did not validate as KML.",
+        "fix": "Retry godseye_investigation_export. If it fails again, export format=geojson only and say the KML step failed.",
+    },
 }
 
 _TOKEN = re.compile(r"token|api[_ ]?key|\bion\b|not authorized|unauthori[sz]ed", re.I)

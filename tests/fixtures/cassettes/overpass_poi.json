@@ -1,0 +1,50 @@
+{
+  "_comment": "Hand-written Overpass POI elements for ramen in Montreal. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "host": ["overpass.kumi.systems", "overpass.private.coffee", "overpass-api.de"],
+        "path_contains": "/api/interpreter"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "elements": [
+            {
+              "type": "node",
+              "id": 101,
+              "lat": 45.5088,
+              "lon": -73.554,
+              "tags": {
+                "name": "Sansotei Ramen",
+                "amenity": "restaurant",
+                "cuisine": "ramen",
+                "opening_hours": "Mo-Su 11:30-22:00",
+                "website": "https://sansotei.example",
+                "addr:housenumber": "2061",
+                "addr:street": "Rue de la Montagne",
+                "addr:city": "Montreal"
+              }
+            },
+            {
+              "type": "node",
+              "id": 102,
+              "lat": 45.5032,
+              "lon": -73.5698,
+              "tags": {
+                "name": "Yokato Yokabai",
+                "amenity": "restaurant",
+                "cuisine": "ramen",
+                "opening_hours": "Tu-Su 12:00-21:00",
+                "website": "https://yokato.example",
+                "addr:street": "Rue Sainte-Catherine",
+                "addr:city": "Montreal"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
