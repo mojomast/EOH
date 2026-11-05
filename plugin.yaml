@@ -53,6 +53,12 @@ provides_tools:
   - godseye_find_places
   - godseye_poi_details
   - godseye_preview_swap
+  - godseye_live_context
+  - godseye_what_is_here
+  - godseye_measure
+  - godseye_isochrone
+  - godseye_live_draw
+  - godseye_live_compare
   - godseye_live_list_annotations
   - godseye_live_delete_annotation
   - godseye_live_restore_scene

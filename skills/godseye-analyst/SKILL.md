@@ -41,6 +41,30 @@ of tools:
   retry once. `godseye_live_panes` lists panes with their last-poll age.
 - Only set `fanout: true` on a live tool when the user explicitly wants every open pane changed.
 
+## "This", "here", measure, reach, compare
+
+- Deixis = context first. Whenever the user says **this, here, around here, that building, what
+  am I looking at, what's that**, call `godseye_live_context` BEFORE answering (no lat/lon guessing).
+  It returns the camera (center, heading, pitch, range), the visible bbox, the selected pin, the last
+  clicked point, drawn shapes, and `focus` (open pin > newest drawing > last click > screen centre)
+  with a reverse geocode (`here.place`) and nearby named places (`here.nearby`, nearest first).
+  Answer from those facts; name the source (OSM/Nominatim). If focus is only the view centre and the
+  question is about one object, ask the user to click it or draw a box (toolbar, bottom-left) — or
+  start draw mode for them with `godseye_live_draw` action=start kind=box.
+- `godseye_what_is_here` lat/lon = same answer for a coordinate, no pane needed.
+- Distance: `godseye_measure` with `pins` (ids/labels), `points`, or `use_drawn: "latest"`;
+  great-circle by default, `op: "route"` + `mode` for travel distance/time. Area: draw a box/polygon
+  (or pass 3+ points), `godseye_measure` use_drawn=latest (a box/polygon defaults to area).
+- "What can I reach in 15 minutes walking": `godseye_isochrone` minutes=[15] mode=walk (lat/lon
+  optional: defaults to the focus). If `approximate` is true, say it is an OSRM-sampled estimate;
+  if `routing_unavailable`, say so. Never substitute a straight-line circle.
+- Before/after: `godseye_live_compare` left="wayback:2015" right="current" shows a swipe divider
+  (Esri World Imagery Wayback historical imagery). `action=list_dates` for available dates. Map
+  stacks cannot be split; photoreal 3D tiles are hidden while comparing. `action=stop` ends it.
+- "Ask Hermes" (pane toolbar / pin drawer) copies a ready question to the clipboard and focuses the
+  chat composer; the user pastes and sends it. Treat such a message as deixis: call
+  `godseye_live_context`.
+
 ## Example sequences
 
 **"What's going on around Tokyo? Show me."**
@@ -104,3 +128,11 @@ Slash command for quick control: `/gev fly <place>`, `/gev layers [on|off names]
 `/gev status`, `/gev brief <place>`, `/gev home [set]`, `/gev share`, `/gev doctor`,
 `/gev research [light|full]`, `/gev save|list|load <name>`, `/gev delete <name> --confirm`,
 `/gev report [name]`.
+
+"What's that building?" -> `godseye_live_context` -> answer from `here.place` (name, address, OSM
+type, tags) and the nearest `here.nearby` entries; offer to pin it.
+
+"How far is Kinton from Sansotei, and how long on foot?" -> `godseye_measure` pins=["Kinton",
+"Sansotei"] then op=route mode=walk.
+
+"Show what was here in 2014" -> `godseye_live_compare` left="wayback:2014" right="current".

@@ -333,6 +333,72 @@ EXTRA_TOOLS = {
             "prune": {"type": "boolean", "description": "Drop stale closed pane records now."},
             "label": {"type": "string", "description": "Optional label for this chat's pane (shown in the list)."},
             "pane_id": {"type": "string", "description": "Pane id to label; default = this session's bound pane."}}}, "🪟"),
+    "godseye_live_context": (
+        "What the user is looking at in the EOH pane: camera (center, heading, pitch, range, position), visible bbox, "
+        "the selected pin (drawer open), the last clicked ground point, shapes the user drew (box/polygon/line with "
+        "distance or area), and focus = the best guess for 'this/here' (open pin > newest drawing > last click > view "
+        "centre). By default also answers 'what is this': Nominatim reverse geocode of the focus (1 request per 1.2 s) "
+        "plus nearby named places/buildings (Overpass). Call it FIRST whenever the user says this, here, around here, "
+        "that building, what am I looking at.",
+        {"type": "object", "properties": {
+            "describe": {"type": "boolean", "default": True, "description": "Reverse geocode + nearby places for the focus."},
+            "nearby": {"type": "boolean", "default": True},
+            "category": {"type": "string", "description": "Nearby filter, e.g. restaurant, cafe, hotel (default: any named place)."},
+            "radius_m": {"type": "number", "minimum": 30, "maximum": 2000, "description": "Nearby radius (default from zoom)."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 8}}}, "👁️"),
+    "godseye_what_is_here": (
+        "Reverse geocode a coordinate (Nominatim: name, address, OSM type, website/wikipedia tags) and list nearby named "
+        "places/buildings, nearest first. Works without a pane.",
+        {"type": "object", "properties": {
+            "lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180},
+            "radius_m": {"type": "number", "minimum": 30, "maximum": 2000, "default": 150},
+            "category": {"type": "string"}, "nearby": {"type": "boolean", "default": True},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 8}}, "required": ["lat", "lon"]}, "📌"),
+    "godseye_measure": (
+        "Measure on the globe. op=distance: great-circle distance through 2+ points (total + per leg + bearing); "
+        "op=area: area + perimeter of a polygon (3+ points); op=route: travel distance/time by walk/bike/drive via the "
+        "public OSRM server (clear routing_unavailable error when it is down). Points can be coordinates, pins on the pane "
+        "(pins: ids or labels) or a shape the user drew (use_drawn: 'latest' or a shape id; a box/polygon defaults to "
+        "area). draw=true draws the line/polygon with its label on the pane.",
+        {"type": "object", "properties": {
+            "op": {"type": "string", "enum": ["distance", "area", "route"]},
+            "points": {"type": "array", "items": {"type": "object", "properties": {"lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180}}, "required": ["lat", "lon"]}, "maxItems": 200},
+            "pins": {"type": "array", "items": {"type": "string"}, "description": "Pin ids (anno-3) or labels, in order."},
+            "use_drawn": {"type": "string", "description": "'latest' or a drawn shape id from godseye_live_context."},
+            "mode": {"type": "string", "enum": ["walk", "bike", "drive"], "default": "walk", "description": "op=route only."},
+            "draw": {"type": "boolean", "default": True}, "label": {"type": "string"}, "color": {"type": "string"}}}, "📏"),
+    "godseye_isochrone": (
+        "Reach within N minutes (walk/bike/drive) from a point: isochrone polygons from the public Valhalla server, "
+        "else an approximate reach polygon from one OSRM table call (marked approximate), else a clear "
+        "routing_unavailable error (never a fake straight-line circle). Without lat/lon it uses the pane focus "
+        "(selected pin / last click / view centre). Draws the rings with labels on the pane.",
+        {"type": "object", "properties": {
+            "lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180},
+            "minutes": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 120}, "maxItems": 4, "default": [10]},
+            "mode": {"type": "string", "enum": ["walk", "bike", "drive"], "default": "walk"},
+            "draw": {"type": "boolean", "default": True},
+            "include_polygon": {"type": "boolean", "default": False, "description": "Return polygon coordinates too."}}}, "⏱️"),
+    "godseye_live_draw": (
+        "Shapes on the live globe. action=start kind=box|polygon|line puts the pane in draw mode for the USER (box: 2 "
+        "clicks; polygon/line: clicks, double-click or Enter finishes, Esc cancels); action=add draws Hermes' own "
+        "line/polygon/box from points with a label; list / remove (id) / clear (who=all|user|hermes) / cancel. "
+        "Hermes-drawn shapes are restored with the scene.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["start", "add", "list", "remove", "clear", "cancel"], "default": "add"},
+            "kind": {"type": "string", "enum": ["box", "polygon", "line"]},
+            "points": {"type": "array", "items": {"type": "object", "properties": {"lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180}}, "required": ["lat", "lon"]}, "maxItems": 600},
+            "id": {"type": "string"}, "label": {"type": "string", "maxLength": 80}, "color": {"type": "string"},
+            "who": {"type": "string", "enum": ["all", "user", "hermes"], "default": "all"}}}, "✏️"),
+    "godseye_live_compare": (
+        "Side-by-side swipe on the live globe between two imagery layers with a draggable divider. Sides: 'current' "
+        "(what the globe shows now), 'osm', or 'wayback:YYYY[-MM[-DD]]' = Esri World Imagery Wayback historical "
+        "imagery release on/before that date (keyless). God's Eye View map stacks cannot be split (one at a time). "
+        "action=list_dates lists Wayback release dates; position (0-1) / toggle (before/after flip) / state / stop.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["start", "stop", "position", "toggle", "state", "list_dates"], "default": "start"},
+            "left": {"type": "string", "default": "wayback:2014", "description": "Left side (before)."},
+            "right": {"type": "string", "default": "current", "description": "Right side (after)."},
+            "position": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5}}}, "🪞"),
     "godseye_preview_swap": (
         "Open a URL in the Hermes desktop preview pane, closing the previous URL this plugin opened "
         "(single-tab swap). desktop_preview is a Hermes core tool and cannot gain a native swap action; "
@@ -398,6 +464,10 @@ EXTRA_TOOLS = {
 }
 
 
+CONTEXT_TOOLS = {"godseye_live_context": "live_context", "godseye_what_is_here": None, "godseye_measure": "measure",
+                 "godseye_isochrone": "isochrone", "godseye_live_draw": "draw", "godseye_live_compare": "compare"}
+
+
 def extra_handler(name: str):
     def handler(args: dict, **kw) -> str:
         from . import composer, home
@@ -429,6 +499,14 @@ def extra_handler(name: str):
                     out = preview_mod.close_tracked()
                 else:
                     out = preview_mod.swap(str(args.get("url") or ""), label=str(args.get("label") or ""))
+            elif name in CONTEXT_TOOLS:
+                from . import context, measure as measure_mod
+                if name == "godseye_what_is_here":
+                    out = measure_mod.what_is_here(float(args["lat"]), float(args["lon"]), radius_m=float(args.get("radius_m") or 150),
+                                                   nearby=bool(args.get("nearby", True)), category=args.get("category"),
+                                                   limit=int(args.get("limit") or 8))
+                else:
+                    out = getattr(context, CONTEXT_TOOLS[name])(args, session_id=sid)
             elif name == "godseye_live_list_annotations":
                 out = composer.scene_op("list", sid)
             elif name == "godseye_live_delete_annotation":

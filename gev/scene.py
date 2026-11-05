@@ -62,7 +62,7 @@ class SceneStore:
 
     @staticmethod
     def _has(scene: dict) -> bool:
-        return bool(scene.get("annotations") or scene.get("camera"))
+        return bool(scene.get("annotations") or scene.get("camera") or scene.get("shapes"))
 
     @staticmethod
     def _drawer(sc: dict, args: dict, result: dict) -> bool:
@@ -103,6 +103,8 @@ class SceneStore:
                 sc["drawer"] = None
             elif name == "hermes_pin_drawer":
                 changed = self._drawer(sc, args, result)
+            elif name == "hermes_draw":
+                changed = self._shape(sc, args or {}, result)
             elif name == "hermes_caption":
                 sc["caption"] = (args or {}).get("text") or None
             elif name in ("get_current_view_state", "fly_to_location", "move_camera"):
@@ -112,6 +114,27 @@ class SceneStore:
             if changed:
                 sc["updated"] = time.time()
                 self._save()
+
+    @staticmethod
+    def _shape(sc: dict, args: dict, result: dict) -> bool:
+        """Hermes-drawn lines/polygons (measurements, isochrones): kept so a reopened pane redraws them."""
+        shapes = sc.setdefault("shapes", {})
+        action = str(args.get("action") or "add")
+        if action == "add" and isinstance(result.get("shape"), dict):
+            sh = result["shape"]
+            shapes[sh["id"]] = {"action": "add", "id": sh["id"], "kind": sh.get("kind"), "points": sh.get("points"),
+                                "label": args.get("label", sh.get("label")), "color": args.get("color"),
+                                **({"labelAt": args["labelAt"]} if args.get("labelAt") else {})}
+            while len(shapes) > 40:
+                shapes.pop(next(iter(shapes)))
+            return True
+        if action == "remove":
+            return shapes.pop(str(args.get("id") or ""), None) is not None
+        if action == "clear" and args.get("who", "all") in ("all", "hermes"):
+            had = bool(shapes)
+            shapes.clear()
+            return had
+        return False
 
     def _add_annotations(self, sc: dict, args: dict, result: dict) -> None:
         items = result.get("items") if isinstance(result.get("items"), list) else []
@@ -259,6 +282,8 @@ class SceneStore:
                 cmds.append(("hermes_pin_drawer", {"action": "open", "latitude": dr["latitude"],
                                                    "longitude": dr["longitude"], "label": dr.get("label"),
                                                    "flyTo": False}))
+            for sh in (sc.get("shapes") or {}).values():
+                cmds.append(("hermes_draw", dict(sh)))
             if sc.get("caption") and not redraw_only:
                 cmds.append(("hermes_caption", {"text": sc["caption"]}))
             return cmds
