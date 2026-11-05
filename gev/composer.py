@@ -439,6 +439,18 @@ def doctor() -> dict:
             add("annotations", True, f"{len(sc.get('annotations') or [])} stored in the default scene (no pane open)")
     add("public URL", True, "GODSEYE_PUBLIC_URL set" if config.public_url() != config.api_base()
         else "using the API base for links (set GODSEYE_PUBLIC_URL for links other devices can open)")
+    from .gl_recover import MAX_FAILURES, WINDOW_MS, enabled as gl_recover_enabled
+    if gl_recover_enabled():
+        gl_detail = (
+            f"on; a lost WebGL context recreates the viewer in the same pane and restores the saved scene. "
+            f"Stops after {MAX_FAILURES} losses in {WINDOW_MS // 1000}s, then the click-to-reload card."
+        )
+    else:
+        gl_detail = (
+            "off (GODSEYE_GL_RECOVER or plugin-data/godseye/config.json glRecover); "
+            "a lost context shows the click-to-reload card."
+        )
+    add("webgl recover", True, gl_detail)
     return {"ok": all(c["ok"] for c in checks), "checks": checks, "panes": st.get("panes", [])}
 
 

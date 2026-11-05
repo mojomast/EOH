@@ -27,6 +27,10 @@ TABLE: dict[str, dict[str, str]] = {
         "message": "The Eye Of Hermes (EOH) pane did not answer in time.",
         "fix": "Retry this call once. If it times out again, call godseye_live_panes and godseye_doctor before changing arguments.",
     },
+    "CONTEXT_LOST": {
+        "message": "The Eye Of Hermes (EOH) pane lost its WebGL context. The viewer is being destroyed and created again in the same pane, then the saved scene is restored.",
+        "fix": "Wait for automatic recovery. Camera heading, pitch, and roll, plus pins, annotations, the drawer, filters, and layers come back from the saved scene. If a Click to reload the globe card appears, ask the user to click it once. Do not rebuild the panel and do not open a second pane.",
+    },
     "MAP_STACK_KEY": {
         "message": "set_map_stack failed because a client map key is missing or not in the pane bundle.",
         "fix": "",  # filled from composer.MAP_STACK_FIX so the text stays in one place
@@ -209,6 +213,7 @@ def classify(out: dict, tool: str | None = None) -> str:
             break
     if hinted in ("OVERPASS_NOT_CONFIGURED", "AREA_TOO_LARGE", "KEY_MISSING", "PANEL_STALE",
                   "PANEL_MISSING", "ION_SCOPES", "no_pane", "pane_busy", "relay_unavailable", "timeout",
+                  "CONTEXT_LOST",
                   "routing_unavailable", "wayback_unavailable", "no_focus", "no_drawing", "pin_not_found",
                   "unsupported_side", "confirm_required", "CONFIRM_REQUIRED", "not_found", "NOT_FOUND",
                   "no_pins", "geocoder_unavailable", "osm_unavailable", "no_match", "bad_points",
