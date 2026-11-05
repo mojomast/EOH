@@ -89,3 +89,34 @@ def test_e2e_live_tool():
     out = hermes_tools.make_handler("get_earthquakes")({})
     assert "error" not in json.loads(out) if out.startswith("{\"error") else True
     assert len(out) > 20
+
+
+def test_bridge_round_trip(tmp_path):
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+
+    from gev import bridge
+
+    token = bridge.ensure_token(tmp_path / "b.env")
+    assert (tmp_path / "b.env").stat().st_mode & 0o777 == 0o600
+    assert bridge.ensure_token(tmp_path / "b.env") == token
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), bridge.make_handler(lambda m, n: "pong:" + m[-1]["content"], token))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/v1/chat/completions"
+    body = json.dumps({"messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]}).encode()
+
+    def post(auth):
+        req = urllib.request.Request(url, body, {"Content-Type": "application/json", **auth})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    try:
+        assert post({})[0] == 401
+        code, data = post({"Authorization": f"Bearer {token}"})
+        assert code == 200 and data["choices"][0]["message"]["content"] == "pong:hi"
+    finally:
+        srv.shutdown()

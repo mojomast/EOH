@@ -8,7 +8,12 @@ from pathlib import Path
 from fastapi import APIRouter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from gev import config, hud  # noqa: E402
+from gev import bridge, config, hud  # noqa: E402
+
+try:  # serve God's Eye View's own HUD (GEV_HUD_SUMMARY_BASE_URL) from this Hermes process
+    bridge.start_in_thread()
+except Exception:
+    pass
 
 router = APIRouter()
 _llm = None
@@ -30,7 +35,7 @@ async def status():
             up = r.status == 200
     except Exception:
         pass
-    return {"apiBase": config.api_base(), "appUp": up,
+    return {"apiBase": config.api_base(), "appUp": up, "hudBridge": bridge._server is not None,
             "checkout": config.checkout() is not None, "node": config.node_bin() is not None}
 
 
