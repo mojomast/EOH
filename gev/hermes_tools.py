@@ -88,6 +88,21 @@ DRAWER_PROPS = {
 }
 
 
+TAGS_PROP = {"type": "object", "description": "Pin facets for the pane's filter chips / godseye_live_filter_pins "
+             "(godseye_find_places fills these from OSM): amenity, shop, tourism, leisure, cuisine, category, "
+             "rating or stars, opening_hours (OSM syntax).", "additionalProperties": {"type": ["string", "number"]}}
+
+AREA_PROP = {"type": "object", "description": "Exactly one of: bbox [south, west, north, east]; polygon [[lat, lon], ...]; "
+             "lat + lon + radius_km; or view=true (the open pane's current view, resolved once at create time).",
+             "properties": {"bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+                            "polygon": {"type": "array", "minItems": 3, "maxItems": 200,
+                                        "items": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}},
+                            "lat": {"type": "number", "minimum": -90, "maximum": 90},
+                            "lon": {"type": "number", "minimum": -180, "maximum": 180},
+                            "radius_km": {"type": "number", "minimum": 0.1, "maximum": 2000},
+                            "view": {"type": "boolean"}}}
+
+
 def extend_live_schema(name: str, schema: dict) -> dict:
     """Hermes-side features the pane shim adds on top of upstream tools."""
     props = schema.setdefault("properties", {})
@@ -106,6 +121,7 @@ def extend_live_schema(name: str, schema: dict) -> dict:
                            "description": "Mark label. Use a newline-separated string or a list for 2-3 lines."}
             ip["title"] = {"type": "string", "description": "card: heading line; pin: drawer title (default: label)"}
             ip.update(DRAWER_PROPS)
+            ip["tags"] = TAGS_PROP
             ip["rows"] = {"type": "array", "maxItems": 8, "description": "card: rows like a menu or price list",
                           "items": {"type": "object", "properties": {"text": {"type": "string"},
                                                                      "price": {"type": ["string", "number"]}},
@@ -274,6 +290,56 @@ EXTRA_TOOLS = {
             "longitude": {"type": "number", "minimum": -180, "maximum": 180},
             "flyTo": {"type": "boolean", "default": False, "description": "Also fly the camera to the pin."},
             "fanout": FANOUT_PROP}}, "🗂️"),
+    "godseye_live_filter_pins": (
+        "Filter and cluster the pins on the live globe (the same chips the pane shows). categories match pin "
+        "tags (amenity / shop / tourism / cuisine / category, e.g. ramen, cafe, bar); min_rating hides pins rated "
+        "below it; open_now hides pins whose OSM opening_hours say closed now (unknown hours stay visible unless "
+        "include_unknown=false). cluster=false turns count bubbles off. Filters persist in the scene. "
+        "action=state reads filters, counts, clusters and per-pin open state; action=expand zooms into a cluster.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["set", "state", "expand"], "default": "set"},
+            "categories": {"type": "array", "items": {"type": "string"}, "maxItems": 16,
+                           "description": "Keep pins with ANY of these categories; [] = all."},
+            "min_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 10},
+            "open_now": {"type": "boolean"},
+            "include_unknown": {"type": "boolean", "default": True,
+                                "description": "Keep pins with unknown rating/hours when filtering by them."},
+            "cluster": {"type": "boolean", "default": True},
+            "clear": {"type": "boolean", "description": "Reset every filter."},
+            "cluster_id": {"type": "string", "description": "action=expand: id from action=state clusters[]."},
+            "fanout": FANOUT_PROP}}, "🔎"),
+    "godseye_watch_create": (
+        "Watch an area and alert the user on NEW items: feeds earthquakes (USGS, keyless), fires (NASA FIRMS, needs "
+        "FIRMS_MAP_KEY), flights (OpenSky, keyless, rate-limited), ships (needs AISSTREAM_API_KEY and the app), pois "
+        "(OSM, needs conditions.pois.category/cuisine). Only create when the user asks. The first run records what "
+        "is already there (baseline) without alerting; later runs alert on unseen ids only, pin each new item with "
+        "drawer details and queue the alert for the next chat turn (deliver=inject also starts a turn when Hermes "
+        "allows plugin injection). Feeds without their key report KEY_MISSING.",
+        {"type": "object", "properties": {
+            "name": {"type": "string", "maxLength": 80},
+            "area": AREA_PROP,
+            "feeds": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["earthquakes", "fires", "flights", "ships", "pois"]}},
+            "conditions": {"type": "object", "description": "Per feed: earthquakes {min_magnitude (default 2.5), lookback_days}; "
+                           "fires {min_frp_mw, confidence[], source}; flights {callsign_prefix, min_altitude_m, max_altitude_m, "
+                           "airborne_only}; ships {type}; pois {category, cuisine}."},
+            "interval_s": {"type": "integer", "minimum": 60, "maximum": 604800, "default": 900},
+            "baseline": {"type": "boolean", "default": True, "description": "false = alert on what is already there on the first run."},
+            "pin": {"type": "boolean", "default": True},
+            "deliver": {"type": "string", "enum": ["queue", "inject"], "default": "queue"},
+            "run_now": {"type": "boolean", "default": True, "description": "Run the first check right away."}},
+         "required": ["area", "feeds"]}, "👁️"),
+    "godseye_watch_list": (
+        "List area watches (area, feeds, interval, active, last run, per-feed status incl. KEY_MISSING, seen counts) "
+        "and the number of queued alerts. check=<id> runs that watch now and returns what is new.",
+        {"type": "object", "properties": {"check": {"type": "string", "description": "Watch id to check now."}}}, "👁️"),
+    "godseye_watch_pause": (
+        "Pause (active=false) or resume (active=true) an area watch by id.",
+        {"type": "object", "properties": {"id": {"type": "string"}, "active": {"type": "boolean", "default": False}},
+         "required": ["id"]}, "⏸️"),
+    "godseye_watch_delete": (
+        "Delete an area watch and its last-seen state. Needs confirm=true; ask the user first.",
+        {"type": "object", "properties": {"id": {"type": "string"}, "confirm": {"type": "boolean", "default": False}},
+         "required": ["id"]}, "🗑️"),
     "godseye_live_tour_status": (
         "Status of a tour job: state, index, current stop, remaining, errors.",
         {"type": "object", "properties": {"jobId": {"type": "string"}}, "required": ["jobId"]}, "🧭"),
@@ -361,6 +427,11 @@ def extra_handler(name: str):
             elif name == "godseye_live_pin_drawer":
                 fan = bool(args.pop("fanout", False))
                 out = composer.live_call("hermes_pin_drawer", args, sid, fanout=fan)
+            elif name == "godseye_live_filter_pins":
+                fan = bool(args.pop("fanout", False))
+                out = composer.live_call("hermes_pin_filter", args, sid, fanout=fan)
+            elif name.startswith("godseye_watch_"):
+                out = watch_tool(name, args, sid)
             elif name == "godseye_live_reload_pane":
                 out = composer.live_call("hermes_reload", {}, sid, fanout=bool(args.get("fanout")))
             elif name == "godseye_rebuild_panel":
@@ -386,6 +457,45 @@ def extra_handler(name: str):
     return handler
 
 
+def watch_tool(name: str, args: dict, sid=None) -> dict:
+    from . import composer, watch
+    st = watch.store()
+    if name == "godseye_watch_create":
+        out = st.create(args, session_id=sid, view_fn=lambda: composer.live_call("get_current_view_state", {}, sid))
+        if out.get("ok") and args.get("run_now", True) is not False:
+            out["first_check"] = st.check(out["watch"]["id"])
+        return out
+    if name == "godseye_watch_list":
+        return st.check(str(args["check"])) if args.get("check") else st.list(sid)
+    if name == "godseye_watch_pause":
+        return st.set_active(str(args.get("id") or ""), bool(args.get("active", False)))
+    return st.delete(str(args.get("id") or ""), args.get("confirm") is True)
+
+
+def bind_watch_delivery(ctx) -> dict:
+    """Alerts: queued for the next turn (pre_llm_call), optional ctx.inject_message for deliver=inject."""
+    from . import watch
+    st = watch.store()
+    done = {"hook": False, "inject": False}
+    if hasattr(ctx, "inject_message"):
+        def deliver(w, text):
+            sk = w.get("session_id")
+            return bool(sk) and bool(ctx.inject_message(text, role="user", session_key=sk))
+        st.deliver = deliver
+        done["inject"] = True
+    if hasattr(ctx, "register_hook"):
+        def pre_llm_call(session_id=None, **_kw):
+            text = watch.alerts_context(st.drain_alerts(session_id))
+            return {"context": text} if text else None
+        try:
+            ctx.register_hook("pre_llm_call", pre_llm_call)
+            done["hook"] = True
+        except Exception:
+            pass
+    st.ensure_running()  # only starts when a persisted watch is active
+    return done
+
+
 def register_extras(ctx) -> dict:
     """Composer tools, /gev, the analyst skill and home-view state. Each host API is optional:
     a Hermes build without it simply skips that piece. Returns what was registered."""
@@ -402,6 +512,10 @@ def register_extras(ctx) -> dict:
                           handler=extra_handler(name), description=desc.split(":")[0][:80], emoji=emoji,
                           **({"check_fn": _available} if needs_mcp else {}))
         done["tools"].append(name)
+    try:
+        done["watch"] = bind_watch_delivery(ctx)
+    except Exception:
+        done["watch"] = None
     if hasattr(ctx, "register_command"):
         try:
             ctx.register_command("gev", composer.gev_command, description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor",

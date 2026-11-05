@@ -69,6 +69,13 @@ Pins and the pin drawer: pins (annotation pins, POI pins, brief hits, tour stops
 
 Tours: `godseye_live_run_tour {stops:[{name,lat,lon}], framing:"street"|"rooftop"|"district", orbit:"slow"|null, dwellMs, connect:"route"}` returns a jobId right away. Check it with `godseye_live_tour_status` and cancel with `godseye_live_stop_tour`.
 
+### Pin clusters, filters and area watches (v0.2)
+
+- **Clusters:** zoomed out (camera above ~2.5 km), dense pins merge into a count bubble. Click it to zoom in and expand it. `godseye_live_filter_pins {action:"expand", cluster_id}` does the same.
+- **Filters:** a chip bar over the globe filters by category (from POI `tags`: amenity, shop, tourism, leisure, cuisine), by rating >= 4 when pins carry `rating`/`stars`, and by **Open now**. Open now reads OSM `opening_hours` with a careful subset parser (`gev/panel_oh.js`): `24/7`, weekday ranges and lists, time spans including past midnight, `off`, and later rules overriding earlier ones. Anything else is *unknown*, and unknown pins stay visible unless `include_unknown:false`. The time comes from the pane's local clock. The agent can set the same filters with `godseye_live_filter_pins`, and they persist in the scene.
+- **Watches:** `godseye_watch_create {area, feeds, conditions, interval_s}` watches an area. The area can be `{bbox:[s,w,n,e]}`, `{polygon:[[lat,lon],...]}`, `{lat,lon,radius_km}` or `{view:true}`. Feeds are `earthquakes` (USGS), `fires` (FIRMS, needs `FIRMS_MAP_KEY`), `flights` (OpenSky anonymous), `ships` (needs `AISSTREAM_API_KEY` and the app) and `pois` (OSM, needs `conditions.pois.category` or `cuisine`). A feed without its key reports `KEY_MISSING` in every check. The first run records a baseline; after that, only items never seen before alert, and seen ids persist across restarts. New items are pinned (always visible, even with filters set) with drawer details.
+- **Alert delivery:** Hermes' cron schedules model prompts, not plugin callbacks, so checks run in a small daemon thread that runs only while an active watch exists (`GODSEYE_WATCH_LOOP=0` disables it). Alerts are **queued** and injected into the next chat turn through the `pre_llm_call` hook, and that turn tells you about them. With `deliver:"inject"`, the plugin also calls Hermes' `ctx.inject_message` for the watch's chat. Hermes accepts that only when `plugins.entries.godseye.allow_gateway_injection: true` is set; otherwise the alert stays queued. List, pause and delete with `godseye_watch_list`, `godseye_watch_pause` and `godseye_watch_delete {confirm:true}`.
+
 ## Try it
 
 - "What am I looking at in God's Eye View?"

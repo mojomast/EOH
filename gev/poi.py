@@ -215,7 +215,7 @@ def _poi(el: dict) -> dict | None:
             "opening_hours": t.get("opening_hours"), "cuisine": t.get("cuisine"),
             "phone": t.get("phone") or t.get("contact:phone"),
             "menu": t.get("website:menu") or t.get("menu:url"),
-            **_extra_tags(t),
+            **_extra_tags(t), **_facet_tags(t),
             "osm": f"{el.get('type')}/{el.get('id')}"}
 
 
@@ -223,6 +223,22 @@ def _extra_tags(t: dict) -> dict:
     """wikipedia / wikidata / image tags kept for the pin drawer (only when present)."""
     out = {k: t.get(k) for k in ("wikipedia", "wikidata", "image", "wikimedia_commons") if t.get(k)}
     return out
+
+
+FACET_KEYS = ("amenity", "shop", "tourism", "leisure", "stars", "rating")
+
+
+def _facet_tags(t: dict) -> dict:
+    """Category / rating tags the pane's pin filter chips use (only when present)."""
+    return {k: str(t[k])[:80] for k in FACET_KEYS if t.get(k)}
+
+
+def pin_tags(p: dict) -> dict:
+    """annotate_map item `tags` (facets for the pane filters) from a find_places row."""
+    out = {k: p[k] for k in ("cuisine", "opening_hours", *FACET_KEYS) if p.get(k)}
+    if p.get("category") and not any(out.get(k) for k in ("amenity", "shop", "tourism", "leisure")):
+        out["category"] = p["category"]
+    return {k: str(v)[:400] for k, v in out.items()}
 
 
 def _esc(s: str) -> str:
@@ -410,7 +426,8 @@ def drawer_fields(p: dict) -> dict:
 
 def pin_annotations(pois: list[dict], label_prefix: str = "") -> list[dict]:
     return [{"type": "pin", "target": p["name"][:200], "latitude": p["lat"], "longitude": p["lon"],
-             "label": f"{label_prefix}{p['name']}"[:80], **drawer_fields(p)} for p in pois[:24]]
+             "label": f"{label_prefix}{p['name']}"[:80], **drawer_fields(p),
+             **({"tags": pin_tags(p)} if pin_tags(p) else {})} for p in pois[:24]]
 
 
 # --- P2: details ------------------------------------------------------------

@@ -69,16 +69,18 @@
       handler.setInputAction((ev) => {
         let picked = null
         try { picked = v.scene.drillPick(ev.position, 5) } catch {}
+        const cl = (picked || []).map((x) => x?.id?._hermesCluster).find(Boolean)
+        if (cl) return expandCluster(cl)
         const hit = (picked || []).map((x) => x?.id?._hermesPin).find(Boolean)
         if (hit) open(hit, { flyTo: true, source: 'click' })
       }, Ce.ScreenSpaceEventType.LEFT_CLICK)
       handler.setInputAction((ev) => {
         let hit = null
-        try { hit = v.scene.pick(ev.endPosition)?.id?._hermesPin } catch {}
+        try { const id = v.scene.pick(ev.endPosition)?.id; hit = id?._hermesPin || id?._hermesCluster } catch {}
         v.scene.canvas.style.cursor = hit ? 'pointer' : ''
       }, Ce.ScreenSpaceEventType.MOUSE_MOVE)
-      timer = setInterval(() => resampleAll(false), 700)
-      v.camera.moveEnd?.addEventListener?.(() => resampleAll(true))
+      timer = setInterval(() => { resampleAll(false); refreshView(false) }, 700)
+      v.camera.moveEnd?.addEventListener?.(() => { resampleAll(true); refreshView(true) })
       try {  // keep in step with upstream's board (clear, remove, expiry)
         offChange = g().annotations?.onChange?.(() => syncWithBoard())
       } catch {}
@@ -115,9 +117,10 @@
       point: { pixelSize: 7, color: Ce.Color.fromCssColorString(col), outlineColor: Ce.Color.fromCssColorString('#06121c'),
         outlineWidth: 2, disableDepthTestDistance: NEVER_DEPTH } })
     pin._hermesPin = id; dot._hermesPin = id
-    const p = { id, lat, lon, label, color: col, meta: drawerMeta(spec, label), h: null, ents: [pin, dot] }
+    const p = { id, lat, lon, label, color: col, meta: drawerMeta(spec, label), tags: pinTags(spec), h: null, ents: [pin, dot] }
     pins.set(id, p)
     place(p)
+    refreshView(true)
     try { g().annotations?.setHidden?.(id, true) } catch {}  // hide upstream's floating SVG reticle
     try { g().viewer.scene.requestRender?.() } catch {}
     return true
@@ -128,6 +131,7 @@
     for (const e of p.ents) try { ds.entities.remove(e) } catch {}
     pins.delete(id)
     if (openId === id) close({ silent: true })
+    refreshView(true)
   }
   const clear = () => { for (const id of [...pins.keys()]) remove(id); close({ silent: true }) }
 
@@ -249,6 +253,12 @@
     const co = document.createElement('p'); co.className = 'coords'
     co.textContent = `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`
     body.appendChild(co)
+    if (p.tags.hours || p.tags.rating != null) {
+      const st = document.createElement('p'); st.className = 'coords'
+      const o = p.tags.hours ? openState(p) : undefined
+      st.textContent = [p.tags.rating != null ? `Rating ${p.tags.rating}` : '', o === true ? 'Open now' : o === false ? 'Closed now' : p.tags.hours ? 'Hours unknown' : ''].filter(Boolean).join(' · ')
+      body.appendChild(st)
+    }
     for (const im of m.images) {
       const fig = document.createElement('figure')
       const img = document.createElement('img')
@@ -327,6 +337,165 @@
   }
   // Ground point a pin (or any mark) should sit on, for other Hermes overlays (cards).
   const heightFor = (lat, lon) => groundAt(lon, lat)
+
+  // ---- facets, filters and clustering ------------------------------------------------------
+  // Facets come from POI tags passed with the pin (annotate_map item `tags`): category values
+  // (amenity, shop, tourism, cuisine, category), rating (rating/stars) and opening_hours.
+  const CAT_KEYS = ['category', 'amenity', 'shop', 'tourism', 'leisure', 'cuisine']
+  function pinTags(spec) {
+    const t = spec && typeof spec.tags === 'object' && spec.tags ? spec.tags : {}
+    const cats = new Set()
+    for (const k of CAT_KEYS) for (const c of String(t[k] ?? '').split(/[;,]/)) { const x = c.trim().toLowerCase().replace(/\s+/g, '_'); if (x && x.length < 40) cats.add(x) }
+    const r = Number.parseFloat(t.rating ?? t.stars)
+    return { cats: [...cats].slice(0, 8), rating: Number.isFinite(r) ? r : null,
+      hours: typeof t.opening_hours === 'string' ? t.opening_hours.slice(0, 400) : null,
+      alert: Boolean(t.watch) }  // area-watch alert pins are never filtered out
+  }
+  let filters = { categories: [], min_rating: null, open_now: false, include_unknown: true, cluster: true }
+  let nowOverride = null
+  const OH = () => window.__hermesOpeningHours
+  function openState(p) { if (!p.tags.hours || !OH()) return null; return OH().isOpen(p.tags.hours, nowOverride ? new Date(nowOverride) : new Date()) }
+  const passes = (p) => {
+    const f = filters
+    if (p.tags.alert) return true
+    if (f.categories.length && !p.tags.cats.some((c) => f.categories.includes(c))) return false
+    if (f.min_rating != null) { if (p.tags.rating == null) { if (!f.include_unknown) return false } else if (p.tags.rating < f.min_rating) return false }
+    if (f.open_now) { const o = openState(p); if (o === false) return false; if (o == null && !f.include_unknown) return false }
+    return true
+  }
+  const CLUSTER_PX = 56, CLUSTER_MAX_HEIGHT_M = 2500   // no clustering at street level
+  let clusterEnts = [], clusters = new Map(), lastSig = null, cseq = 0
+  const bubbleSvg = (n) => {
+    const r = n < 10 ? 15 : n < 100 ? 18 : 21, d = r * 2 + 4
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}">` +
+      `<circle cx="${d / 2}" cy="${d / 2}" r="${r}" fill="rgba(56,242,200,.88)" stroke="#06121c" stroke-width="2.5"/>` +
+      `<text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-weight="700" font-size="${n < 100 ? 14 : 12}" fill="#06121c">${n}</text></svg>`)
+  }
+  const toWin = (p) => {
+    const Ce = C(), v = g().viewer, ST = Ce?.SceneTransforms
+    const f = ST && (ST.worldToWindowCoordinates || ST.wgs84ToWindowCoordinates)
+    if (!f) return null
+    try { const w = f(v.scene, Ce.Cartesian3.fromDegrees(p.lon, p.lat, p.h ?? 0)); return w && Number.isFinite(w.x) ? w : null } catch { return null }
+  }
+  const camSig = () => { try { const c = g().viewer.camera, pc = c.positionCartographic; return [pc.longitude, pc.latitude, pc.height, c.heading, c.pitch].map((x) => Math.round(x * 1e4)).join(',') } catch { return '' } }
+  function refreshView(force) {
+    if (!ds) return
+    const sig = camSig() + '|' + pins.size + '|' + JSON.stringify(filters)
+    if (!force && sig === lastSig) return
+    lastSig = sig
+    const Ce = C()
+    for (const e of clusterEnts) try { ds.entities.remove(e) } catch {}
+    clusterEnts = []; clusters = new Map()
+    const visible = []
+    for (const p of pins.values()) { p.visible = passes(p); if (p.visible) visible.push(p) }
+    let height = 0
+    try { height = g().viewer.camera.positionCartographic.height } catch {}
+    const groups = []
+    if (filters.cluster !== false && height > CLUSTER_MAX_HEIGHT_M && visible.length > 1) {
+      for (const p of visible) {
+        const w = toWin(p)
+        if (!w) { groups.push({ members: [p] }); continue }
+        const gr = groups.find((x) => x.w && Math.abs(x.w.x - w.x) < CLUSTER_PX && Math.abs(x.w.y - w.y) < CLUSTER_PX)
+        if (gr) gr.members.push(p); else groups.push({ w: { x: w.x, y: w.y }, members: [p] })
+      }
+    } else for (const p of visible) groups.push({ members: [p] })
+    for (const p of pins.values()) p.clustered = false
+    for (const gr of groups) {
+      if (gr.members.length < 2) continue
+      const id = `cl-${++cseq}`
+      const lat = gr.members.reduce((s, p) => s + p.lat, 0) / gr.members.length
+      const lon = gr.members.reduce((s, p) => s + p.lon, 0) / gr.members.length
+      const h = Math.max(...gr.members.map((p) => p.h ?? 0))
+      const e = ds.entities.add({ _hermesCluster: id, position: Ce.Cartesian3.fromDegrees(lon, lat, h),
+        billboard: { image: bubbleSvg(gr.members.length), verticalOrigin: Ce.VerticalOrigin.CENTER ?? Ce.VerticalOrigin.BOTTOM,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY } })
+      e._hermesCluster = id
+      clusterEnts.push(e)
+      clusters.set(id, { id, lat, lon, ids: gr.members.map((p) => p.id) })
+      for (const p of gr.members) p.clustered = true
+    }
+    for (const p of pins.values()) for (const e of p.ents) e.show = Boolean(p.visible && !p.clustered)
+    renderBar()
+    try { g().viewer.scene.requestRender?.() } catch {}
+  }
+  function expandCluster(id) {
+    const c = clusters.get(id)
+    if (!c) return { ok: false, error: 'cluster not found' }
+    const ms = c.ids.map((i) => pins.get(i)).filter(Boolean)
+    const Ce = C(), v = g().viewer
+    let s = Math.min(...ms.map((p) => p.lat)), n = Math.max(...ms.map((p) => p.lat))
+    let w = Math.min(...ms.map((p) => p.lon)), e = Math.max(...ms.map((p) => p.lon))
+    const pad = Math.max(0.0015, (n - s) * 0.25, (e - w) * 0.25)
+    try { v.camera.flyTo({ destination: Ce.Rectangle.fromDegrees(w - pad, s - pad, e + pad, n + pad), duration: 1.0 }) } catch {}
+    return { ok: true, expanded: id, count: ms.length, bbox: [s, w, n, e] }
+  }
+  // ---- filter bar (chips) ------------------------------------------------------------------
+  let bar = null
+  const tellFilters = () => { try { window.parent.postMessage({ type: 'hermes-gev:filters', detail: { filters: { ...filters } } }, '*') } catch {} }
+  function renderBar() {
+    if (typeof document === 'undefined' || !document.body) return
+    const cats = new Map()
+    for (const p of pins.values()) for (const c of p.tags.cats) cats.set(c, (cats.get(c) || 0) + 1)
+    const anyRating = [...pins.values()].some((p) => p.tags.rating != null)
+    const anyHours = [...pins.values()].some((p) => p.tags.hours)
+    if (!pins.size || (!cats.size && !anyRating && !anyHours)) { if (bar) bar.style.display = 'none'; return }
+    if (!bar) {
+      const st = document.createElement('style')
+      st.textContent = `#hermes-gev-filters{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:2147483646;display:flex;flex-wrap:wrap;gap:6px;max-width:min(720px,92vw);
+        padding:6px 8px;background:rgba(3,14,11,.86);border:1px solid rgba(120,255,200,.35);border-radius:8px;font:12px/1 ui-monospace,Menlo,monospace}
+        #hermes-gev-filters button{background:rgba(120,255,200,.06);color:#bfffe6;border:1px solid rgba(120,255,200,.35);border-radius:12px;padding:5px 9px;cursor:pointer;font:inherit}
+        #hermes-gev-filters button.on{background:#38f2c8;color:#06121c;border-color:#38f2c8;font-weight:700}
+        #hermes-gev-filters .n{opacity:.65;margin-left:4px} #hermes-gev-filters .sum{color:#7fbfa8;align-self:center;padding:0 4px}`
+      document.head.appendChild(st)
+      bar = document.createElement('div'); bar.id = 'hermes-gev-filters'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Pin filters')
+      bar.addEventListener?.('click', (ev) => {
+        const b = ev.target?.closest?.('button[data-f]'); if (!b) return
+        const f = b.getAttribute('data-f'), val = b.getAttribute('data-v')
+        if (f === 'cat') { const s = new Set(filters.categories); s.has(val) ? s.delete(val) : s.add(val); setFilters({ categories: [...s] }) }
+        else if (f === 'rating') setFilters({ min_rating: filters.min_rating == null ? 4 : null })
+        else if (f === 'open') setFilters({ open_now: !filters.open_now })
+        else if (f === 'reset') setFilters({ categories: [], min_rating: null, open_now: false })
+        tellFilters()
+      })
+      document.body.appendChild(bar)
+    }
+    bar.style.display = 'flex'
+    const shown = [...pins.values()].filter((p) => p.visible).length
+    const chip = (f, v, text, on, n) => `<button type="button" data-f="${f}" data-v="${esc(v)}" class="${on ? 'on' : ''}" aria-pressed="${on}">${esc(text)}${n != null ? `<span class="n">${n}</span>` : ''}</button>`
+    bar.innerHTML = [...cats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => chip('cat', c, c.replace(/_/g, ' '), filters.categories.includes(c), n)).join('') +
+      (anyRating || filters.min_rating != null ? chip('rating', '', `★ ≥ ${filters.min_rating ?? 4}`, filters.min_rating != null) : '') +
+      (anyHours ? chip('open', '', 'Open now', filters.open_now) : '') +
+      ((filters.categories.length || filters.min_rating != null || filters.open_now) ? chip('reset', '', 'Reset', false) : '') +
+      `<span class="sum">${shown}/${pins.size}</span>`
+  }
+  function setFilters(f = {}) {
+    if (f.clear) f = { categories: [], min_rating: null, open_now: false, include_unknown: true, cluster: true }
+    const n = { ...filters }
+    if (Array.isArray(f.categories)) n.categories = f.categories.map((c) => String(c).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean).slice(0, 16)
+    if ('min_rating' in f) n.min_rating = Number.isFinite(Number.parseFloat(f.min_rating)) ? Number.parseFloat(f.min_rating) : null
+    if ('open_now' in f) n.open_now = Boolean(f.open_now)
+    if ('include_unknown' in f) n.include_unknown = f.include_unknown !== false
+    if ('cluster' in f) n.cluster = f.cluster !== false
+    if ('now' in f) nowOverride = f.now ? String(f.now) : null
+    filters = n
+    refreshView(true)
+    return filterState()
+  }
+  const filterState = () => {
+    const all = [...pins.values()]
+    return { ok: true, action: 'hermes_pin_filter', filters: { ...filters }, total: all.length,
+      shown: all.filter((p) => p.visible !== false).length, clusters: [...clusters.values()].map((c) => ({ id: c.id, count: c.ids.length, latitude: c.lat, longitude: c.lon })),
+      categories: [...new Set(all.flatMap((p) => p.tags.cats))].slice(0, 40),
+      hidden: all.filter((p) => p.visible === false).slice(0, 30).map(pinInfo),
+      openState: all.slice(0, 50).map((p) => ({ id: p.id, open: p.tags.hours ? openState(p) : null })) }
+  }
+  const filterCommand = (args = {}) => {
+    if (args.action === 'state') return filterState()
+    if (args.action === 'expand') return { action: 'hermes_pin_filter', ...expandCluster(String(args.cluster_id || '')) }
+    return setFilters(args)
+  }
   window.__hermesPins = { add, remove, clear, open, close, command, renderMarkdown, heightFor, syncWithBoard,
-    state: () => ({ open: openId, pins: [...pins.values()].map((p) => ({ ...pinInfo(p), h: p.h })) }) }
+    setFilters, filterCommand, filterState, expandCluster, refreshView,
+    state: () => ({ open: openId, filters: { ...filters }, clusters: [...clusters.values()].map((c) => ({ id: c.id, count: c.ids.length })),
+      pins: [...pins.values()].map((p) => ({ ...pinInfo(p), h: p.h, visible: p.visible !== false, clustered: Boolean(p.clustered) })) }) }
 })()

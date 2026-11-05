@@ -154,7 +154,7 @@
   const ptName = (pt) => pt?.target ?? pt?.name ?? null
   const hasCoords = (pt) => Number.isFinite(pt?.latitude) && Number.isFinite(pt?.longitude)
   // Rewrite Hermes-only annotation features into upstream specs; remember what to add afterwards.
-  const DRAWER_KEYS = ['description_md', 'images', 'links']
+  const DRAWER_KEYS = ['description_md', 'images', 'links', 'tags']  // tags = POI facets for filters
   const PIN_TYPES = new Set(['pin', 'marker', 'point', 'highlight', 'card'])
   const prepAnnotate = (args) => {
     const extras = []
@@ -294,9 +294,10 @@
     if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
     let payload
     try {
-      if (m.name === 'hermes_pin_drawer') {
+      if (m.name === 'hermes_pin_drawer' || m.name === 'hermes_pin_filter') {
         await ready()
-        payload = window.__hermesPins ? window.__hermesPins.command(m.args || {}) : { ok: false, error: 'pin layer not loaded' }
+        const P = window.__hermesPins
+        payload = !P ? { ok: false, error: 'pin layer not loaded' } : m.name === 'hermes_pin_filter' ? P.filterCommand(m.args || {}) : P.command(m.args || {})
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame') {

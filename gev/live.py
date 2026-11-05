@@ -292,6 +292,15 @@ class Relay:
         self.scenes.note_drawer(pane.last_session or self.scene_key(None, pane), pin)
         return {"ok": True}
 
+    def filters_event(self, body: dict) -> dict:
+        """The user toggled a pin filter chip in the pane: keep it in the scene."""
+        pane = self.panes.get(str(body.get("pane") or ""))
+        if not pane:
+            return {"ok": False, "error": "unknown pane"}
+        f = body.get("filters") if isinstance(body.get("filters"), dict) else {}
+        self.scenes.note_filters(pane.last_session or self.scene_key(None, pane), f)
+        return {"ok": True}
+
     # -- scene + tour operations ---------------------------------------------------------------
     def scene_op(self, body: dict) -> dict:
         op, sid = body.get("op"), body.get("session_id")
@@ -423,6 +432,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.tour_op(body))
             if self.path == "/panes":
                 return self._send(200, relay.panes_op(body))
+            if self.path == "/filters":
+                return self._send(200, relay.filters_event(body))
             if self.path == "/drawer":
                 return self._send(200, relay.drawer_event(body))
             if self.path == "/result":

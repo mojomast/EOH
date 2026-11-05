@@ -279,7 +279,8 @@ def test_register_extras_command_skill_state():
 def test_register_extras_degrades_without_new_apis():
     ctx = FakeCtx()  # no register_command / register_skill / state
     done = hermes_tools.register_extras(ctx)
-    assert done == {"tools": list(hermes_tools.EXTRA_TOOLS), "command": False, "skill": False, "state": False}
+    assert done == {"tools": list(hermes_tools.EXTRA_TOOLS), "command": False, "skill": False, "state": False,
+                    "watch": {"hook": False, "inject": False}}
 
 
 def test_skill_has_policy_and_frontmatter():

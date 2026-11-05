@@ -14,7 +14,14 @@ homepage: https://github.com/mojomast/hermes-godseye
 tags: [geospatial, osint, globe, mcp, desktop]
 manifest_version: 2
 api_version: 1
+provides_hooks:
+  - pre_llm_call
 provides_tools:
+  - godseye_live_filter_pins
+  - godseye_watch_create
+  - godseye_watch_list
+  - godseye_watch_pause
+  - godseye_watch_delete
   - godseye_get_earthquakes
   - godseye_get_active_fires
   - godseye_get_recent_launches
