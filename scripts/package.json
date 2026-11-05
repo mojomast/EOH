@@ -1,0 +1,8 @@
+{
+  "name": "godseye-gl-harness",
+  "private": true,
+  "description": "Headless WebGL context-loss harness. Not part of the plugin runtime.",
+  "dependencies": {
+    "puppeteer-core": "24.15.0"
+  }
+}

@@ -213,11 +213,25 @@ export function disposeFrame(win) {
   try { win?.postMessage({ type: 'hermes-gev:dispose' }, '*') } catch {}
 }
 
-// GL-health messages from the frame: 'lost' | 'failed' | 'restored', else null.
+// GL-health messages from the frame.
+// 'lost' | 'failed' show the click-to-reload card. 'recovering' / 'recovered' /
+// 'need-scene' keep the same pane mounted. 'restored' is the browser event
+// used only when automatic recovery is off.
 export function glEvent(event, win) {
   if (!win || event.source !== win) return null
   const t = event.data?.type
-  return t === 'hermes-gev:gl-lost' ? 'lost' : t === 'hermes-gev:gl-failed' ? 'failed' : t === 'hermes-gev:gl-restored' ? 'restored' : null
+  if (t === 'hermes-gev:gl-lost') return 'lost'
+  if (t === 'hermes-gev:gl-failed') return 'failed'
+  if (t === 'hermes-gev:gl-restored') return 'restored'
+  if (t === 'hermes-gev:gl-recovering') return 'recovering'
+  if (t === 'hermes-gev:gl-recovered') return 'recovered'
+  if (t === 'hermes-gev:gl-need-scene') return 'need-scene'
+  return null
+}
+
+function reportGl(ctx, paneId, body) {
+  const sessions = paneSessions()
+  ctx.rest('/live/gl', { method: 'POST', body: { pane: paneId, sessions, ...body } }).catch(() => {})
 }
 
 // Panel documents survive pane remounts, so a remount never refetches or rebuilds the data: URL.
@@ -229,7 +243,8 @@ export function loadPanel(ctx, fullUi) {
   const q = `fullUi=${fullUi ? 'true' : 'false'}`
   return ctx.rest(`/panel?${q}&configOnly=1`).then(async (meta) => {
     const rev = meta?.configRev || '0'
-    const key = (fullUi ? 'full:' : 'globe:') + rev
+    const gl = meta?.glRecover === false ? '0' : '1'
+    const key = (fullUi ? 'full:' : 'globe:') + rev + ':gl' + gl
     if (!panelCache.has(key)) {
       const p = ctx.rest(`/panel?${q}`).then((r) => {
         if (!r?.html) throw new Error('panel unavailable')
@@ -385,8 +400,30 @@ function GlobePane({ ctx }) {
     })
     const onGl = (e) => {
       const kind = glEvent(e, frame())
-      if (kind) setGl(kind === 'restored' ? null : kind)
-      return Boolean(kind)
+      if (!kind) return false
+      const detail = e.data?.detail || {}
+      if (kind === 'need-scene') {
+        ctx.rest('/live/gl', { method: 'POST', body: { pane: paneIdRef.current, event: 'restore', sessions: paneSessions() } })
+          .then((r) => {
+            try { frame()?.postMessage({ type: 'hermes-gev:gl-scene', commands: r?.commands || [], error: !r || r.ok === false }, '*') } catch {}
+          })
+          .catch(() => { try { frame()?.postMessage({ type: 'hermes-gev:gl-scene', error: true, commands: [] }, '*') } catch {} })
+        return true
+      }
+      if (kind === 'recovering') {
+        reportGl(ctx, paneIdRef.current, { event: 'lost', kind: 'recovering' })
+        return true
+      }
+      if (kind === 'recovered') {
+        reportGl(ctx, paneIdRef.current, { event: 'recovered', detail })
+        setGl(null)
+        return true
+      }
+      if (kind === 'restored') { setGl(null); return true }
+      const notice = kind === 'lost' && detail.exhausted ? 'exhausted' : 'manual'
+      reportGl(ctx, paneIdRef.current, { event: 'lost', kind: notice })
+      setGl(kind === 'failed' ? 'failed' : 'lost')
+      return true
     }
     const off = ctx.addEventListener(window, 'message', (e) => onGl(e) || live.onMessage(e) || onMessage(e))
     const stopVis = watchPaneVisibility(ref.current, (visible) => postForkMessage(frame, forkVisibilityMessage(visible)))
@@ -420,7 +457,7 @@ function GlobePane({ ctx }) {
         ? jsxs('div', {
           className: 'flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm', style: { minHeight: 520 },
           children: [
-            jsx('div', { children: gl === 'failed' ? 'The browser could not start 3D graphics (too many WebGL contexts in use).' : 'Graphics reset: the browser dropped the 3D context.' }),
+            jsx('div', { children: gl === 'failed' ? 'The browser could not start 3D graphics (too many WebGL contexts in use).' : 'Graphics reset: the browser dropped the 3D context. Automatic recovery is off or stopped after repeated failures.' }),
             jsx(Button, { size: 'sm', onClick: reloadGraphics, children: 'Click to reload the globe' }),
             jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: 'If it fails again, close other 3D/map tabs or reopen this browser tab.' })
           ]

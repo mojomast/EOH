@@ -495,11 +495,11 @@ def remediate(name: str, out: dict) -> dict:
     blob = json.dumps(out)
     if "AREA_TOO_LARGE" in blob:
         out["remediation"] = ("Area too large for the pane's OSM search: fly with rangeM <= 15000 first "
-                              "(godseye_live_fly_to_location), or use godseye_find_places which clamps the box.")
+                              "(godseye_view op=fly), or use godseye_query op=find_places which clamps the box.")
     if "OVERPASS_NOT_CONFIGURED" in blob:
         out["remediation"] = (
-            "The app has no Overpass server configured, so in-pane osm_query is disabled. Use "
-            "godseye_find_places now (it uses public keyless Overpass mirrors). To enable osm_query add "
+            "The app has no Overpass server configured, so in-pane osm is disabled. Use "
+            "godseye_query op=find_places now (it uses public keyless Overpass mirrors). To enable osm add "
             f"`{recommended_upstreams_env()}` to ~/.config/gods-eye-view.env and restart gods-eye-view.service.")
     return out
 
@@ -523,5 +523,5 @@ def resolve_area_fallback(args: dict, out: dict, call) -> dict:
     if g:
         bb = g.get("bbox") or bbox_around(g["lat"], g["lon"], float(args.get("radiusM") or 1000))
         out["fallback"] = {"bbox": bb, "polygon": bbox_polygon(bb), "center": [g["lat"], g["lon"]],
-                           "note": "Nominatim point; bbox polygon. Use with godseye_find_places bbox=..."}
+                           "note": "Nominatim point; bbox polygon. Use with godseye_query op=find_places bbox=..."}
     return out

@@ -63,16 +63,20 @@ def _panel_config(perf: str | None):
     """Rewrite config.json and build the gev:config body. Field names only in the loggable parts."""
     from gev import config, runtime_config
     from gev.composer import env_file
+    from gev.gl_recover import enabled as gl_recover_enabled
     written = runtime_config.write_checkout()
     mode = runtime_config.perf_mode(perf)
     root = config.checkout()
     overlay = runtime_config.overlay_from_env(runtime_config.merged_env(root, env_file())) if root else {}
+    gl_on = gl_recover_enabled()
     return {
         "configMessage": runtime_config.config_message(overlay, mode),
         "configFields": written.get("fields") or [],
-        "configRev": runtime_config.revision(overlay, mode),
+        "configRev": runtime_config.revision(overlay, mode, {"glRecover": gl_on}),
+        "glRecover": gl_on,
         "_overlay": overlay,
         "_mode": mode,
+        "_glRecover": gl_on,
     }
 
 
@@ -84,13 +88,14 @@ async def panel(fullUi: bool = True, perf: str | None = None, configOnly: bool =
     def _build():
         meta = _panel_config(perf)
         public = {"configMessage": meta["configMessage"], "configFields": meta["configFields"],
-                  "configRev": meta["configRev"]}
+                  "configRev": meta["configRev"], "glRecover": meta["glRecover"]}
         if configOnly:
             return public
         result = mcp_client.client().read_resource(GLOBE_PANEL_URI)
         item = (result or {}).get("contents", [{}])[0]
         html = item.get("text", "")
-        prepared = panel_inject.prepare(html, full_ui=fullUi, perf=meta["_mode"], config=meta["_overlay"]) if html else ""
+        prepared = panel_inject.prepare(html, full_ui=fullUi, perf=meta["_mode"], config=meta["_overlay"],
+                                        gl_recover=meta["_glRecover"]) if html else ""
         return {"html": prepared, "mimeType": item.get("mimeType"), **public}
 
     return await asyncio.to_thread(_build)
@@ -175,3 +180,11 @@ async def live_state(body: dict):
     import asyncio
     from gev import live
     return await asyncio.to_thread(live.call, "/state", bridge.ensure_token(), body or {}, 5)
+
+
+@router.post("/live/gl")
+async def live_gl(body: dict):
+    """WebGL loss, recovery, or a request for restore_commands. No secrets."""
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/gl", bridge.ensure_token(), body or {}, 15)

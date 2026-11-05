@@ -15,6 +15,7 @@ same hook. Hosts without ``register_hook`` skip both, and the tools keep working
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import weakref
@@ -212,6 +213,30 @@ def fetch_line(session_id: str | None) -> str | None:
     return line if isinstance(line, str) and line.startswith("EOH ") else None
 
 
+def _gl_text(session_id) -> str:
+    """CONTEXT_LOST / CONTEXT_RESTORED notices queued by the live relay, once."""
+    if not session_id:
+        return ""
+    try:
+        from . import live
+        rel = live.current()
+        if rel is None:
+            return ""
+        notes = rel.drain_gl(session_id)
+    except Exception:
+        return ""
+    lines = []
+    for note in notes or []:
+        if not isinstance(note, dict) or not note.get("code"):
+            continue
+        payload = {}
+        for key in ("ok", "code", "message", "fix"):
+            if note.get(key) is not None:
+                payload[key] = note[key]
+        lines.append(json.dumps(payload, separators=(",", ":")))
+    return "\n".join(lines)
+
+
 def _alert_text(session_id) -> str:
     """Queued area-watch alerts for this chat. Empty when the store is unavailable."""
     try:
@@ -240,6 +265,9 @@ def pre_llm_call(session_id=None, user_message=None, conversation_history=None,
     alerts = _alert_text(session_id)
     if alerts:
         parts.append(alerts)
+    graphics = _gl_text(session_id)
+    if graphics:
+        parts.append(graphics)
     if not parts:
         return None
     return {"context": "\n\n".join(parts)}

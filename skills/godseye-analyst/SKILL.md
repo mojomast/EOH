@@ -1,164 +1,118 @@
 ---
 name: godseye-analyst
-description: Eye Of Hermes (EOH) analyst playbook (built on God's Eye View). When to use the godseye_* data tools vs the godseye_live_* globe tools, how to handle the pane, the public-data-only policy, and example sequences.
+description: Eye Of Hermes (EOH) analyst playbook (built on God's Eye View). Prefer godseye_view and godseye_query. Public-data-only policy, pane handling, and example sequences.
 ---
 
 # Eye Of Hermes (EOH) analyst playbook
 
-Eye Of Hermes (EOH) is a Hermes front end for God's Eye View, a live 3D globe of **public** aircraft (ADS-B), ships (AIS), satellites,
-earthquakes, fires, weather, cyclones and mapped infrastructure. In Hermes it comes as two kinds
-of tools:
+Eye Of Hermes (EOH) is a Hermes front end for God's Eye View, a live 3D globe of **public** aircraft (ADS-B), ships (AIS), satellites, earthquakes, fires, weather, cyclones and mapped infrastructure.
 
-| Need | Use |
+Prefer two composable tools. Pass `op` every time.
+
+## godseye_view
+
+Camera, home, share link, and the pane list. Needs the pane, except `home` action `get`.
+
+| op | Use |
 | --- | --- |
-| A fact, count or list ("how many ships near Rotterdam?") | `godseye_*` data tools (work without the pane) |
-| "Show me", "what am I looking at", change the view | `godseye_live_*` tools (need the pane open) |
-| An overview of a place **and** the globe pointed at it | `godseye_brief_and_show` |
-| Something is off (no data, no pane, blank globe) | `godseye_doctor` |
-| A link someone else can open | `godseye_share_link` |
-| The user's usual starting view | `godseye_home` (`go` / `set` / `get`) |
-| Research a pin's drawer (summary, photos, sources) | `godseye_research_pins` |
-| Save / load a whole investigation | `godseye_investigation_save` / `_load` / `_list` / `_delete` |
-| Export an HTML+Markdown report | `godseye_investigation_report` |
-| Export GeoJSON / KML (optional zip pack) | `godseye_investigation_export` |
+| `fly` | Place (`query`) or coordinates (`latitude`/`longitude`, or `lat`/`lon`). `framing`: `street` (150 m, pitch -15), `rooftop` (450 m, -30), `district` (2500 m, -45). `rangeM` overrides framing (minimum 100). `style`: `surveillance` is NVG / night vision (`nvg` is accepted). `thermal` is FLIR. Style is applied after a successful fly. |
+| `move` | `motion`: `orbit`, `pan`, `tilt`, `rotate`, `rotate_globe`, `stop`. `direction` for pan/tilt/rotate. `speed`: `slow`, `normal`, `fast`. `mode`: `once` or `continuous`. |
+| `zoom` | Relative only. `direction`: `in` or `out`. `amount`: `little`, `medium`, `lot`. |
+| `globe` | Whole Earth. Do not use `zoom` for this. |
+| `home` | `action`: `go` (default), `set`, `get`. |
+| `share` | Link to the current view. |
+| `panes` | List panes. `label` names this chat's pane. `prune` drops stale rows. |
+
+`fanout: true` only when the user wants every open pane changed (`fly`, `move`, `zoom`, `globe`).
+
+## godseye_query
+
+Places, the open view, and briefs. Data ops work without the pane. `here: true` means the open pane's camera.
+
+| op | Use |
+| --- | --- |
+| `context` | "What am I looking at", this, here, that building. Camera, focus, reverse geocode, nearby places. Call this before guessing a coordinate. |
+| `what_is_here` | Reverse geocode a `lat`/`lon`. No pane unless `here: true`. |
+| `find_places` | "ramen near me", "ramen in Montreal". `here: true` or a near-me phrase searches around the camera (default 1500 m). `pin: true` and `intent` set to the user's words. |
+| `osm` | In-pane OSM places. `what` is required (`hospitals`). Omit `areaId` to use the view. |
+| `resolve_area` | Named place to an `areaId`. `draw: true` outlines it. Pass `candidateId` when asked which place. |
+| `analyst` | Counts and lists for enabled layers. Ships are `ais-live-vessels`. Fires are `local-firms`. `scope.kind: "view"` is "in view". |
+| `brief` | Situation brief. `place`, `area`, or `here: true` for this area. |
+| `brief_and_show` | Brief a place and show it (fly, layers, pins, caption). Still returns the brief when the pane is closed. |
+| `military` | Military contacts around a place. |
+| `poi` | One venue by `name` and optional `city`. Never invent prices. |
+| `entity` | Selected or in-view record. `scope`: `auto`, `selected`, `in_view`, `pointer`. |
+
+Large answers default to `detail: "concise"`. Pass `detail: "full"` for rows, geometry, or an image.
 
 ## Rules
 
-1. **Public assets and events only.** Aircraft, vessels, satellites, hazards, weather,
-   infrastructure. Never search for a named person, recognise faces, or track or locate an
-   individual, even if they are "on" an aircraft or ship. Decline and offer the public-data view.
-2. **Data first, then show.** Answer from a data tool (or `godseye_situation_brief` /
-   `godseye_military_awareness`), then optionally show it live. Orient from the `EOH pane=...`
-   line already in the turn (connected or busy, camera, layers, pins, drawer). Call
-   `godseye_live_get_current_view_state` only when that line is missing or you need `detail=full`.
-   A hidden pane is paused with `{type:'gev:visibility'}`. Client keys are in `dist/panel/config.json`
-   (rewritten when the pane is served). `?perf=embed` is the default viewer profile. Do not print key values.
+1. **Public assets and events only.** Aircraft, vessels, satellites, hazards, weather, infrastructure. Never search for a named person, recognise faces, or track or locate an individual, even if they are "on" an aircraft or ship. Decline and offer the public-data view.
+2. **Orient from the map line.** Each turn may include `EOH pane=...` (connected or busy, camera, layers, pins, drawer). Trust it. Call `godseye_query` `op=context` when the user is asking what they see, not to rediscover the camera. Use `godseye_live_get_current_view_state` with `detail: "full"` only when the line is missing and you need the full object.
 3. **Check results are capped.** Read `total` and `truncated` before saying "there is nothing".
-4. **Sections can be unavailable** (e.g. fires need a FIRMS key). Say so instead of guessing.
-
-## Tokens and errors
-
-- Large tools default to `detail: "concise"` (ids and counts, no screenshots). Pass
-  `detail: "full"` when you need coordinates, rows, geometry or an image
-  (`get_cctv_snapshot`, `get_weather_map`, `get_recent_imagery`). The same default covers
-  live context, measure, isochrone, compare, draw, research pins, investigation list/load/report,
-  pin filters and watch list/create. A short distance, area, contour summary or open/closed
-  state stays in concise; route lines, polygons, long catalogs and screenshots do not.
-- A failed call includes `code`, `message` and `fix`. Do what `fix` says (open the pane,
-  wait and retry once, rebuild the panel, switch to `godseye_find_places`, pass `confirm=true`
-  only after the user agrees) instead of guessing a new argument.
+4. **Sections can be unavailable** (fires need a FIRMS key). Say so instead of guessing.
+5. **Failures include `code`, `message`, and `fix`.** Do what `fix` says (open the pane, wait and retry once, pass `confirm=true` only after the user agrees). `no_pane` means the Eye Of Hermes pane is closed: data tools still work. `pane_busy` means wait and retry the same call once.
 
 ## The pane
 
-- Live tools act on the EOH pane next to this chat (else the most recently active
-  pane). If a live tool returns `no_pane`, tell the user to open the Eye Of Hermes (EOH) pane in
-  Hermes Desktop or the Webapp and keep it visible; data tools still work.
-- `pane_busy` means a pane is open but still running an earlier command: wait a few seconds and
-  retry once. `godseye_live_panes` lists panes with their last-poll age.
-- Only set `fanout: true` on a live tool when the user explicitly wants every open pane changed.
+- Live ops act on the pane next to this chat, else the most recently active pane.
+- If a live tool returns `no_pane`, tell the user to open the Eye Of Hermes (EOH) pane in Hermes Desktop or the Webapp and keep it visible.
+- A hidden pane is paused. Client keys live in `dist/panel/config.json`. Do not print key values.
+- `godseye_view` `op=panes` lists panes and last-poll age.
 
-## Filters, clusters and watches
+## Filters, clusters, and watches
 
-- Pins from `godseye_find_places` carry `tags`. Use `godseye_live_filter_pins` to narrow them, e.g. `{categories:["ramen"], open_now:true}`. Read `action:"state"` before you claim something is open. `open:null` means the hours are unknown, so say that rather than guessing. `{clear:true}` resets the filters.
-- Create a watch (`godseye_watch_create`) only when the user asks to watch an area. Report any `key_missing` or `KEY_MISSING` feed plainly. Never delete a watch without asking; `godseye_watch_delete` needs `confirm:true`.
-- When the turn context has "[EOH watch alert]" lines, tell the user about them briefly. The new items are already pinned. Those lines arrive in the same turn as the `EOH pane=` map line.
+These names are not composable yet. Keep using them.
 
-## "This", "here", measure, reach, compare
+- Pins from `find_places` carry `tags`. `godseye_live_filter_pins` narrows them, for example `{categories:["ramen"], open_now:true}`. `open: null` means the hours are unknown.
+- Create a watch (`godseye_watch_create`) only when the user asks. Report `KEY_MISSING` plainly. `godseye_watch_delete` needs `confirm: true`. `godseye_watch_list` with `check` runs one watch now.
+- When the turn has "[EOH watch alert]" lines, tell the user. The new items are already pinned.
 
-- Deixis = context first. Whenever the user says **this, here, around here, that building, what
-  am I looking at, what's that**, call `godseye_live_context` BEFORE answering (no lat/lon guessing).
-  It returns the camera (center, heading, pitch, range), the visible bbox, the selected pin, the last
-  clicked point, drawn shapes, and `focus` (open pin > newest drawing > last click > screen centre)
-  with a reverse geocode (`here.place`) and nearby named places (`here.nearby`, nearest first).
-  Answer from those facts; name the source (OSM/Nominatim). If focus is only the view centre and the
-  question is about one object, ask the user to click it or draw a box (toolbar, bottom-left) — or
-  start draw mode for them with `godseye_live_draw` action=start kind=box.
-- `godseye_what_is_here` lat/lon = same answer for a coordinate, no pane needed.
-- Distance: `godseye_measure` with `pins` (ids/labels), `points`, or `use_drawn: "latest"`;
-  great-circle by default, `op: "route"` + `mode` for travel distance/time. Area: draw a box/polygon
-  (or pass 3+ points), `godseye_measure` use_drawn=latest (a box/polygon defaults to area).
-- "What can I reach in 15 minutes walking": `godseye_isochrone` minutes=[15] mode=walk (lat/lon
-  optional: defaults to the focus). If `approximate` is true, say it is an OSRM-sampled estimate;
-  if `routing_unavailable`, say so. Never substitute a straight-line circle.
-- Before/after: `godseye_live_compare` left="wayback:2015" right="current" shows a swipe divider
-  (Esri World Imagery Wayback historical imagery). `action=list_dates` for available dates. Map
-  stacks cannot be split; photoreal 3D tiles are hidden while comparing. `action=stop` ends it.
-- "Ask Hermes" (pane toolbar / pin drawer) copies a ready question to the clipboard and focuses the
-  chat composer; the user pastes and sends it. Treat such a message as deixis: call
-  `godseye_live_context`.
+## Measure, reach, compare, draw
+
+- Distance or area: `godseye_measure` with `points`, `pins`, or `use_drawn: "latest"`. Travel time is `op: "route"` plus `mode` (`walk`, `bike`, `drive`). That inner `op` belongs to measure until `godseye_nav` exists.
+- "What can I reach in 15 minutes walking": `godseye_isochrone` with `minutes: [15]` and `mode: "walk"`. If `approximate` is true, say so. If `routing_unavailable`, say so. Do not draw a straight-line circle.
+- Before/after imagery: `godseye_live_compare` with `left: "wayback:2015"` and `right: "current"`. `action: "stop"` ends it.
+- The user draws with the toolbar, or you start draw mode with `godseye_live_draw` `action: "start"`.
 
 ## Example sequences
 
-**"What's going on around Tokyo? Show me."**
-`godseye_brief_and_show {place: "Tokyo"}` then summarise `brief`, mention what was shown.
-
-**"Any military activity near San Diego?"**
-`godseye_brief_and_show {place: "San Diego", question: "military activity"}` (picks
-`military_awareness`, pins the nearest contacts in red).
+**"Fly to Tokyo NVG."**
+`godseye_view` `{op:"fly", query:"Tokyo", style:"surveillance"}`. Add a layer only if they asked for one, with `godseye_live_set_layer_visibility`.
 
 **"What am I looking at?"**
-Read the `EOH pane=` line. Call `godseye_live_analyst_query` for counts if needed. Use
-`godseye_live_get_current_view_state` with `detail: "full"` only when the line is missing.
+Read the `EOH pane=` line. `godseye_query` `{op:"context"}`. Answer from `focus` and `here`. Name the source (OSM / Nominatim). If focus is only the view centre and they mean one object, ask them to click it or draw a box.
 
-**"Night-vision view of the Strait of Hormuz with ships."**
-`godseye_live_fly_to_location {query: "Strait of Hormuz", waitForArrival: true}` →
-`godseye_live_set_layer_visibility {layerId: "ais-live-vessels", enabled: true}` →
-`godseye_live_set_visual_style {style: "surveillance"}`.
+**"Ramen near me."**
+`godseye_query` `{op:"find_places", query:"ramen near me", here:true, pin:true, intent:"ramen near me"}`.
 
-**"List ramen places in Montreal" / "tell me about that pin."**
-`godseye_find_places {query: "ramen restaurants in Montreal", pin: true, intent: "ramen near me"}`
-pins them with drawer content shaped by the request (cuisine, hours, menu/website). Always pass
-`intent` and fill `description_md` / `images` / `links` when you know more. Show one with
-`godseye_live_pin_drawer {action: "open", label: "Sumo Ramen", flyTo: true}`; close with
-`{action: "close"}`. Never put private URLs in a drawer.
+**"Brief me on this area."**
+`godseye_query` `{op:"brief", here:true}`.
 
-**"Save this as my home view" / "go home"** → `godseye_home {action: "set"}` / `{action: "go"}`.
+**"What's going on around Tokyo? Show me."**
+`godseye_query` `{op:"brief_and_show", place:"Tokyo"}`, then summarise `brief` and what was shown.
 
-**"Send me a link to this."** → `godseye_share_link`.
+**"Any military activity near San Diego?"**
+`godseye_query` `{op:"brief_and_show", place:"San Diego", question:"military activity"}` or `{op:"military", location:{place:"San Diego"}}`.
 
+**"How many flights are in view?"**
+`godseye_query` `{op:"analyst", layers:["flights"], scope:{kind:"view"}}`.
+
+**"Save this as my home view" / "go home" / "send me a link."**
+`godseye_view` `{op:"home", action:"set"}`, `{op:"home", action:"go"}`, `{op:"share"}`.
 
 ## Pins always carry drawer content
 
-**Every pin you create must have non-empty drawer content tailored to the user's request.**
-
-1. Pass `intent` (or `context`) on every pin-creating call — `godseye_live_annotate_map`,
-   `godseye_find_places {pin:true}`, `godseye_brief_and_show`, `godseye_live_run_tour` — set to the
-   user's request in their words (e.g. `"ramen near me"`, `"FIRMS fires last 24h"`).
-2. Always fill `description_md` yourself when you know the facts. Prefer the facts the request
-   cares about: cuisine / hours / price / menu link for food; detection time / confidence / source
-   for fires; magnitude / depth for quakes; callsign / altitude for aircraft; etc. Add `images[]`
-   and `links[]` (http/https only) when you have them.
-3. The plugin light-enriches every pin automatically (cached, fast) from tags already on the pin.
-   Call `godseye_research_pins {mode:"full"}` when the user asks for a deeper pass (Wikipedia /
-   Wikidata / Commons / website meta). `mode:"light"` is the default enrichment path.
-4. If a pin somehow lands empty, the plugin auto-enriches it in the background and pushes the
-   update to the pane drawer — still pass `intent` so that pass is relevant.
-5. This plugin cannot call Hermes `web_search`. When free sources are thin, run your own web
-   search and pass verified snippets as `agent_notes` on `godseye_research_pins`, or rewrite the
-   pin via `annotate_map`. Never invent facts; mark missing data as unavailable.
-
-**"Research these pins" / "fill in the drawers."**
-`godseye_research_pins {mode:"full"}` (or `{ids:["a1","a2"]}`). Then open one with
-`godseye_live_pin_drawer`.
+Pass `intent` (or `context`) on every pin-creating call: `find_places` with `pin: true`, `brief_and_show`, `godseye_live_annotate_map`, and `godseye_live_run_tour`. Set it to the user's request. Fill `description_md`, `images`, and `links` (http/https only) when you know them. Open one drawer with `godseye_live_pin_drawer` `{action:"open", label:"Sumo Ramen"}`. Light enrichment runs automatically. `godseye_research_pins` `{mode:"full"}` is the deeper pass. This plugin cannot call Hermes `web_search`; pass verified snippets as `agent_notes`. Never invent facts.
 
 **"Save this investigation as Montreal Ramen" / "load it" / "export a report."**
-`godseye_investigation_save {name:"Montreal Ramen", notes:"..."}` →
-`godseye_investigation_load {name:"Montreal Ramen"}` →
-`godseye_investigation_report {name:"Montreal Ramen", capture:true}`.
-`godseye_investigation_export {name:"Montreal Ramen", format:"pack"}` writes GeoJSON and KML
-(and a zip of the report plus any saved screenshots). Omit `name` to export the current scene.
-Google photoreal tile imagery is not included.
+`godseye_investigation_save {name:"Montreal Ramen"}`, then `godseye_investigation_load {name:"Montreal Ramen"}`.
+`godseye_investigation_report {name:"Montreal Ramen", capture:true}` writes HTML and Markdown.
+`godseye_investigation_export {name:"Montreal Ramen", format:"pack"}` writes GeoJSON and KML, plus a zip of the report and any saved screenshots. Omit `name` to export the current scene. Google photoreal tile imagery is not included.
 Delete only with `godseye_investigation_delete {name:"...", confirm:true}`.
 
-Slash command for quick control: `/gev fly <place>`, `/gev layers [on|off names]`,
-`/gev status`, `/gev brief <place>`, `/gev home [set]`, `/gev share`, `/gev doctor`,
-`/gev research [light|full]`, `/gev save|list|load <name>`, `/gev delete <name> --confirm`,
-`/gev report [name]`, `/gev export [name] [geojson|kml|both|pack]`.
+Slash command: `/gev fly`, `layers`, `status`, `brief`, `home`, `share`, `doctor`, `research`, `save`, `list`, `load`, `delete`, `report`, `export`.
 
-"What's that building?" -> `godseye_live_context` -> answer from `here.place` (name, address, OSM
-type, tags) and the nearest `here.nearby` entries; offer to pin it.
+## Internal mapping
 
-"How far is Kinton from Sansotei, and how long on foot?" -> `godseye_measure` pins=["Kinton",
-"Sansotei"] then op=route mode=walk.
-
-"Show what was here in 2014" -> `godseye_live_compare` left="wayback:2014" right="current".
+The names these two tools replaced are not tools. Do not call them. `gev/router.py` `dispatch_legacy` maps a saved call that still uses one onto the op above. Scenes, tours, `/gev`, the relay, and the pane keep bare action names such as `fly_to_location`. The full map, including tools that are not composable yet (layers, feeds, annotate, nav, track, scene, watch, capture, state, admin), is `docs/COMPOSABLE-TOOLS.md`.
