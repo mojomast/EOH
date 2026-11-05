@@ -1,10 +1,12 @@
 """Op router for the composable Eye Of Hermes tools.
 
-Phase A registers ``godseye_view`` and ``godseye_query``. Every legacy name
-still registered as an alias calls ``invoke``, which calls the same handler
-the alias used before (``make_live_handler``, ``make_handler``, or
-``extra_handler``). Tools whose composable home is not registered yet stay
-as they are: their descriptions are not marked deprecated.
+The model catalog is the eleven composable tools. Each takes a required ``op``
+and calls the same handler the old name used (``make_live_handler``,
+``make_handler``, ``extra_handler``, or the HUD closure). The old names are
+not registered. ``dispatch_legacy`` is the only entry that still accepts them.
+
+``godseye_nav`` reserves ``op=timeline`` for the Wayback slider. It is not in
+the op enum and it is not registered.
 
 ``CATALOG`` is the full mapping. ``docs/COMPOSABLE-TOOLS.md`` mirrors it.
 """
@@ -40,7 +42,7 @@ class Target:
     composable: str
     op: str
     kind: str  # live, mcp, extra, hud
-    phase: str  # A (routed now) or later
+    phase: str  # A (first cut) or B (the rest of the catalog)
     note: str = ""
 
     @property
@@ -73,26 +75,26 @@ CATALOG: tuple[Target, ...] = (
        "share link for the open view"),
     _t("godseye_live_panes", "godseye_view", "panes", "extra", "A",
        "list, label, or prune pane records"),
-    _t("godseye_show_in_gods_eye_view", "godseye_view", "show", "mcp", "later",
-       "composed scene (area, layers, style, marks, follow); left off phase A so godseye_view stays a camera tool"),
+    _t("godseye_show_in_gods_eye_view", "godseye_view", "show", "mcp", "B",
+       "tight arguments: view, area, camera, layers, style, map, annotations, follow"),
     # --- godseye_layers ---
-    _t("godseye_live_set_layer_visibility", "godseye_layers", "visibility", "live", "later",
+    _t("godseye_live_set_layer_visibility", "godseye_layers", "visibility", "live", "B",
        "one layer on or off"),
-    _t("godseye_live_show_data_layers_menu", "godseye_layers", "menu", "live", "later",
+    _t("godseye_live_show_data_layers_menu", "godseye_layers", "menu", "live", "B",
        "open the layers menu"),
-    _t("godseye_live_set_panel_open", "godseye_layers", "panel", "live", "later",
+    _t("godseye_live_set_panel_open", "godseye_layers", "panel", "live", "B",
        "side panels are chrome, grouped with the menus"),
-    _t("godseye_live_set_context_mode", "godseye_layers", "context_mode", "live", "later",
+    _t("godseye_live_set_context_mode", "godseye_layers", "context_mode", "live", "B",
        "Contacts or Space Missions mode, not a data query"),
-    _t("godseye_live_set_visual_style", "godseye_layers", "style", "live", "later",
-       "home of style; phase A fly accepts style and calls this handler, so this name is not deprecated yet"),
-    _t("godseye_live_set_cyber_sonar", "godseye_layers", "sonar", "live", "later",
+    _t("godseye_live_set_visual_style", "godseye_layers", "style", "live", "B",
+       "home of style; fly also calls this handler after a successful fly"),
+    _t("godseye_live_set_cyber_sonar", "godseye_layers", "sonar", "live", "B",
        "HUD decoration, not a feed"),
-    _t("godseye_live_set_detection", "godseye_layers", "detection", "live", "later",
+    _t("godseye_live_set_detection", "godseye_layers", "detection", "live", "B",
        "detection overlay density"),
-    _t("godseye_live_set_map_stack", "godseye_layers", "stack", "live", "later",
+    _t("godseye_live_set_map_stack", "godseye_layers", "stack", "live", "B",
        "basemap stack"),
-    _t("godseye_live_set_post_processing", "godseye_layers", "post", "live", "later",
+    _t("godseye_live_set_post_processing", "godseye_layers", "post", "live", "B",
        "post-processing toggles"),
     # --- godseye_query ---
     _t("godseye_find_places", "godseye_query", "find_places", "extra", "A",
@@ -117,102 +119,102 @@ CATALOG: tuple[Target, ...] = (
        "areaId for analyst and osm; omitted from the research table"),
     _t("godseye_live_get_entity_context", "godseye_query", "entity", "live", "A",
        "selected or in-view records; the research query role named entity"),
-    _t("godseye_get_terrain_height", "godseye_query", "terrain", "mcp", "later",
-       "point elevation, not a streaming feed; not in the phase A query set"),
-    _t("godseye_get_map_features", "godseye_query", "features", "mcp", "later",
-       "named OSM features at a point, sibling of what_is_here; phase B"),
+    _t("godseye_get_terrain_height", "godseye_query", "terrain", "mcp", "B",
+       "point elevation, not a streaming feed"),
+    _t("godseye_get_map_features", "godseye_query", "features", "mcp", "B",
+       "named OSM features at a point, sibling of what_is_here"),
     # --- godseye_feeds ---
-    _t("godseye_get_earthquakes", "godseye_feeds", "earthquakes", "mcp", "later", "USGS events"),
-    _t("godseye_get_active_fires", "godseye_feeds", "fires", "mcp", "later", "NASA FIRMS hotspots"),
-    _t("godseye_get_recent_launches", "godseye_feeds", "launches", "mcp", "later", "recent rocket launches"),
-    _t("godseye_aircraft_in_area", "godseye_feeds", "aircraft_in_area", "mcp", "later", "aircraft in an area"),
-    _t("godseye_find_aircraft", "godseye_feeds", "find_aircraft", "mcp", "later", "aircraft lookup"),
-    _t("godseye_get_aircraft_track", "godseye_feeds", "aircraft_track", "mcp", "later", "one aircraft track"),
-    _t("godseye_get_aircraft_info", "godseye_feeds", "aircraft_info", "mcp", "later", "one aircraft record"),
-    _t("godseye_vessels_in_area", "godseye_feeds", "vessels_in_area", "mcp", "later", "ships in an area"),
-    _t("godseye_find_vessel", "godseye_feeds", "find_vessel", "mcp", "later", "ship lookup"),
-    _t("godseye_get_vessel_track", "godseye_feeds", "vessel_track", "mcp", "later", "one ship track"),
-    _t("godseye_next_satellite_pass", "godseye_feeds", "next_pass", "mcp", "later",
+    _t("godseye_get_earthquakes", "godseye_feeds", "earthquakes", "mcp", "B", "USGS events"),
+    _t("godseye_get_active_fires", "godseye_feeds", "fires", "mcp", "B", "NASA FIRMS hotspots"),
+    _t("godseye_get_recent_launches", "godseye_feeds", "launches", "mcp", "B", "recent rocket launches"),
+    _t("godseye_aircraft_in_area", "godseye_feeds", "aircraft_in_area", "mcp", "B", "aircraft in an area"),
+    _t("godseye_find_aircraft", "godseye_feeds", "find_aircraft", "mcp", "B", "aircraft lookup"),
+    _t("godseye_get_aircraft_track", "godseye_feeds", "aircraft_track", "mcp", "B", "one aircraft track"),
+    _t("godseye_get_aircraft_info", "godseye_feeds", "aircraft_info", "mcp", "B", "one aircraft record"),
+    _t("godseye_vessels_in_area", "godseye_feeds", "vessels_in_area", "mcp", "B", "ships in an area"),
+    _t("godseye_find_vessel", "godseye_feeds", "find_vessel", "mcp", "B", "ship lookup"),
+    _t("godseye_get_vessel_track", "godseye_feeds", "vessel_track", "mcp", "B", "one ship track"),
+    _t("godseye_next_satellite_pass", "godseye_feeds", "next_pass", "mcp", "B",
        "MCP pass prediction; no pane. The live tool is op=satellite_pass"),
-    _t("godseye_satellites_overhead", "godseye_feeds", "overhead", "mcp", "later", "satellites above a point"),
-    _t("godseye_find_cctv_cameras", "godseye_feeds", "find_cctv", "mcp", "later", "public CCTV camera search"),
-    _t("godseye_get_cctv_snapshot", "godseye_feeds", "cctv_snapshot", "mcp", "later", "one camera snapshot"),
-    _t("godseye_find_alpr_cameras", "godseye_feeds", "alpr", "mcp", "later", "ALPR camera search"),
-    _t("godseye_get_traffic_flow", "godseye_feeds", "traffic", "mcp", "later", "traffic flow"),
-    _t("godseye_get_weather_map", "godseye_feeds", "weather", "mcp", "later", "weather raster"),
-    _t("godseye_get_recent_imagery", "godseye_feeds", "imagery", "mcp", "later",
+    _t("godseye_satellites_overhead", "godseye_feeds", "overhead", "mcp", "B", "satellites above a point"),
+    _t("godseye_find_cctv_cameras", "godseye_feeds", "find_cctv", "mcp", "B", "public CCTV camera search"),
+    _t("godseye_get_cctv_snapshot", "godseye_feeds", "cctv_snapshot", "mcp", "B", "one camera snapshot"),
+    _t("godseye_find_alpr_cameras", "godseye_feeds", "alpr", "mcp", "B", "ALPR camera search"),
+    _t("godseye_get_traffic_flow", "godseye_feeds", "traffic", "mcp", "B", "traffic flow"),
+    _t("godseye_get_weather_map", "godseye_feeds", "weather", "mcp", "B", "weather raster"),
+    _t("godseye_get_recent_imagery", "godseye_feeds", "imagery", "mcp", "B",
        "MCP recent imagery. The pane tool is op=imagery_live"),
-    _t("godseye_find_submarine_cables", "godseye_feeds", "cables", "mcp", "later", "submarine cables"),
-    _t("godseye_find_infrastructure", "godseye_feeds", "infrastructure", "mcp", "later", "mapped infrastructure"),
-    _t("godseye_get_bhote_koshi_flood", "godseye_feeds", "flood", "mcp", "later", "single flood event, not a general query"),
-    _t("godseye_get_cyclones", "godseye_feeds", "cyclones", "mcp", "later", "tropical cyclones"),
-    _t("godseye_get_fire_perimeters", "godseye_feeds", "fire_perimeters", "mcp", "later", "wildfire perimeters"),
-    _t("godseye_find_military_installations", "godseye_feeds", "military_sites", "mcp", "later",
+    _t("godseye_find_submarine_cables", "godseye_feeds", "cables", "mcp", "B", "submarine cables"),
+    _t("godseye_find_infrastructure", "godseye_feeds", "infrastructure", "mcp", "B", "mapped infrastructure"),
+    _t("godseye_get_bhote_koshi_flood", "godseye_feeds", "flood", "mcp", "B", "single flood event, not a general query"),
+    _t("godseye_get_cyclones", "godseye_feeds", "cyclones", "mcp", "B", "tropical cyclones"),
+    _t("godseye_get_fire_perimeters", "godseye_feeds", "fire_perimeters", "mcp", "B", "wildfire perimeters"),
+    _t("godseye_find_military_installations", "godseye_feeds", "military_sites", "mcp", "B",
        "OSM installation catalog; the brief is godseye_query op=military"),
-    _t("godseye_live_find_imagery", "godseye_feeds", "imagery_live", "live", "later", "pane recent-imagery search"),
-    _t("godseye_live_next_iss_pass", "godseye_feeds", "iss_pass", "live", "later", "next ISS pass from the pane"),
-    _t("godseye_live_next_satellite_pass", "godseye_feeds", "satellite_pass", "live", "later",
+    _t("godseye_live_find_imagery", "godseye_feeds", "imagery_live", "live", "B", "pane recent-imagery search"),
+    _t("godseye_live_next_iss_pass", "godseye_feeds", "iss_pass", "live", "B", "next ISS pass from the pane"),
+    _t("godseye_live_next_satellite_pass", "godseye_feeds", "satellite_pass", "live", "B",
        "next pass from the loaded pane catalog"),
-    _t("godseye_live_control_cctv", "godseye_feeds", "cctv_control", "live", "later",
+    _t("godseye_live_control_cctv", "godseye_feeds", "cctv_control", "live", "B",
        "pane CCTV controls; snapshots stay op=cctv_snapshot"),
-    _t("godseye_live_control_radio", "godseye_feeds", "radio", "live", "later", "internet radio playback"),
+    _t("godseye_live_control_radio", "godseye_feeds", "radio", "live", "B", "internet radio playback"),
     # --- godseye_annotate ---
-    _t("godseye_live_annotate_map", "godseye_annotate", "annotate", "live", "later", "pins, routes, cards"),
-    _t("godseye_live_clear_annotations", "godseye_annotate", "clear", "live", "later", "clear marks on the pane"),
-    _t("godseye_live_draw", "godseye_annotate", "draw", "extra", "later", "user draw mode or Hermes shapes"),
-    _t("godseye_live_list_annotations", "godseye_annotate", "list", "extra", "later", "stored marks for this chat"),
-    _t("godseye_live_delete_annotation", "godseye_annotate", "delete", "extra", "later", "delete one stored mark"),
-    _t("godseye_live_filter_pins", "godseye_annotate", "filter", "extra", "later", "category, rating, open-now chips"),
-    _t("godseye_live_pin_drawer", "godseye_annotate", "drawer", "extra", "later", "open or close one pin drawer"),
-    _t("godseye_research_pins", "godseye_annotate", "research", "extra", "later", "fill drawers from free sources"),
+    _t("godseye_live_annotate_map", "godseye_annotate", "annotate", "live", "B", "pins, routes, cards"),
+    _t("godseye_live_clear_annotations", "godseye_annotate", "clear", "live", "B", "clear marks on the pane"),
+    _t("godseye_live_draw", "godseye_annotate", "draw", "extra", "B", "user draw mode or Hermes shapes"),
+    _t("godseye_live_list_annotations", "godseye_annotate", "list", "extra", "B", "stored marks for this chat"),
+    _t("godseye_live_delete_annotation", "godseye_annotate", "delete", "extra", "B", "delete one stored mark"),
+    _t("godseye_live_filter_pins", "godseye_annotate", "filter", "extra", "B", "category, rating, open-now chips"),
+    _t("godseye_live_pin_drawer", "godseye_annotate", "drawer", "extra", "B", "open or close one pin drawer"),
+    _t("godseye_research_pins", "godseye_annotate", "research", "extra", "B", "fill drawers from free sources"),
     # --- godseye_nav ---
-    _t("godseye_measure", "godseye_nav", "measure", "extra", "later",
-       "inner distance, area, or route moves to argument measure when this tool exists, so it does not collide with op"),
-    _t("godseye_isochrone", "godseye_nav", "isochrone", "extra", "later", "minutes of reach"),
-    _t("godseye_live_fly_route", "godseye_nav", "fly_route", "live", "later",
+    _t("godseye_measure", "godseye_nav", "measure", "extra", "B",
+       "argument measure is distance, area, or route so it does not collide with op"),
+    _t("godseye_isochrone", "godseye_nav", "isochrone", "extra", "B", "minutes of reach"),
+    _t("godseye_live_fly_route", "godseye_nav", "fly_route", "live", "B",
        "dolly along an existing route; not a camera fly"),
-    _t("godseye_live_compare", "godseye_nav", "compare", "extra", "later", "Wayback or imagery swipe"),
+    _t("godseye_live_compare", "godseye_nav", "compare", "extra", "B", "Wayback or imagery swipe"),
     # --- godseye_track ---
-    _t("godseye_live_track_entity", "godseye_track", "track", "live", "later", "follow one entity"),
-    _t("godseye_live_stop_tracking", "godseye_track", "stop", "live", "later", "stop following"),
-    _t("godseye_live_select_nearest_aircraft", "godseye_track", "select_nearest", "live", "later",
+    _t("godseye_live_track_entity", "godseye_track", "track", "live", "B", "follow one entity"),
+    _t("godseye_live_stop_tracking", "godseye_track", "stop", "live", "B", "stop following"),
+    _t("godseye_live_select_nearest_aircraft", "godseye_track", "select_nearest", "live", "B",
        "fly, enable flights, select the nearest airborne aircraft"),
-    _t("godseye_live_frame_overhead", "godseye_track", "frame", "live", "later",
+    _t("godseye_live_frame_overhead", "godseye_track", "frame", "live", "B",
        "frame nearby aircraft, ships, or satellites; not the street/rooftop/district framing argument"),
-    _t("godseye_live_control_cockpit", "godseye_track", "cockpit", "live", "later",
+    _t("godseye_live_control_cockpit", "godseye_track", "cockpit", "live", "B",
        "ride a selected aircraft; a track action, not a layer"),
     # --- godseye_scene ---
-    _t("godseye_investigation_save", "godseye_scene", "save", "extra", "later", "save the current scene"),
-    _t("godseye_investigation_list", "godseye_scene", "list", "extra", "later", "list saved investigations"),
-    _t("godseye_investigation_load", "godseye_scene", "load", "extra", "later", "load an investigation"),
-    _t("godseye_investigation_delete", "godseye_scene", "delete", "extra", "later", "delete requires confirm=true"),
-    _t("godseye_investigation_report", "godseye_scene", "report", "extra", "later", "HTML and Markdown report"),
-    _t("godseye_investigation_export", "godseye_scene", "export", "extra", "later",
-       "GeoJSON and KML, optional pack; not folded into view or query"),
-    _t("godseye_live_restore_scene", "godseye_scene", "restore", "extra", "later", "re-apply this chat's scene"),
-    _t("godseye_live_run_tour", "godseye_scene", "tour", "extra", "later", "start a guided tour"),
-    _t("godseye_live_tour_status", "godseye_scene", "tour_status", "extra", "later", "poll a tour job"),
-    _t("godseye_live_stop_tour", "godseye_scene", "tour_stop", "extra", "later", "cancel a tour"),
-    _t("godseye_live_control_scene", "godseye_scene", "playback", "live", "later",
+    _t("godseye_investigation_save", "godseye_scene", "save", "extra", "B", "save the current scene"),
+    _t("godseye_investigation_list", "godseye_scene", "list", "extra", "B", "list saved investigations"),
+    _t("godseye_investigation_load", "godseye_scene", "load", "extra", "B", "load an investigation"),
+    _t("godseye_investigation_delete", "godseye_scene", "delete", "extra", "B", "delete requires confirm=true"),
+    _t("godseye_investigation_report", "godseye_scene", "report", "extra", "B", "HTML and Markdown report"),
+    _t("godseye_investigation_export", "godseye_scene", "export", "extra", "B",
+       "GeoJSON and KML, optional pack, folded into scene"),
+    _t("godseye_live_restore_scene", "godseye_scene", "restore", "extra", "B", "re-apply this chat's scene"),
+    _t("godseye_live_run_tour", "godseye_scene", "tour", "extra", "B", "start a guided tour"),
+    _t("godseye_live_tour_status", "godseye_scene", "tour_status", "extra", "B", "poll a tour job"),
+    _t("godseye_live_stop_tour", "godseye_scene", "tour_stop", "extra", "B", "cancel a tour"),
+    _t("godseye_live_control_scene", "godseye_scene", "playback", "live", "B",
        "cinematic scene playback; not an investigation"),
     # --- godseye_watch ---
-    _t("godseye_watch_create", "godseye_watch", "create", "extra", "later", "only when the user asks"),
-    _t("godseye_watch_list", "godseye_watch", "list", "extra", "later",
+    _t("godseye_watch_create", "godseye_watch", "create", "extra", "B", "only when the user asks"),
+    _t("godseye_watch_list", "godseye_watch", "list", "extra", "B",
        "check=<id> runs one watch now; there is no separate check tool"),
-    _t("godseye_watch_pause", "godseye_watch", "pause", "extra", "later", "pause or resume"),
-    _t("godseye_watch_delete", "godseye_watch", "delete", "extra", "later", "requires confirm=true"),
+    _t("godseye_watch_pause", "godseye_watch", "pause", "extra", "B", "pause or resume"),
+    _t("godseye_watch_delete", "godseye_watch", "delete", "extra", "B", "requires confirm=true"),
     # --- godseye_capture ---
-    _t("godseye_live_set_hud", "godseye_capture", "hud", "live", "later", "HUD visibility and layout"),
-    _t("godseye_hud_summary", "godseye_capture", "summary", "hud", "later",
+    _t("godseye_live_set_hud", "godseye_capture", "hud", "live", "B", "HUD visibility and layout"),
+    _t("godseye_hud_summary", "godseye_capture", "summary", "hud", "B",
        "Hermes-model caption; the handler closes over ctx.llm, so it is not a live or MCP call"),
     # --- godseye_state ---
-    _t("godseye_live_get_current_view_state", "godseye_state", "get", "live", "later",
-       "full view read; prefer the per-turn EOH map line to orient"),
+    _t("godseye_live_get_current_view_state", "godseye_view", "state", "live", "B",
+       "folded into view; the per-turn map line is the orientation path"),
     # --- godseye_admin ---
-    _t("godseye_doctor", "godseye_admin", "doctor", "extra", "later", "read-only health check"),
-    _t("godseye_rebuild_panel", "godseye_admin", "rebuild", "extra", "later", "rebuild dist/panel"),
-    _t("godseye_live_reload_pane", "godseye_admin", "reload", "extra", "later", "reload the open pane"),
-    _t("godseye_preview_swap", "godseye_admin", "preview", "extra", "later", "single desktop preview tab"),
+    _t("godseye_doctor", "godseye_admin", "doctor", "extra", "B", "read-only health check"),
+    _t("godseye_rebuild_panel", "godseye_admin", "rebuild", "extra", "B", "rebuild dist/panel"),
+    _t("godseye_live_reload_pane", "godseye_admin", "reload", "extra", "B", "reload the open pane"),
+    _t("godseye_preview_swap", "godseye_admin", "preview", "extra", "B", "single desktop preview tab"),
 )
 
 BY_LEGACY: dict[str, Target] = {t.legacy: t for t in CATALOG}
@@ -276,28 +278,44 @@ _BLURB = {
     ("godseye_query", "poi"): "Details for one venue: name, optional city. Prices are never invented.",
     ("godseye_query", "resolve_area"): "Named place to an areaId. draw=true outlines it. Pass candidateId when asked to choose.",
     ("godseye_query", "entity"): "Selected or in-view entity. scope=auto|selected|in_view|pointer.",
+    ("godseye_view", "show"): "Open a composed view. Pass view, area, camera, layers, style, map, annotations, or follow.",
+    ("godseye_view", "state"): "Full camera read. Prefer the per-turn EOH map line. detail=full for the raw object.",
+    ("godseye_query", "terrain"): "Ground elevation. points is a list of {lat, lon}.",
+    ("godseye_query", "features"): "Named OSM features. kind is administrative_areas, named_places, or monuments.",
 }
 
 
+# The Wayback/history slider lands as godseye_nav op=timeline (or one self-contained
+# tool). It is not registered and is not in the op enum. Add the catalog row beside
+# compare when that work merges.
+RESERVED_OPS = {"godseye_nav": ("timeline",)}
+
+_HUD = None
+
+
 def phase_a_ops(composable: str) -> list[str]:
-    return [t.op for t in CATALOG if t.composable == composable and t.phase == "A"]
+    """Ops registered on this composable tool. The name is historical: phase B is included."""
+    return [t.op for t in CATALOG if t.composable == composable and t.phase in ("A", "B")]
 
 
 def absorbed(legacy: str) -> bool:
-    """True when this Hermes name is implemented as a godseye_view or godseye_query op.
-
-    Those names are not registered. dispatch_legacy is the only entry that still accepts them.
-    """
+    """True when this Hermes name is a composable op and is not registered."""
     target = BY_LEGACY.get(legacy)
-    return target is not None and target.phase == "A"
+    return target is not None and target.phase in ("A", "B")
 
 
 def deprecation_note(legacy: str) -> str | None:
     """Internal mapping phrase. Not written into any schema the model sees."""
     target = BY_LEGACY.get(legacy)
-    if target is None or target.phase != "A":
+    if target is None or not absorbed(legacy):
         return None
     return f"deprecated: use {target.composable} op={target.op}"
+
+
+def bind_hud(handler) -> None:
+    """Capture op=summary closes over ctx.llm. register_tools installs that closure."""
+    global _HUD
+    _HUD = handler
 
 
 def alias_handler(legacy: str):
@@ -322,7 +340,9 @@ def dispatch_legacy(name: str, args: dict | None = None, **kw) -> str:
         return json.dumps({
             "ok": False, "error": "unknown_tool", "code": "unknown_tool",
             "message": "That name is not a registered tool.",
-            "fix": "Use godseye_view or godseye_query.",
+            "fix": "Use a godseye_view, godseye_query, godseye_layers, godseye_feeds, "
+                   "godseye_annotate, godseye_nav, godseye_track, godseye_scene, "
+                   "godseye_watch, godseye_capture, or godseye_admin op.",
         })
     return alias_handler(name)(args or {}, **kw)
 
@@ -355,7 +375,11 @@ def invoke(spec: Target, args: dict, **kw) -> str:
         return tools.make_handler(spec.bare)(args, **kw)
     if spec.kind == "extra":
         return tools.extra_handler(spec.legacy)(args, **kw)
-    raise RuntimeError(f"{spec.legacy} ({spec.kind}) is not dispatched in phase A")
+    if spec.kind == "hud":
+        if _HUD is None:
+            return json.dumps({"ok": False, "error": "hud is not bound", "code": "tool_failed"})
+        return _HUD(args, **kw)
+    raise RuntimeError(f"{spec.legacy} ({spec.kind}) has no handler")
 
 
 def prepare(composable: str, args: dict, session_id=None):
@@ -367,18 +391,21 @@ def prepare(composable: str, args: dict, session_id=None):
     args = dict(args or {})
     op = args.pop("op", None)
     ops = phase_a_ops(composable)
+    reserved = RESERVED_OPS.get(composable, ())
     if not isinstance(op, str) or not op or op not in ops:
-        if not isinstance(op, str) or not op:
+        if isinstance(op, str) and op in reserved:
+            message = f"{composable} op={op!r} is reserved and not registered yet."
+            fix = f"{op} will be added on {composable}. Do not call it yet."
+        elif not isinstance(op, str) or not op:
             message = f"{composable} needs an op."
+            fix = "Pass op as one of: " + ", ".join(ops) + "."
         else:
             message = f"{composable} has no op {op!r}."
+            fix = "Pass op as one of: " + ", ".join(ops) + "."
         return None, None, None, {
-            "ok": False,
-            "error": "unknown_op",
-            "message": message,
-            "fix": "Pass op as one of: " + ", ".join(ops) + ".",
+            "ok": False, "error": "unknown_op", "message": message, "fix": fix,
         }
-    spec = next(t for t in CATALOG if t.composable == composable and t.op == op and t.phase == "A")
+    spec = next(t for t in CATALOG if t.composable == composable and t.op == op and t.phase in ("A", "B"))
     extra: dict = {}
     if op == "fly" and composable == "godseye_view":
         raw_style = args.pop("style", None)
@@ -397,6 +424,8 @@ def prepare(composable: str, args: dict, session_id=None):
     args, err = normalizer(args, session_id)
     if err:
         return None, None, None, err
+    if (composable, op) not in _KEYS:
+        return _prepare_generic(spec, args)
     allowed = _KEYS[(composable, op)]
     forwarded = {k: v for k, v in args.items() if k in allowed}
     missing = [key for key in _REQUIRED.get((composable, op), ()) if forwarded.get(key) in (None, "")]
@@ -416,6 +445,93 @@ def prepare(composable: str, args: dict, session_id=None):
                 "fix": f"Retry {composable} op={op} with {key} set to one of: {', '.join(choices)}.",
             }
     return spec, forwarded, extra, None
+
+
+def _wants_detail(spec: Target) -> bool:
+    from . import detail
+
+    if spec.kind == "mcp":
+        return spec.bare in detail.LARGE_DATA
+    if spec.kind == "live":
+        return spec.bare in detail.LARGE_LIVE
+    if spec.kind == "extra":
+        return spec.legacy in detail.LARGE_EXTRA
+    return False
+
+
+def _legacy_params(spec: Target) -> dict:
+    """Parameter object the old tool registered, including detail and fanout."""
+    from . import detail, hermes_tools as tools
+
+    if spec.kind == "hud":
+        params = {"type": "object", "properties": {
+            "context": {"type": "object", "additionalProperties": True}}, "required": []}
+    elif spec.kind == "extra":
+        params = json.loads(json.dumps(tools.EXTRA_TOOLS[spec.legacy][1]))
+    elif spec.kind == "live":
+        live = next(t for t in tools.load_live_catalog() if t["name"] == spec.bare)
+        params = tools.extend_live_schema(spec.bare, tools.live_schema(live.get("parameters")))
+    elif spec.kind == "mcp":
+        tool = next(t for t in tools.load_catalog() if t["name"] == spec.bare)
+        params = json.loads(json.dumps(tool.get("inputSchema") or {"type": "object", "properties": {}}))
+    else:
+        params = {"type": "object", "properties": {}}
+    params.setdefault("properties", {})
+    if _wants_detail(spec):
+        params = detail.add_detail(params)
+    return params
+
+
+def _enum_values(prop: dict) -> list | None:
+    if not isinstance(prop, dict):
+        return None
+    if isinstance(prop.get("enum"), list):
+        return list(prop["enum"])
+    return None
+
+
+def _prepare_generic(spec: Target, args: dict):
+    """Whitelist, required, and enum checks from the legacy schema.
+
+    ``godseye_nav`` ``op=measure`` takes the old inner ``op`` as ``measure``
+    and puts it back before the handler sees it.
+    """
+    args = dict(args)
+    if spec.composable == "godseye_nav" and spec.op == "measure" and "measure" in args:
+        args["op"] = args.pop("measure")
+    if "style" in args and args["style"] is not None:
+        mapped = canonical_style(args["style"])
+        if not mapped:
+            return None, None, None, _bad_style(args["style"])
+        args["style"] = mapped
+    params = _legacy_params(spec)
+    props = params.get("properties") or {}
+    allowed = set(props)
+    if spec.kind == "live":
+        allowed.add("fanout")
+    forwarded = {key: value for key, value in args.items() if key in allowed}
+    missing = [key for key in (params.get("required") or []) if forwarded.get(key) in (None, "")]
+    if missing:
+        return None, None, None, {
+            "ok": False,
+            "error": "bad_args",
+            "message": f"{spec.composable} op={spec.op} needs {', '.join(missing)}.",
+            "fix": f"Retry {spec.composable} op={spec.op} with {', '.join(missing)} set.",
+        }
+    for key, prop in props.items():
+        if key not in forwarded:
+            continue
+        choices = _enum_values(prop)
+        if not choices or forwarded[key] in choices:
+            continue
+        shown = ", ".join(str(item) for item in choices if item is not None)
+        return None, None, None, {
+            "ok": False,
+            "error": "bad_args",
+            "message": f"{spec.composable} op={spec.op} {key}={forwarded[key]!r} is not one of {shown}.",
+            "fix": f"Retry {spec.composable} op={spec.op} with {key} set to one of: {shown}.",
+        }
+    return spec, forwarded, {}, None
 
 
 _VALUE_ENUMS = {
@@ -695,10 +811,119 @@ def _schema(name: str, description: str, properties: dict) -> dict:
 def _tool_description(composable: str, lead: str) -> str:
     lines = [lead, ""]
     for op in phase_a_ops(composable):
-        lines.append(f"op={op}: {_BLURB[(composable, op)]}")
+        blurb = _BLURB.get((composable, op))
+        lines.append(f"op={op}: {blurb}" if blurb else f"op={op}")
     lines.append("")
     lines.append(policy.POLICY)
     return "\n".join(lines)
+
+
+def _slim(key: str, prop: dict) -> dict:
+    """One property, types and small enums only. Nested guidance stays in the skill."""
+    if not isinstance(prop, dict):
+        return {"description": key}
+    out: dict = {}
+    raw_type = prop.get("type")
+    if isinstance(raw_type, list):
+        raw_type = next((item for item in raw_type if item != "null"), None)
+    if isinstance(raw_type, str):
+        out["type"] = raw_type
+    enum = prop.get("enum")
+    if isinstance(enum, list) and len(enum) <= 16:
+        out["enum"] = [item for item in enum if item is not None]
+    if "anyOf" in prop and "type" not in out:
+        types = [b.get("type") for b in prop["anyOf"] if isinstance(b, dict) and isinstance(b.get("type"), str)]
+        if len(set(types)) == 1:
+            out["type"] = types[0]
+    if key == "style":
+        out["type"] = "string"
+        out["enum"] = ["normal", "retro", "surveillance", "thermal", "anime", "noir",
+                       "nvg", "night", "night vision", "night-vision", "nightvision",
+                       "flir", "ir", "infrared"]
+    if out.get("type") == "array":
+        items = prop.get("items") if isinstance(prop.get("items"), dict) else {}
+        item_type = items.get("type")
+        if isinstance(item_type, list):
+            item_type = next((item for item in item_type if item != "null"), None)
+        if not isinstance(item_type, str):
+            item_type = "object" if items.get("properties") or items.get("anyOf") else "string"
+        item: dict = {"type": item_type}
+        item_enum = items.get("enum")
+        if isinstance(item_enum, list) and len(item_enum) <= 12:
+            item["enum"] = [v for v in item_enum if v is not None]
+        out["items"] = item
+    if out.get("type") == "object" or (not out.get("type") and prop.get("properties")):
+        out["type"] = "object"
+        out["additionalProperties"] = True
+    if not out:
+        out["description"] = key
+    return out
+
+
+def _merge_prop(dst: dict, src: dict) -> None:
+    if dst.get("_mixed"):
+        return
+    dst_type = dst.get("type")
+    src_type = src.get("type")
+    if dst_type and src_type and dst_type != src_type:
+        dst.clear()
+        dst["_mixed"] = True
+        dst["description"] = "Shape depends on op."
+        return
+    if "type" not in dst and "type" in src:
+        dst["type"] = src["type"]
+    if "enum" in src and (not dst_type or not src_type or dst_type == src_type):
+        current = dst.setdefault("enum", [])
+        for value in src["enum"]:
+            if value not in current:
+                current.append(value)
+    if "items" in src and "items" not in dst:
+        dst["items"] = src["items"]
+    elif "items" in src and isinstance(dst.get("items"), dict) and "enum" in src["items"]:
+        current = dst["items"].setdefault("enum", [])
+        for value in src["items"]["enum"]:
+            if value not in current:
+                current.append(value)
+    if src.get("additionalProperties") and dst.get("type") == "object":
+        dst["additionalProperties"] = True
+
+
+def _public_key(spec: Target, key: str) -> str | None:
+    if spec.composable == "godseye_nav" and spec.op == "measure" and key == "op":
+        return "measure"
+    if key == "op":
+        return None
+    return key
+
+
+def union_props(composable: str) -> dict:
+    """Slim union of every op's arguments. Later ops do not replace an existing key's type."""
+    props: dict = {}
+    for spec in CATALOG:
+        if spec.composable != composable or spec.phase not in ("A", "B"):
+            continue
+        for key, prop in (_legacy_params(spec).get("properties") or {}).items():
+            public = _public_key(spec, key)
+            if public is None:
+                continue
+            slim = _slim(public, prop)
+            if public in props:
+                _merge_prop(props[public], slim)
+            else:
+                props[public] = slim
+    for prop in props.values():
+        prop.pop("_mixed", None)
+    if any(_wants_detail(spec) for spec in CATALOG if spec.composable == composable):
+        detail_prop = props.setdefault("detail", {
+            "type": "string",
+            "description": "concise (default) returns ids and counts. full returns the objects.",
+        })
+        detail_prop["type"] = "string"
+        detail_prop["enum"] = ["concise", "full"]
+        detail_prop["default"] = "concise"
+    if any(spec.kind == "live" for spec in CATALOG if spec.composable == composable):
+        props.setdefault("fanout", {"type": "boolean", "description": "Send to every open pane. Default false."})
+    return props
 
 
 def view_schema() -> dict:
@@ -735,8 +960,11 @@ def view_schema() -> dict:
         "prune": _prop("boolean", "panes: drop stale closed pane records now."),
         "label": _prop("string", "panes: label for this chat's pane."),
         "pane_id": _prop("string", "panes: pane to label. Default is this session's pane."),
-        "fanout": _prop("boolean", "fly, move, zoom, globe: send to every open pane. Default false."),
+        "fanout": _prop("boolean", "fly, move, zoom, globe, show, state: send to every open pane. Default false."),
+        "detail": _prop("string", "state: concise (default) or full.", enum=["concise", "full"], default="concise"),
     }
+    for key, prop in union_props("godseye_view").items():
+        props.setdefault(key, prop)
     return _schema("godseye_view", _tool_description(
         "godseye_view",
         "Move the Eye Of Hermes (EOH) camera, home view, share link, or pane list. One op per call."), props)
@@ -827,17 +1055,53 @@ def query_schema() -> dict:
         "flyTo": _prop("boolean", "resolve_area: also fly to the area."),
         "referent": _prop("integer", "entity: numbered item from the last result list."),
         "layerId": _prop("string", "entity: optional layer filter."),
+        "points": _prop("array", "terrain: {lat, lon} samples.", items={"type": "object"}),
+        "kind": _prop("string", "features: administrative_areas, named_places, or monuments.",
+                      enum=["administrative_areas", "named_places", "monuments"]),
     }
+    for key, prop in union_props("godseye_query").items():
+        props.setdefault(key, prop)
     return _schema("godseye_query", _tool_description(
         "godseye_query",
         "Look up places, the open view, and situation briefs. One op per call. "
         "Public aircraft, vessels, places, and hazards only. Do not search for a person."), props)
 
 
+_LEADS = {
+    "godseye_layers": "Layers, panels, visual style, sonar, detection, the map stack, and post effects. One op per call.",
+    "godseye_feeds": (
+        "Public feeds: hazards, aircraft, vessels, satellites, weather, imagery, infrastructure, and mapped cameras. "
+        "One op per call. CCTV and ALPR are public or mapped cameras, not a way to identify a person."
+    ),
+    "godseye_annotate": "Pins, drawings, filters, and pin drawers on the open pane. One op per call.",
+    "godseye_nav": "Measure, isochrone, fly a drawn route, or compare imagery. One op per call.",
+    "godseye_track": "Follow an entity, frame overhead traffic, or open the cockpit. One op per call.",
+    "godseye_scene": "Save, load, export, restore, tour, or play back a scene. One op per call.",
+    "godseye_watch": "Create, list, pause, or delete a watch. One op per call. list check=<id> runs one watch now.",
+    "godseye_capture": "HUD layout and a one-line caption. One op per call.",
+    "godseye_admin": "Health check, panel rebuild, pane reload, or the desktop preview tab. One op per call.",
+}
+
+
+def generic_schema(name: str) -> dict:
+    props = {"op": _prop("string", "Which action to run.", enum=phase_a_ops(name))}
+    props.update(union_props(name))
+    return _schema(name, f"{_LEADS[name]}\n\n{policy.POLICY}", props)
+
+
 def register_composable(ctx) -> None:
     specs = (
         ("godseye_view", view_schema(), "Camera, home, share, and panes", "🌐"),
         ("godseye_query", query_schema(), "Places, context, and briefs", "🔎"),
+        ("godseye_layers", generic_schema("godseye_layers"), "Layers, style, and panels", "🗂️"),
+        ("godseye_feeds", generic_schema("godseye_feeds"), "Public feeds and mapped cameras", "📡"),
+        ("godseye_annotate", generic_schema("godseye_annotate"), "Pins, drawings, and drawers", "📍"),
+        ("godseye_nav", generic_schema("godseye_nav"), "Measure, reach, and compare", "📏"),
+        ("godseye_track", generic_schema("godseye_track"), "Follow and frame entities", "✈️"),
+        ("godseye_scene", generic_schema("godseye_scene"), "Scenes, tours, and export", "🎬"),
+        ("godseye_watch", generic_schema("godseye_watch"), "Watches", "👀"),
+        ("godseye_capture", generic_schema("godseye_capture"), "HUD and caption", "🖼️"),
+        ("godseye_admin", generic_schema("godseye_admin"), "Doctor, rebuild, reload, preview", "🛠️"),
     )
     for name, schema, blurb, emoji in specs:
         ctx.register_tool(

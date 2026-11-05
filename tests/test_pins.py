@@ -162,8 +162,7 @@ def test_schemas_expose_drawer_fields_and_tool():
     assert "godseye_live_pin_drawer" in h.EXTRA_TOOLS
     assert h.EXTRA_TOOLS["godseye_live_pin_drawer"][1]["properties"]["action"]["enum"] == ["open", "close", "state"]
     assert "pin_details" in h.EXTRA_TOOLS["godseye_brief_and_show"][1]["properties"]
-    assert "godseye_live_pin_drawer" in (ROOT / "plugin.yaml").read_text()
-    assert "godseye_live_pin_drawer" in (ROOT / "skills" / "godseye-analyst" / "SKILL.md").read_text()
+    assert "op=drawer" in (ROOT / "skills" / "godseye-analyst" / "SKILL.md").read_text()
     assert "description_md" in (ROOT / "README.md").read_text()
 
 

@@ -284,7 +284,7 @@ def test_extra_handler_routes_measure():
 
 def test_skill_teaches_context():
     md = (ROOT / "skills" / "godseye-analyst" / "SKILL.md").read_text()
-    assert "op=context" in md and "godseye_measure" in md and "godseye_isochrone" in md and "godseye_live_compare" in md
+    assert "op=context" in md and "op=measure" in md and "op=isochrone" in md and "op=compare" in md
 
 
 def test_panel_injects_context_layer():

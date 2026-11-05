@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Print Eye Of Hermes tool-schema size before and after dropping phase A names.
+"""Print Eye Of Hermes tool-schema size before and after the eleven-tool catalog.
 
-"after" is every schema registered for the model (the 18 absorbed names are
-absent; godseye_view and godseye_query are present).
+"after" is every schema registered for the model (eleven composable tools).
 
-"baseline" rebuilds the catalog those two tools replace: the absorbed names
-are registered again, and godseye_view / godseye_query are not. That is the
-same-tree stand-in for the pre-shrink catalog. Token counts use tiktoken
-(o200k_base and cl100k_base). No network. No secrets.
+"baseline" rebuilds the 82-tool catalog this change replaces: phase A names
+stay unregistered, phase B names are registered again, and only godseye_view
+and godseye_query are added. Those two schemas include show, state, terrain,
+and features, so this baseline is a little larger than origin/feat/v0.2.
+The pull request records the feat/v0.2 measurement separately.
+
+Token counts use tiktoken (o200k_base and cl100k_base). No network. No secrets.
 """
 from __future__ import annotations
 
@@ -18,8 +20,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-NEW = {"godseye_view", "godseye_query"}
 
 
 def _compact(schemas: list[dict]) -> str:
@@ -53,14 +53,25 @@ class _Ctx:
         pass
 
 
-def _schemas(include_absorbed: bool, composable: bool) -> list[dict]:
+def _schemas(phase_b_registered: bool) -> list[dict]:
     from gev import hermes_tools, router
     real_absorbed = router.absorbed
     real_comp = router.register_composable
-    if include_absorbed:
-        router.absorbed = lambda name: False
-    if not composable:
-        router.register_composable = lambda ctx: None
+
+    def absorbed_phase_a(name: str) -> bool:
+        target = router.BY_LEGACY.get(name)
+        return target is not None and target.phase == "A"
+
+    def view_and_query(ctx) -> None:
+        before = set(ctx.tools)
+        real_comp(ctx)
+        for name in list(ctx.tools):
+            if name not in before and name not in {"godseye_view", "godseye_query"}:
+                del ctx.tools[name]
+
+    if phase_b_registered:
+        router.absorbed = absorbed_phase_a
+        router.register_composable = view_and_query
     try:
         ctx = _Ctx()
         hermes_tools.register_tools(ctx)
@@ -71,19 +82,13 @@ def _schemas(include_absorbed: bool, composable: bool) -> list[dict]:
 
 
 def measure() -> dict:
-    from gev import router
-    after = _schemas(include_absorbed=False, composable=True)
-    baseline = _schemas(include_absorbed=True, composable=False)
-    phase_a = {t.legacy for t in router.CATALOG if t.phase == "A"}
-    phase_a_legacy = [schema for schema in baseline if schema["name"] in phase_a]
-    composable = [schema for schema in after if schema["name"] in NEW]
+    after = _schemas(phase_b_registered=False)
+    baseline = _schemas(phase_b_registered=True)
     return {
         "encoding": "json.dumps separators=(',', ':'), ensure_ascii=False, registration order",
         "tokenizer": "tiktoken o200k_base and cl100k_base",
         "after": _pack(after),
         "baseline": _pack(baseline),
-        "composable_only": _pack(composable),
-        "phase_a_legacy": _pack(phase_a_legacy),
     }
 
 

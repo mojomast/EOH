@@ -99,7 +99,7 @@ def test_panel_checks_runtime_missing_file_names_config_json(tmp_path):
     blob = repr(out)
     assert token not in blob
     assert "config.json" in blob
-    assert "godseye_rebuild_panel" in blob
+    assert "op=rebuild" in blob
 
 
 def test_prepare_sets_perf_and_does_not_live_in_the_desktop_bundle():

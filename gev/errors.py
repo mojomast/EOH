@@ -25,7 +25,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "timeout": {
         "message": "The Eye Of Hermes (EOH) pane did not answer in time.",
-        "fix": "Retry this call once. If it times out again, call godseye_view op=panes and godseye_doctor before changing arguments.",
+        "fix": "Retry this call once. If it times out again, call godseye_view op=panes and godseye_admin op=doctor before changing arguments.",
     },
     "CONTEXT_LOST": {
         "message": "The Eye Of Hermes (EOH) pane lost its WebGL context. The viewer is being destroyed and created again in the same pane, then the saved scene is restored.",
@@ -37,19 +37,19 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "KEY_MISSING": {
         "message": "A provider key is missing from the env file or the panel bundle.",
-        "fix": "Add the named key to ~/.config/gods-eye-view.env (mode 0600). Never print the value. Client keys are written to dist/panel/config.json when the pane is served, so a current God's Eye View build does not need a rebuild. Older builds still need godseye_rebuild_panel. godseye_doctor lists KEY_MISSING and PANEL_STALE.",
+        "fix": "Add the named key to ~/.config/gods-eye-view.env (mode 0600). Never print the value. Client keys are written to dist/panel/config.json when the pane is served, so a current God's Eye View build does not need a rebuild. Older builds still need godseye_admin op=rebuild. godseye_admin op=doctor lists KEY_MISSING and PANEL_STALE.",
     },
     "PANEL_STALE": {
         "message": "The panel bundle is older than the env file, so client keys are not baked in.",
-        "fix": "On a current God's Eye View build, open the Eye Of Hermes pane so dist/panel/config.json is rewritten from the env file (no rebuild). On an older build, call godseye_rebuild_panel and reload the pane.",
+        "fix": "On a current God's Eye View build, open the Eye Of Hermes pane so dist/panel/config.json is rewritten from the env file (no rebuild). On an older build, call godseye_admin op=rebuild and reload the pane.",
     },
     "PANEL_MISSING": {
         "message": "dist/panel is not built.",
-        "fix": "Call godseye_rebuild_panel, or run npm run build:panel in the God's Eye View checkout with the env file exported, then reload the pane.",
+        "fix": "Call godseye_admin op=rebuild, or run npm run build:panel in the God's Eye View checkout with the env file exported, then reload the pane.",
     },
     "ION_SCOPES": {
         "message": "The Cesium ion token is shipped to the browser but claims more than read access.",
-        "fix": "Issue a Cesium ion token with only assets:read and assets:list, put it in ~/.config/gods-eye-view.env, call godseye_rebuild_panel, and retry. Do not print the token.",
+        "fix": "Issue a Cesium ion token with only assets:read and assets:list, put it in ~/.config/gods-eye-view.env, call godseye_admin op=rebuild, and retry. Do not print the token.",
     },
     "OVERPASS_NOT_CONFIGURED": {
         "message": "In-pane osm_query has no Overpass server configured.",
@@ -69,7 +69,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "upstream_down": {
         "message": "The God's Eye View app did not answer.",
-        "fix": "Start the app with npm run dev (GODSEYE_API_BASE, default http://localhost:4173) and retry. godseye_doctor checks that it is reachable.",
+        "fix": "Start the app with npm run dev (GODSEYE_API_BASE, default http://localhost:4173) and retry. godseye_admin op=doctor checks that it is reachable.",
     },
     "refused": {
         "message": "Refused: this plugin does not search for people, recognise faces, or track individuals.",
@@ -77,15 +77,15 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "tool_failed": {
         "message": "The tool failed.",
-        "fix": "Read message, fix the arguments, and retry once. If it still fails, call godseye_doctor.",
+        "fix": "Read message, fix the arguments, and retry once. If it still fails, call godseye_admin op=doctor.",
     },
     "routing_unavailable": {
         "message": "The public routing service did not answer.",
-        "fix": "Retry once. For a straight-line distance use godseye_measure with op=distance (not op=route). Do not invent a travel time or draw a circle as a substitute for an isochrone. Optionally set GODSEYE_OSRM_URL or GODSEYE_VALHALLA_URL.",
+        "fix": "Retry once. For a straight-line distance use godseye_nav op=measure with measure=distance (not measure=route). Do not invent a travel time or draw a circle as a substitute for an isochrone. Optionally set GODSEYE_OSRM_URL or GODSEYE_VALHALLA_URL.",
     },
     "wayback_unavailable": {
         "message": "Esri World Imagery Wayback config is unreachable.",
-        "fix": "Retry godseye_live_compare action=list_dates once. If it still fails, compare left=osm or left=current instead of a wayback date.",
+        "fix": "Retry godseye_nav op=compare action=list_dates once. If it still fails, compare left=osm or left=current instead of a wayback date.",
     },
     "no_focus": {
         "message": "There is no focus point on the pane.",
@@ -93,11 +93,11 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "no_drawing": {
         "message": "No drawn shape is on the pane.",
-        "fix": "Ask the user to draw a line, box or polygon, or pass points (or pins) to godseye_measure instead of use_drawn.",
+        "fix": "Ask the user to draw a line, box or polygon, or pass points (or pins) to godseye_nav op=measure instead of use_drawn.",
     },
     "pin_not_found": {
         "message": "No pin on the pane matched that id or label.",
-        "fix": "Call godseye_live_list_annotations or godseye_query op=context and retry with an id or label from that list.",
+        "fix": "Call godseye_annotate op=list or godseye_query op=context and retry with an id or label from that list.",
     },
     "unsupported_side": {
         "message": "That compare side is a map stack, which cannot be split.",
@@ -109,19 +109,19 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "CONFIRM_REQUIRED": {
         "message": "Deleting this drops saved state. Confirm with the user first.",
-        "fix": "Ask the user, then call godseye_watch_delete (or godseye_investigation_delete) again with the same id and confirm=true.",
+        "fix": "Ask the user, then call godseye_watch op=delete (or godseye_scene op=delete) again with the same id and confirm=true.",
     },
     "not_found": {
         "message": "Nothing with that name or id was found.",
-        "fix": "Read message for which list to use. Investigations: godseye_investigation_list. Pins: godseye_live_list_annotations. Watches: godseye_watch_list. Retry with a name or id from that list.",
+        "fix": "Read message for which list to use. Investigations: godseye_scene op=list. Pins: godseye_annotate op=list. Watches: godseye_watch op=list. Retry with a name or id from that list.",
     },
     "NOT_FOUND": {
         "message": "No watch with that id.",
-        "fix": "Call godseye_watch_list and retry with an id from that list.",
+        "fix": "Call godseye_watch op=list and retry with an id from that list.",
     },
     "no_pins": {
         "message": "No matching pins are in this scene.",
-        "fix": "Pin the places first (godseye_query op=find_places pin=true or godseye_live_annotate_map), then call godseye_research_pins. Pass ids from godseye_live_list_annotations if you named specific pins.",
+        "fix": "Pin the places first (godseye_query op=find_places pin=true or godseye_annotate op=annotate), then call godseye_annotate op=research. Pass ids from godseye_annotate op=list if you named specific pins.",
     },
     "geocoder_unavailable": {
         "message": "Nominatim reverse geocoding failed.",
@@ -161,11 +161,11 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "invalid_geojson": {
         "message": "The export did not validate as GeoJSON (RFC 7946).",
-        "fix": "Retry godseye_investigation_export. If it fails again, export a saved investigation by name from godseye_investigation_list.",
+        "fix": "Retry godseye_scene op=export. If it fails again, export a saved investigation by name from godseye_scene op=list.",
     },
     "invalid_kml": {
         "message": "The export did not validate as KML.",
-        "fix": "Retry godseye_investigation_export. If it fails again, export format=geojson only and say the KML step failed.",
+        "fix": "Retry godseye_scene op=export. If it fails again, export format=geojson only and say the KML step failed.",
     },
 }
 

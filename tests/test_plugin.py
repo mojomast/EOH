@@ -23,9 +23,9 @@ class FakeCtx:
 def test_registers_catalog_without_panel_plumbing():
     ctx = FakeCtx()
     hermes_tools.register_tools(ctx)
-    assert "godseye_aircraft_in_area" in ctx.tools
+    assert "godseye_feeds" in ctx.tools
     assert "godseye_panel_request" not in ctx.tools
-    assert "godseye_hud_summary" in ctx.tools
+    assert "godseye_capture" in ctx.tools
     for t in ctx.tools.values():
         assert t["schema"]["parameters"]["type"] == "object"
         assert t["toolset"] == "godseye"
@@ -267,14 +267,14 @@ def test_relay_http_query_routing(tmp_path):
 def test_register_extras_command_skill_state():
     ctx = Ctx2()
     hermes_tools.register_tools(ctx)
-    for name in ("godseye_doctor", "godseye_view", "godseye_query", "godseye_investigation_export"):
+    for name in ("godseye_admin", "godseye_view", "godseye_query", "godseye_scene"):
         assert name in ctx.tools
     for name in ("godseye_brief_and_show", "godseye_share_link", "godseye_home", "godseye_live_panes",
-                 "godseye_live_fly_to_location"):
+                 "godseye_live_fly_to_location", "godseye_doctor", "godseye_investigation_export"):
         assert name not in ctx.tools
     assert "gev" in ctx.commands and "godseye-analyst" in ctx.skills
     assert "fanout" in ctx.tools["godseye_view"]["schema"]["parameters"]["properties"]
-    assert "fanout" in ctx.tools["godseye_live_set_layer_visibility"]["schema"]["parameters"]["properties"]
+    assert "fanout" in ctx.tools["godseye_layers"]["schema"]["parameters"]["properties"]
     import yaml
     provided = set(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert set(ctx.tools) == provided

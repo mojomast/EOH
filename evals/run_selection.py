@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score evals/selection_golden.json against a live chat model.
 
-Presents only godseye_view and godseye_query (the phase A surface). Exits 0
+Presents the eleven composable tools. Exits 0
 without calling a model when CI or GITHUB_ACTIONS is set, or when neither
 OPENAI_API_KEY nor ANTHROPIC_API_KEY is set. The key is read from the
 environment and is never printed.
@@ -31,8 +31,24 @@ def _skip(reason: str) -> int:
 
 
 def _schemas() -> list[dict]:
-    from gev.router import query_schema, view_schema
-    return [view_schema(), query_schema()]
+    from gev import hermes_tools
+
+    class Ctx:
+        def __init__(self):
+            self.tools = {}
+
+        def register_tool(self, **kw):
+            self.tools[kw["name"]] = kw
+
+        def register_system_prompt_section(self, *args, **kwargs):
+            pass
+
+        def register_hook(self, *args, **kwargs):
+            pass
+
+    ctx = Ctx()
+    hermes_tools.register_tools(ctx)
+    return [ctx.tools[name]["schema"] for name in ctx.tools]
 
 
 def _redact(text: str) -> str:

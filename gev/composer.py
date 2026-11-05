@@ -413,7 +413,7 @@ def doctor() -> dict:
                                             "unavailable: no Cesium ion token in this bundle")
             add("map stack", not (photoreal is not None and not photoreal["available"]), detail,
                 ("The token is in the bundle but ion/Google refused it: check it is valid and can read asset 2275207 "
-                 "(Google Photorealistic 3D Tiles) at https://ion.cesium.com/tokens, then godseye_rebuild_panel.")
+                 "(Google Photorealistic 3D Tiles) at https://ion.cesium.com/tokens, then godseye_admin op=rebuild.")
                 if baked else MAP_STACK_FIX)
         else:
             add("map stack", True, "pane open; map stack not reported yet (open a view or retry)")
@@ -766,7 +766,7 @@ def feed_state_checks(scene_or_view: dict | None) -> list[dict]:
     out.append({"check": "layer feeds", "ok": ok,
                 **({"code": "FEED_UNAVAILABLE"} if bad else {"code": "FEED_DEGRADED"} if warn else {}),
                 "detail": detail,
-                **({"fix": "Check the provider key for the unavailable layer (godseye_doctor key checks) and the app's DATA_SOURCES.md."}
+                **({"fix": "Check the provider key for the unavailable layer (godseye_admin op=doctor key checks) and the app's DATA_SOURCES.md."}
                    if not ok else {})})
     return out
 
@@ -795,8 +795,8 @@ def panel_checks(root: Path | None = None, envf: Path | None = None, started: fl
     root = root or config.checkout()
     envf = envf or env_file()
     out = []
-    fix_build = "Run godseye_rebuild_panel (or: set -a; . %s; set +a; cd %s && PATH=~/.local/node24/bin:$PATH npm run build:panel), then godseye_live_reload_pane." % (envf, root or "~/gods-eye-view")
-    fix_runtime = ("Open the Eye Of Hermes pane (or run godseye_rebuild_panel). A current God's Eye View build "
+    fix_build = "Run godseye_admin op=rebuild (or: set -a; . %s; set +a; cd %s && PATH=~/.local/node24/bin:$PATH npm run build:panel), then godseye_admin op=reload." % (envf, root or "~/gods-eye-view")
+    fix_runtime = ("Open the Eye Of Hermes pane (or run godseye_admin op=rebuild). A current God's Eye View build "
                    "reads dist/panel/config.json, which is rewritten from the env file when the pane is served, "
                    "so a key change does not need a rebuild. chmod 600. Never print the value. Older builds still "
                    "need the rebuild.")
@@ -850,7 +850,7 @@ def panel_checks(root: Path | None = None, envf: Path | None = None, started: fl
             out.append({"check": f"key {key}", "ok": ok, **({} if ok else {"code": "KEY_MISSING"}),
                         "detail": f"not set in {where} ({what})",
                         "fix": f"Add {key}=... to {where} (chmod 600). Never print the value. "
-                               + (fix_runtime if runtime else "Then run godseye_rebuild_panel.")})
+                               + (fix_runtime if runtime else "Then run godseye_admin op=rebuild.")})
             continue
         in_cfg = cfg.get(field) == val
         baked = val in text
@@ -915,7 +915,7 @@ def rebuild_panel(session_id: str | None = None, runner=None, reload=True) -> di
 MAP_STACK_FIX = ("Put CESIUM_ION_TOKEN in ~/.config/gods-eye-view.env (or GODSEYE_ENV_FILE). "
                  "A current God's Eye View build reads dist/panel/config.json, rewritten from that file when the "
                  "pane is served, so a key change does not need a rebuild. Older builds compile the key into the "
-                 "bundle: call godseye_rebuild_panel. godseye_doctor shows KEY_MISSING/PANEL_STALE. Never print the key.")
+                 "bundle: call godseye_admin op=rebuild. godseye_admin op=doctor shows KEY_MISSING/PANEL_STALE. Never print the key.")
 
 
 def remediate_map_stack(out: dict) -> dict:
