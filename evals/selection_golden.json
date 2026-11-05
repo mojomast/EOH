@@ -1,0 +1,1982 @@
+{
+  "version": 1,
+  "note": "Natural-language tasks for every composable op. arguments is the reference call. shape is what a live model must satisfy (a bit looser than the reference).",
+  "tasks": [
+    {
+      "id": "fly-tokyo-nvg",
+      "task": "fly to Tokyo NVG",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "fly",
+        "arguments": {
+          "op": "fly",
+          "query": "Tokyo",
+          "style": "surveillance"
+        },
+        "shape": {
+          "required": [
+            "style"
+          ],
+          "fields": {
+            "style": {
+              "enum": [
+                "surveillance",
+                "nvg",
+                "night",
+                "night vision",
+                "night-vision",
+                "nightvision"
+              ]
+            }
+          },
+          "one_of": [
+            {
+              "query": {
+                "type": "string",
+                "contains": "tokyo"
+              }
+            },
+            {
+              "locationId": {
+                "enum": [
+                  "tokyo"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "what-am-i-looking-at",
+      "task": "what am I looking at",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "context",
+        "arguments": {
+          "op": "context"
+        },
+        "shape": {
+          "fields": {
+            "describe": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "ramen-near-me",
+      "task": "ramen near me",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "find_places",
+        "arguments": {
+          "op": "find_places",
+          "query": "ramen near me",
+          "here": true,
+          "pin": true,
+          "intent": "ramen near me"
+        },
+        "shape": {
+          "one_of": [
+            {
+              "query": {
+                "type": "string",
+                "contains": "ramen"
+              }
+            },
+            {
+              "cuisine": {
+                "type": "string",
+                "contains": "ramen"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "brief-this-area",
+      "task": "brief me on this area",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "brief",
+        "arguments": {
+          "op": "brief",
+          "here": true
+        },
+        "shape": {
+          "one_of": [
+            {
+              "here": {
+                "equals": true
+              }
+            },
+            {
+              "place": {
+                "type": "string"
+              }
+            },
+            {
+              "area": {
+                "type": "object"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "zoom-in-a-little",
+      "task": "zoom in a little",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "zoom",
+        "arguments": {
+          "op": "zoom",
+          "direction": "in",
+          "amount": "little"
+        },
+        "shape": {
+          "required": [
+            "direction",
+            "amount"
+          ],
+          "fields": {
+            "direction": {
+              "enum": [
+                "in"
+              ]
+            },
+            "amount": {
+              "enum": [
+                "little",
+                "medium"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "whole-earth",
+      "task": "zoom all the way out to the whole Earth",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "globe",
+        "arguments": {
+          "op": "globe"
+        },
+        "shape": {}
+      }
+    },
+    {
+      "id": "orbit-slowly",
+      "task": "orbit the view slowly",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "move",
+        "arguments": {
+          "op": "move",
+          "motion": "orbit",
+          "speed": "slow",
+          "mode": "continuous"
+        },
+        "shape": {
+          "required": [
+            "motion"
+          ],
+          "fields": {
+            "motion": {
+              "enum": [
+                "orbit"
+              ]
+            },
+            "speed": {
+              "enum": [
+                "slow",
+                "normal"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "go-home",
+      "task": "go home",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "home",
+        "arguments": {
+          "op": "home",
+          "action": "go"
+        },
+        "shape": {
+          "fields": {
+            "action": {
+              "enum": [
+                "go"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "share-this-view",
+      "task": "send me a link to this view",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "share",
+        "arguments": {
+          "op": "share"
+        },
+        "shape": {}
+      }
+    },
+    {
+      "id": "list-panes",
+      "task": "which Eye Of Hermes panes are open",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "panes",
+        "arguments": {
+          "op": "panes"
+        },
+        "shape": {}
+      }
+    },
+    {
+      "id": "osm-hospitals",
+      "task": "OSM hospitals in the current view",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "osm",
+        "arguments": {
+          "op": "osm",
+          "what": "hospitals"
+        },
+        "shape": {
+          "required": [
+            "what"
+          ],
+          "fields": {
+            "what": {
+              "type": "string",
+              "contains": "hospital"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "flights-in-view",
+      "task": "how many flights are in view",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "analyst",
+        "arguments": {
+          "op": "analyst",
+          "layers": [
+            "flights"
+          ],
+          "scope": {
+            "kind": "view"
+          }
+        },
+        "shape": {
+          "required": [
+            "layers"
+          ],
+          "fields": {
+            "layers": {
+              "type": "array",
+              "contains_item": "flights"
+            },
+            "scope": {
+              "type": "object",
+              "subset": {
+                "kind": "view"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "what-is-at-coordinate",
+      "task": "what is at latitude 35.68 longitude 139.69",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "what_is_here",
+        "arguments": {
+          "op": "what_is_here",
+          "lat": 35.68,
+          "lon": 139.69
+        },
+        "shape": {
+          "required": [
+            "lat",
+            "lon"
+          ],
+          "fields": {
+            "lat": {
+              "type": "number"
+            },
+            "lon": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "brief-and-show-tokyo",
+      "task": "what's going on around Tokyo? show me",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "brief_and_show",
+        "arguments": {
+          "op": "brief_and_show",
+          "place": "Tokyo"
+        },
+        "shape": {
+          "one_of": [
+            {
+              "place": {
+                "type": "string",
+                "contains": "tokyo"
+              }
+            },
+            {
+              "query": {
+                "type": "string",
+                "contains": "tokyo"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "military-san-diego",
+      "task": "military contacts near San Diego",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "military",
+        "arguments": {
+          "op": "military",
+          "location": {
+            "place": "San Diego"
+          }
+        },
+        "shape": {
+          "one_of": [
+            {
+              "location": {
+                "type": "object"
+              }
+            },
+            {
+              "place": {
+                "type": "string",
+                "contains": "diego"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "poi-sumo-ramen",
+      "task": "details for Sumo Ramen in Montreal",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "poi",
+        "arguments": {
+          "op": "poi",
+          "name": "Sumo Ramen",
+          "city": "Montreal"
+        },
+        "shape": {
+          "required": [
+            "name"
+          ],
+          "fields": {
+            "name": {
+              "type": "string",
+              "contains": "ramen"
+            },
+            "city": {
+              "type": "string",
+              "contains": "montreal"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "outline-bagmati",
+      "task": "outline the area of Bagmati province",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "resolve_area",
+        "arguments": {
+          "op": "resolve_area",
+          "query": "Bagmati province",
+          "draw": true
+        },
+        "shape": {
+          "required": [
+            "query"
+          ],
+          "fields": {
+            "query": {
+              "type": "string",
+              "contains": "bagmati"
+            },
+            "draw": {
+              "equals": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "selected-entity",
+      "task": "what entity is selected on the globe",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "entity",
+        "arguments": {
+          "op": "entity",
+          "scope": "selected"
+        },
+        "shape": {
+          "fields": {
+            "scope": {
+              "enum": [
+                "selected",
+                "auto"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "fly-street-level",
+      "task": "fly to latitude 35.68 longitude 139.69 at street level",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "fly",
+        "arguments": {
+          "op": "fly",
+          "latitude": 35.68,
+          "longitude": 139.69,
+          "framing": "street"
+        },
+        "shape": {
+          "required": [
+            "framing"
+          ],
+          "fields": {
+            "framing": {
+              "enum": [
+                "street"
+              ]
+            },
+            "latitude": {
+              "type": "number"
+            },
+            "longitude": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "show-tokyo",
+      "task": "show Tokyo with flights on",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "show",
+        "arguments": {
+          "op": "show",
+          "area": {
+            "place": "Tokyo"
+          },
+          "layers": [
+            "flights"
+          ],
+          "style": "surveillance"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "view-state",
+      "task": "what is the camera state",
+      "expect": {
+        "tool": "godseye_view",
+        "op": "state",
+        "arguments": {
+          "op": "state",
+          "detail": "full"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "layer-on",
+      "task": "turn the flights layer on",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "visibility",
+        "arguments": {
+          "op": "visibility",
+          "layerId": "flights",
+          "enabled": true
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "layers-menu",
+      "task": "open the data layers menu",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "menu",
+        "arguments": {
+          "op": "menu"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "open-panel",
+      "task": "open the layers panel",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "panel",
+        "arguments": {
+          "op": "panel",
+          "panelId": "data-panel",
+          "open": true
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "contacts-mode",
+      "task": "switch the pane to contacts mode",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "context_mode",
+        "arguments": {
+          "op": "context_mode",
+          "mode": "contacts"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "style-nvg",
+      "task": "set the globe to night vision",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "style",
+        "arguments": {
+          "op": "style",
+          "style": "nvg"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sonar-on",
+      "task": "turn the sonar overlay on",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "sonar",
+        "arguments": {
+          "op": "sonar",
+          "enabled": true
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "detection-dense",
+      "task": "make the detection overlay dense",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "detection",
+        "arguments": {
+          "op": "detection",
+          "mode": "dense",
+          "enabled": true
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "stack-osm",
+      "task": "switch the basemap to OpenStreetMap",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "stack",
+        "arguments": {
+          "op": "stack",
+          "stack": "osm"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bloom-on",
+      "task": "turn bloom on",
+      "expect": {
+        "tool": "godseye_layers",
+        "op": "post",
+        "arguments": {
+          "op": "post",
+          "bloom": {}
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "terrain-tokyo",
+      "task": "elevation at this point in Tokyo",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "terrain",
+        "arguments": {
+          "op": "terrain",
+          "points": [
+            {
+              "lat": 35.68,
+              "lon": 139.69
+            }
+          ]
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "features-tokyo",
+      "task": "what places are named here",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "features",
+        "arguments": {
+          "op": "features",
+          "location": {
+            "lat": 35.68,
+            "lon": 139.69
+          },
+          "kind": "named_places"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "quakes",
+      "task": "earthquakes in the last day",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "earthquakes",
+        "arguments": {
+          "op": "earthquakes",
+          "limit": 5
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fires-tokyo",
+      "task": "active fires around Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "fires",
+        "arguments": {
+          "op": "fires",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "launches",
+      "task": "recent rocket launches",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "launches",
+        "arguments": {
+          "op": "launches"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aircraft-area",
+      "task": "aircraft around Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "aircraft_in_area",
+        "arguments": {
+          "op": "aircraft_in_area",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "find-aircraft",
+      "task": "find aircraft JAL1",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "find_aircraft",
+        "arguments": {
+          "op": "find_aircraft",
+          "callsign": "JAL1"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aircraft-track",
+      "task": "track of aircraft abc123",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "aircraft_track",
+        "arguments": {
+          "op": "aircraft_track",
+          "icao24": "abc123"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aircraft-info",
+      "task": "info for aircraft abc123",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "aircraft_info",
+        "arguments": {
+          "op": "aircraft_info",
+          "icao24": "abc123"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ships-area",
+      "task": "ships around Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "vessels_in_area",
+        "arguments": {
+          "op": "vessels_in_area",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "find-ship",
+      "task": "find the vessel Ever Given",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "find_vessel",
+        "arguments": {
+          "op": "find_vessel",
+          "name": "Ever Given"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ship-track",
+      "task": "track of ship 123456789",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "vessel_track",
+        "arguments": {
+          "op": "vessel_track",
+          "mmsi": "123456789"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sat-pass",
+      "task": "next satellite pass over Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "next_pass",
+        "arguments": {
+          "op": "next_pass",
+          "location": {
+            "lat": 35.68,
+            "lon": 139.69
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "overhead",
+      "task": "satellites overhead Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "overhead",
+        "arguments": {
+          "op": "overhead",
+          "location": {
+            "lat": 35.68,
+            "lon": 139.69
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "find-cctv",
+      "task": "public cameras around Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "find_cctv",
+        "arguments": {
+          "op": "find_cctv",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cctv-shot",
+      "task": "snapshot from camera cam-1",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "cctv_snapshot",
+        "arguments": {
+          "op": "cctv_snapshot",
+          "camera_id": "cam-1"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "find-alpr",
+      "task": "mapped ALPR cameras around this city",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "alpr",
+        "arguments": {
+          "op": "alpr",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "traffic",
+      "task": "traffic flow around Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "traffic",
+        "arguments": {
+          "op": "traffic",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "weather-radar",
+      "task": "weather radar",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "weather",
+        "arguments": {
+          "op": "weather",
+          "map": "radar"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "imagery",
+      "task": "recent satellite imagery of Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "imagery",
+        "arguments": {
+          "op": "imagery",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cables",
+      "task": "submarine cables",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "cables",
+        "arguments": {
+          "op": "cables"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "datacenters",
+      "task": "datacenters around Tokyo",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "infrastructure",
+        "arguments": {
+          "op": "infrastructure",
+          "kind": "datacenters",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "flood",
+      "task": "Bhote Koshi flood status",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "flood",
+        "arguments": {
+          "op": "flood"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cyclones",
+      "task": "active cyclones",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "cyclones",
+        "arguments": {
+          "op": "cyclones"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "perimeters",
+      "task": "wildfire perimeters around this area",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "fire_perimeters",
+        "arguments": {
+          "op": "fire_perimeters",
+          "area": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bases",
+      "task": "mapped military sites around San Diego",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "military_sites",
+        "arguments": {
+          "op": "military_sites",
+          "area": {
+            "place": "San Diego"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "imagery-live",
+      "task": "recent imagery for the current view",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "imagery_live",
+        "arguments": {
+          "op": "imagery_live",
+          "area": "view"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "iss",
+      "task": "next ISS pass",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "iss_pass",
+        "arguments": {
+          "op": "iss_pass"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sat-pass-live",
+      "task": "next pass of satellite 25544",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "satellite_pass",
+        "arguments": {
+          "op": "satellite_pass",
+          "target": "25544"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cctv-next",
+      "task": "show the next public camera",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "cctv_control",
+        "arguments": {
+          "op": "cctv_control",
+          "action": "next"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "radio-status",
+      "task": "internet radio status",
+      "expect": {
+        "tool": "godseye_feeds",
+        "op": "radio",
+        "arguments": {
+          "op": "radio",
+          "action": "status"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pin-market",
+      "task": "pin March\u00e9 Bonsecours",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "annotate",
+        "arguments": {
+          "op": "annotate",
+          "intent": "pin the market",
+          "annotations": [
+            {
+              "type": "pin",
+              "latitude": 45.5,
+              "longitude": -73.55,
+              "label": "Market"
+            }
+          ]
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "clear-marks",
+      "task": "clear the annotations",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "clear",
+        "arguments": {
+          "op": "clear"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "draw-box",
+      "task": "let me draw a box",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "draw",
+        "arguments": {
+          "op": "draw",
+          "action": "start",
+          "kind": "box"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "list-pins",
+      "task": "list the pins",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "list",
+        "arguments": {
+          "op": "list"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "delete-pin",
+      "task": "delete annotation anno-1",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "delete",
+        "arguments": {
+          "op": "delete",
+          "id": "anno-1"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "filter-ramen",
+      "task": "show only ramen pins that are open",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "filter",
+        "arguments": {
+          "op": "filter",
+          "action": "set",
+          "categories": [
+            "ramen"
+          ],
+          "open_now": true
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "open-drawer",
+      "task": "open the drawer for Sumo Ramen",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "drawer",
+        "arguments": {
+          "op": "drawer",
+          "action": "open",
+          "label": "Sumo Ramen"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "research-pins",
+      "task": "research the pins",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "research",
+        "arguments": {
+          "op": "research",
+          "mode": "light"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "measure-distance",
+      "task": "how far is it between these two points",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "measure",
+        "arguments": {
+          "op": "measure",
+          "measure": "distance",
+          "points": [
+            {
+              "lat": 35.68,
+              "lon": 139.69
+            },
+            {
+              "lat": 35.7,
+              "lon": 139.7
+            }
+          ]
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "walk-15",
+      "task": "what can I reach in 15 minutes walking",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "isochrone",
+        "arguments": {
+          "op": "isochrone",
+          "minutes": [
+            15
+          ],
+          "mode": "walk"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fly-the-route",
+      "task": "fly along the drawn route",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "fly_route",
+        "arguments": {
+          "op": "fly_route"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "compare-2014",
+      "task": "show this block in 2014",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "compare",
+        "arguments": {
+          "op": "compare",
+          "left": "wayback:2014",
+          "right": "current"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "timeline-2016-2024",
+      "task": "show me how this area changed from 2016 to 2024",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "timeline",
+        "arguments": {
+          "op": "timeline",
+          "timeline": "set",
+          "mode": "wayback",
+          "from": "2016-01-01",
+          "to": "2024-12-31",
+          "transition": "swipe"
+        },
+        "shape": {
+          "required": ["op", "timeline", "mode", "from", "to"],
+          "fields": {
+            "timeline": {"enum": ["set"]},
+            "mode": {"enum": ["wayback"]},
+            "from": {"type": "string", "contains": "2016"},
+            "to": {"type": "string", "contains": "2024"}
+          }
+        }
+      }
+    },
+    {
+      "id": "timeline-replay-fires",
+      "task": "replay fires here over the last 7 days",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "timeline",
+        "arguments": {
+          "op": "timeline",
+          "timeline": "set",
+          "mode": "events",
+          "feeds": ["fires"]
+        },
+        "shape": {
+          "required": ["op", "timeline", "mode", "feeds"],
+          "fields": {
+            "timeline": {"enum": ["set"]},
+            "mode": {"enum": ["events"]},
+            "feeds": {"type": "array", "contains_item": "fires"}
+          }
+        }
+      }
+    },
+    {
+      "id": "track-jal",
+      "task": "follow flight JAL1",
+      "expect": {
+        "tool": "godseye_track",
+        "op": "track",
+        "arguments": {
+          "op": "track",
+          "query": "JAL1"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "stop-follow",
+      "task": "stop following",
+      "expect": {
+        "tool": "godseye_track",
+        "op": "stop",
+        "arguments": {
+          "op": "stop"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "nearest-flight",
+      "task": "select the nearest flight",
+      "expect": {
+        "tool": "godseye_track",
+        "op": "select_nearest",
+        "arguments": {
+          "op": "select_nearest",
+          "layerId": "flights"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "frame-ships",
+      "task": "frame the ships overhead",
+      "expect": {
+        "tool": "godseye_track",
+        "op": "frame",
+        "arguments": {
+          "op": "frame",
+          "target": "vessels"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cockpit-status",
+      "task": "cockpit status",
+      "expect": {
+        "tool": "godseye_track",
+        "op": "cockpit",
+        "arguments": {
+          "op": "cockpit",
+          "action": "status"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "save-scene",
+      "task": "save this investigation as Montreal Ramen",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "save",
+        "arguments": {
+          "op": "save",
+          "name": "Montreal Ramen"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "list-scenes",
+      "task": "list saved investigations",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "list",
+        "arguments": {
+          "op": "list"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "load-scene",
+      "task": "load the Montreal Ramen investigation",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "load",
+        "arguments": {
+          "op": "load",
+          "name": "Montreal Ramen"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "delete-scene",
+      "task": "delete the Montreal Ramen investigation",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "delete",
+        "arguments": {
+          "op": "delete",
+          "name": "Montreal Ramen",
+          "confirm": true
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "report-scene",
+      "task": "write a report for Montreal Ramen",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "report",
+        "arguments": {
+          "op": "report",
+          "name": "Montreal Ramen"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "export-scene",
+      "task": "export this investigation as GeoJSON and KML",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "export",
+        "arguments": {
+          "op": "export",
+          "name": "Montreal Ramen",
+          "format": "both"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "restore-scene",
+      "task": "restore this chat's scene",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "restore",
+        "arguments": {
+          "op": "restore"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "start-tour",
+      "task": "tour these two stops",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "tour",
+        "arguments": {
+          "op": "tour",
+          "stops": [
+            {
+              "lat": 35.68,
+              "lon": 139.69,
+              "name": "A"
+            }
+          ]
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "tour-progress",
+      "task": "status of tour job-1",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "tour_status",
+        "arguments": {
+          "op": "tour_status",
+          "jobId": "job-1"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "stop-tour",
+      "task": "stop tour job-1",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "tour_stop",
+        "arguments": {
+          "op": "tour_stop",
+          "jobId": "job-1"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "play-scene",
+      "task": "play the cinematic scene",
+      "expect": {
+        "tool": "godseye_scene",
+        "op": "playback",
+        "arguments": {
+          "op": "playback",
+          "action": "status"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "watch-quakes",
+      "task": "watch earthquakes in this view",
+      "expect": {
+        "tool": "godseye_watch",
+        "op": "create",
+        "arguments": {
+          "op": "create",
+          "area": {
+            "view": true
+          },
+          "feeds": [
+            "earthquakes"
+          ]
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "watch-list",
+      "task": "list my watches",
+      "expect": {
+        "tool": "godseye_watch",
+        "op": "list",
+        "arguments": {
+          "op": "list"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "watch-pause",
+      "task": "pause watch w-1",
+      "expect": {
+        "tool": "godseye_watch",
+        "op": "pause",
+        "arguments": {
+          "op": "pause",
+          "id": "w-1"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "watch-delete",
+      "task": "delete watch w-1",
+      "expect": {
+        "tool": "godseye_watch",
+        "op": "delete",
+        "arguments": {
+          "op": "delete",
+          "id": "w-1",
+          "confirm": true
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hud-on",
+      "task": "turn the HUD on",
+      "expect": {
+        "tool": "godseye_capture",
+        "op": "hud",
+        "arguments": {
+          "op": "hud",
+          "visible": "on"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hud-caption",
+      "task": "caption this view",
+      "expect": {
+        "tool": "godseye_capture",
+        "op": "summary",
+        "arguments": {
+          "op": "summary",
+          "context": {
+            "place": "Tokyo"
+          }
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "doctor",
+      "task": "check the setup",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "doctor",
+        "arguments": {
+          "op": "doctor"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "rebuild",
+      "task": "rebuild the panel",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "rebuild",
+        "arguments": {
+          "op": "rebuild"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "reload",
+      "task": "reload the pane",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "reload",
+        "arguments": {
+          "op": "reload"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "preview",
+      "task": "preview https://example.com",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "preview",
+        "arguments": {
+          "op": "preview",
+          "url": "https://example.com"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    }
+  ]
+}

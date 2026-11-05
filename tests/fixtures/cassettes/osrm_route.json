@@ -1,0 +1,28 @@
+{
+  "_comment": "Hand-written OSRM route fixture for a walk in Montreal. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "routing.openstreetmap.de",
+        "path_contains": "/route/v1/"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "code": "Ok",
+          "routes": [
+            {
+              "distance": 1240.5,
+              "duration": 890.0,
+              "geometry": {
+                "type": "LineString",
+                "coordinates": [[-73.5673, 45.5017], [-73.562, 45.505], [-73.554, 45.5088]]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
