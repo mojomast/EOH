@@ -7,8 +7,45 @@
   const CREDIT = "Eye Of Hermes (EOH) · built on God's Eye View"
   const OLD = /God['’]s Eye View/g
   const setText = (el, t) => { if (el && el.textContent !== t) el.textContent = t }
+  // Upstream header is <h1><span class=title-logo>…</span> <span>GOD'S EYE …</span></h1>.
+  // The mark is the 128px PNG (window.__EOH_LOGO); the tab icon is a separate <link> from panel_inject.
+  const paintLogo = (h) => {
+    const src = window.__EOH_LOGO
+    if (!src || !h) return
+    let logo = null
+    for (const c of h.children || []) if (c && c.className === 'title-logo') logo = c
+    if (!logo && typeof h.querySelector === 'function') logo = h.querySelector('.title-logo')
+    if (!logo || logo.dataset.eohLogo === '1') return
+    logo.dataset.eohLogo = '1'
+    if (logo.style) logo.style.backgroundImage = 'none'
+    const img = document.createElement('img')
+    img.setAttribute('alt', '')
+    img.setAttribute('aria-hidden', 'true')
+    img.setAttribute('src', src)
+    img.setAttribute('width', '28')
+    img.setAttribute('height', '28')
+    if (img.style) img.style.cssText = 'width:28px;height:28px;display:block;object-fit:contain'
+    logo.appendChild(img)
+  }
+  const paintIcon = () => {
+    const src = window.__EOH_LOGO_ICON || window.__EOH_LOGO
+    const head = document.head
+    if (!src || !head || typeof head.appendChild !== 'function') return
+    const links = typeof document.querySelectorAll === 'function'
+      ? document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]') : []
+    if (!links.length) {
+      const link = document.createElement('link')
+      link.setAttribute('rel', 'icon')
+      link.setAttribute('type', 'image/png')
+      link.setAttribute('href', src)
+      head.appendChild(link)
+      return
+    }
+    for (const link of links) if (!link.getAttribute || link.getAttribute('href') !== src) link.setAttribute('href', src)
+  }
   const brandHeading = (h) => {
     // <h1>[logo] <span translate=no>GOD'S EYE <span class=title-accent>VIEW</span></span></h1>
+    paintLogo(h)
     const accent = h.querySelector('.title-accent')
     const holder = accent ? accent.parentElement : h
     if (holder.dataset.eoh === '1' && /^EOH$/.test(holder.textContent.trim())) return
@@ -23,6 +60,7 @@
     h.setAttribute('aria-label', TITLE)
   }
   const apply = () => {
+    paintIcon()
     if (document.title !== TITLE) document.title = TITLE
     for (const h of document.querySelectorAll('h1, h2')) brandHeading(h)
     // tagline under the header becomes the credit line

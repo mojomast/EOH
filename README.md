@@ -1,3 +1,5 @@
+<img src="docs/images/eoh-banner.jpg" alt="Eye Of Hermes — a winged eye with the Earth as its iris, beside the words EYE OF HERMES and the tagline Ask Hermes. See the world." width="100%">
+
 <div align="center">
 
 # Eye Of Hermes
@@ -7,10 +9,6 @@
 Eye Of Hermes (EOH) is the Hermes plugin `godseye` (version 0.2.0). It runs a [fork of God's Eye View](https://github.com/mojomast/gods-eye-view) beside the chat and gives Hermes the tools to drive it. Answers come from your Hermes model.
 
 [Tour](#a-tour-of-the-pane) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Tools](#tools) · [Privacy](#privacy-and-responsible-use)
-
-<img src="docs/images/eoh-header.jpg" alt="Eye Of Hermes header over photorealistic 3D tiles of Montreal, with two ramen pins and an Open full app button" width="880">
-
-<sub>The Eye Of Hermes header on photorealistic 3D tiles of Montreal. Style is Normal. Two ramen pins sit on the city, and <b>Open full app</b> leaves the pane for the full God's Eye View window.</sub>
 
 </div>
 

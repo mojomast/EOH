@@ -37,9 +37,9 @@ global.MutationObserver = function (cb) { this.observe = () => observers.push(cb
 """
 
 
-def run(body: str):
+def run(body: str, pre: str = ""):
     src = (ROOT / "gev" / "panel_brand.js").read_text()
-    out = subprocess.run([NODE, "-e", DOM + "\n;" + src + "\n;" + body], capture_output=True, text=True, timeout=30)
+    out = subprocess.run([NODE, "-e", DOM + "\n;" + pre + "\n;" + src + "\n;" + body], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout.strip().splitlines()[-1])
 
@@ -65,6 +65,40 @@ def test_brand_swaps_header_title_status_and_survives_rerender():
 def test_brand_script_injected_first():
     html = panel_inject.prepare("<html><head><title>God's Eye View</title></head><body></body></html>")
     assert html.index("__hermesBrand") < html.index("__hermesPins = {") < html.index("const prepAnnotate")
+
+
+@pytest.mark.skipif(not Path(NODE).exists(), reason="node not installed")
+def test_brand_paints_header_logo_without_changing_the_title():
+    r = run(r"""
+      const h1 = body.children[0]
+      const logo = h1.children.find((c) => c.className === 'title-logo')
+      const img = (logo.children || []).find((c) => c.tagName === 'IMG')
+      console.log(JSON.stringify({ h1: h1.textContent.trim(), src: img && img.attrs.src, w: img && img.attrs.width,
+        alt: img && img.attrs.alt }))""",
+                pre="window.__EOH_LOGO = 'data:image/png;base64,AAAA'")
+    assert r["h1"] == "EOH" and r["src"] == "data:image/png;base64,AAAA" and r["w"] == "28" and r["alt"] == ""
+
+
+def test_panel_uses_logo_png_for_favicon_and_header():
+    html = panel_inject.prepare("<html><head><title>God's Eye View</title></head><body></body></html>")
+    assert '<link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,' in html
+    assert "window.__EOH_LOGO = " in html and "window.__EOH_LOGO_ICON = " in html
+    assert html.index("window.__EOH_LOGO") < html.index("__hermesBrand")
+    icon = (ROOT / "docs" / "images" / "eoh-logo-64.png").read_bytes()
+    mark = (ROOT / "docs" / "images" / "eoh-logo-128.png").read_bytes()
+    assert icon[:8] == b"\x89PNG\r\n\x1a\n" and mark[:8] == b"\x89PNG\r\n\x1a\n"
+    import base64
+    import struct
+    assert struct.unpack(">II", icon[16:24]) == (64, 64)
+    assert struct.unpack(">II", mark[16:24]) == (128, 128)
+    assert base64.b64encode(icon).decode() in html and base64.b64encode(mark).decode() in html
+    readme = (ROOT / "README.md").read_text()
+    assert readme.startswith('<img src="docs/images/eoh-banner.jpg"')
+    assert 'width="100%"' in readme.split("\n", 1)[0]
+    assert "eoh-header.jpg" not in readme
+    assert "<a " not in readme.split("\n", 1)[0]
+    banner = (ROOT / "docs" / "images" / "eoh-banner.jpg").read_bytes()
+    assert banner[:2] == b"\xff\xd8" and len(banner) < 300_000
 
 
 def test_user_facing_strings_use_eoh():
