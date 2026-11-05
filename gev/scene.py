@@ -12,6 +12,26 @@ import threading
 import time
 from pathlib import Path
 
+def _same_mark(ann: dict, ann_id: str) -> bool:
+    if ann.get("id") == ann_id or ann.get("paneId") == ann_id:
+        return True
+    spec = ann.get("spec") if isinstance(ann.get("spec"), dict) else {}
+    return bool(ann_id) and (spec.get("clientId") == ann_id or spec.get("id") == ann_id)
+
+
+def _public_annotation(ann: dict, full: bool) -> dict:
+    spec = ann.get("spec") if isinstance(ann.get("spec"), dict) else {}
+    item = {"id": ann["id"], "type": spec.get("type", "pin"),
+            "label": spec.get("label") or spec.get("target"),
+            "latitude": spec.get("latitude"), "longitude": spec.get("longitude")}
+    if full:
+        from .marks import public_meta
+        item.update(public_meta(spec))
+        if ann.get("paneId"):
+            item["paneId"] = ann.get("paneId")
+    return item
+
+
 DEFAULT_KEY = "default"
 MAX_ITEMS = 96
 POINT_TYPES = {"pin", "highlight", "label", "area", "card"}
@@ -332,27 +352,46 @@ class SceneStore:
         return True
 
     # -- queries -------------------------------------------------------------------------------
-    def list(self, key: str | None) -> dict:
+    def list(self, key: str | None, full: bool = False) -> dict:
         with self.lock:
             sc = self.scene(key)
             from .timeline import public_timeline
             out = {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
                    "filters": sc.get("filters"), "timeline": public_timeline(sc.get("timeline")),
-                   "annotations": [{"id": a["id"], "type": a["spec"].get("type", "pin"),
-                                    "label": a["spec"].get("label") or a["spec"].get("target"),
-                                    "latitude": a["spec"].get("latitude"), "longitude": a["spec"].get("longitude")}
-                                   for a in sc["annotations"]]}
+                   "annotations": [_public_annotation(a, full) for a in sc["annotations"]]}
             if isinstance(sc.get("motion"), dict):
                 motion = sc["motion"]
                 out["motion"] = {k: motion.get(k) for k in ("kind", "state", "label", "index", "total") if k in motion}
             return out
 
+    def delete_many(self, key: str | None, ids: list) -> list[str]:
+        gone = []
+        for ann_id in ids or []:
+            if ann_id and self.delete(key, str(ann_id)):
+                gone.append(str(ann_id))
+        return gone
+
+    def append_pins(self, key: str | None, specs: list) -> int:
+        added = 0
+        with self.lock:
+            sc = self.scene(key)
+            for spec in specs or []:
+                if not isinstance(spec, dict):
+                    continue
+                sc["annotations"].append({"id": f"a{next(self.ids)}", "spec": dict(spec), "paneId": spec.get("paneId")})
+                added += 1
+            del sc["annotations"][:-MAX_ITEMS]
+            if added:
+                sc["updated"] = time.time()
+                self._save()
+        return added
+
     def delete(self, key: str | None, ann_id: str) -> bool:
         with self.lock:
             sc = self.scene(key)
             before = len(sc["annotations"])
-            gone = [a for a in sc["annotations"] if a["id"] == ann_id]
-            sc["annotations"] = [a for a in sc["annotations"] if a["id"] != ann_id]
+            gone = [a for a in sc["annotations"] if _same_mark(a, ann_id)]
+            sc["annotations"] = [a for a in sc["annotations"] if not _same_mark(a, ann_id)]
             dr = sc.get("drawer")
             for a in gone:
                 if dr and a["spec"].get("latitude") == dr.get("latitude") and a["spec"].get("longitude") == dr.get("longitude"):
@@ -377,7 +416,7 @@ class SceneStore:
         with self.lock:
             sc = self.scene(key)
             for a in sc["annotations"]:
-                if a["id"] == ann_id or a.get("paneId") == ann_id:
+                if _same_mark(a, ann_id):
                     spec = dict(a.get("spec") or {})
                     for k, v in fields.items():
                         if v is None:

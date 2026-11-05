@@ -2057,6 +2057,66 @@
           ]
         }
       }
+    },
+    {
+      "id": "annotate-update",
+      "task": "update pin a1 description",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "update",
+        "arguments": {"op": "update", "id": "a1"},
+        "shape": {"required": ["id"]}
+      }
+    },
+    {
+      "id": "street-level-at",
+      "task": "open street level here",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "street_level",
+        "arguments": {"op": "street_level", "street": "at", "lat": 45.5, "lon": -73.5},
+        "shape": {"required": ["street"]}
+      }
+    },
+    {
+      "id": "itinerary-drive",
+      "task": "drive an itinerary through these pins",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "itinerary",
+        "arguments": {"op": "itinerary", "pins": ["a1", "a2"], "mode": "drive"},
+        "shape": {"required": ["pins"]}
+      }
+    },
+    {
+      "id": "pane-shot",
+      "task": "screenshot the pane",
+      "expect": {
+        "tool": "godseye_capture",
+        "op": "pane",
+        "arguments": {"op": "pane"},
+        "shape": {"required": ["op"]}
+      }
+    },
+    {
+      "id": "admin-batch",
+      "task": "batch these godseye calls",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "batch",
+        "arguments": {"op": "batch", "calls": [{"tool": "godseye_admin", "args": {"op": "status"}}]},
+        "shape": {"required": ["calls"]}
+      }
+    },
+    {
+      "id": "admin-keys",
+      "task": "install keys from a file",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "keys",
+        "arguments": {"op": "keys", "action": "install", "file": "/tmp/godseye-keys.env"},
+        "shape": {"required": ["action", "file"]}
+      }
     }
   ]
 }

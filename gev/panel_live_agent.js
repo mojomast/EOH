@@ -78,7 +78,18 @@
         stacks: (st.stacks || []).map((x) => ({ id: x.id, available: x.available !== false })) }
     } catch {}
     let annotations = null
-    try { const a = g.annotations; annotations = a?.list?.()?.length ?? a?.items?.length ?? a?.size ?? null } catch {}
+    let marks = null
+    try {
+      const a = g.annotations
+      const list = a?.list?.()
+      if (Array.isArray(list)) {
+        annotations = list.length
+        marks = list.slice(0, 80).map((item) => ({
+          id: item.id, type: item.type || 'pin', label: item.label || item.title || '',
+          latitude: item.latitude ?? item.lat, longitude: item.longitude ?? item.lon,
+        }))
+      } else annotations = a?.items?.length ?? a?.size ?? null
+    } catch {}
     // Compact feedProvenance for the doctor (overall + per-layer feedState only; no payloads).
     let feedProvenance = null
     try {
@@ -120,7 +131,7 @@
       recover,
       recreateViewer: typeof g.recreateViewer === 'function'
     }
-    return { ok: true, action: 'hermes_scene_info', ready: Boolean(g.viewer), mapStack: stack, annotations, camera: pose(), feedProvenance, rendering }
+    return { ok: true, action: 'hermes_scene_info', ready: Boolean(g.viewer), mapStack: stack, annotations, marks, camera: pose(), feedProvenance, rendering }
   }
   // Exact framing: orbit the look-at point to an explicit pitch/heading/range (no eased nudge).
   const frame = (args) => {
@@ -147,6 +158,49 @@
   }
 
 
+  // PNG of the whole pane: the globe canvas plus the HTML drawer painted beside it.
+  const paneShot = () => {
+    const canvas = window.__godsEyeView?.viewer?.scene?.canvas
+    if (!canvas) return { ok: false, action: 'hermes_pane_shot', error: 'no canvas' }
+    const drawer = document.querySelector('#hermes-gev-drawer.open, .hermes-drawer.open')
+    try {
+      const shot = document.createElement('canvas')
+      const width = canvas.width || canvas.clientWidth || 1
+      const height = canvas.height || canvas.clientHeight || 1
+      const extra = drawer ? Math.min(360, Math.round(width * 0.34)) : 0
+      shot.width = width + extra
+      shot.height = height
+      const ctx = shot.getContext('2d')
+      if (!ctx) return { ok: false, action: 'hermes_pane_shot', error: 'no 2d context' }
+      ctx.drawImage(canvas, 0, 0, width, height)
+      if (drawer) {
+        ctx.fillStyle = '#02140f'
+        ctx.fillRect(width, 0, extra, height)
+        ctx.fillStyle = '#e8fff6'
+        ctx.font = '14px ui-monospace, Menlo, monospace'
+        const text = String(drawer.innerText || '').slice(0, 800)
+        text.split(/\n/).slice(0, 24).forEach((line, index) => ctx.fillText(line.slice(0, 48), width + 12, 28 + index * 18))
+      }
+      const dataUrl = shot.toDataURL('image/png')
+      if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_pane_shot', error: 'empty capture' }
+      return { ok: true, action: 'hermes_pane_shot', mime: 'image/png', dataUrl, width: shot.width, height: shot.height, includesDrawer: Boolean(drawer) }
+    } catch (e) {
+      return { ok: false, action: 'hermes_pane_shot', error: String(e && e.message || e), note: 'Canvas may be tainted by cross-origin imagery.' }
+    }
+  }
+  window.__hermesPaneShot = paneShot
+  const invalidateProviders = () => {
+    let cleared = 0
+    for (const store of [window.sessionStorage, window.localStorage]) {
+      try {
+        const keys = []
+        for (let i = 0; i < store.length; i++) keys.push(store.key(i))
+        for (const key of keys) if (key && /tomtom/i.test(key)) { store.removeItem(key); cleared += 1 }
+      } catch {}
+    }
+    try { window.__godsEyeView?.invalidateTrafficStatus?.() } catch {}
+    return { ok: true, action: 'hermes_invalidate_providers', cleared, note: 'reload the pane' }
+  }
   // PNG data URL of the Cesium canvas (may fail when tiles taint the WebGL canvas).
   const capture = () => {
     const canvas = window.__godsEyeView?.viewer?.scene?.canvas
@@ -590,10 +644,19 @@
     if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
     let payload
     try {
-      if (m.name === 'hermes_pin_drawer' || m.name === 'hermes_pin_filter') {
+      if (m.name === 'hermes_pin_drawer' || m.name === 'hermes_pin_filter' || m.name === 'hermes_pin_update') {
         await ready()
         const P = window.__hermesPins
-        payload = !P ? { ok: false, error: 'pin layer not loaded' } : m.name === 'hermes_pin_filter' ? P.filterCommand(m.args || {}) : P.command(m.args || {})
+        const pinArgs = m.name === 'hermes_pin_update' ? { ...(m.args || {}), action: 'update' } : (m.args || {})
+        payload = !P ? { ok: false, error: 'pin layer not loaded' } : m.name === 'hermes_pin_filter' ? P.filterCommand(pinArgs) : P.command(pinArgs)
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
+      if (m.name === 'hermes_pane_shot') {
+        payload = paneShot()
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
+      if (m.name === 'hermes_invalidate_providers') {
+        payload = invalidateProviders()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_context' || m.name === 'hermes_draw' || m.name === 'hermes_compare') {

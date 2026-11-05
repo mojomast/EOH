@@ -164,7 +164,8 @@ CATALOG: tuple[Target, ...] = (
     _t("godseye_live_clear_annotations", "godseye_annotate", "clear", "live", "B", "clear marks on the pane"),
     _t("godseye_live_draw", "godseye_annotate", "draw", "extra", "B", "user draw mode or Hermes shapes"),
     _t("godseye_live_list_annotations", "godseye_annotate", "list", "extra", "B", "stored marks for this chat"),
-    _t("godseye_live_delete_annotation", "godseye_annotate", "delete", "extra", "B", "delete one stored mark"),
+    _t("godseye_live_delete_annotation", "godseye_annotate", "delete", "extra", "B", "delete one stored mark, or ids for several"),
+    _t("godseye_live_update_annotation", "godseye_annotate", "update", "extra", "B", "patch one pin without a redraw"),
     _t("godseye_live_filter_pins", "godseye_annotate", "filter", "extra", "B", "category, rating, open-now chips"),
     _t("godseye_live_pin_drawer", "godseye_annotate", "drawer", "extra", "B", "open or close one pin drawer"),
     _t("godseye_research_pins", "godseye_annotate", "research", "extra", "B", "fill drawers from free sources"),
@@ -176,6 +177,10 @@ CATALOG: tuple[Target, ...] = (
        "dolly along an existing route; dense lines are thinned and chunked; not a camera fly"),
     _t("godseye_street_walk", "godseye_nav", "street_walk", "extra", "B",
        "argument walk is start, pause, resume, step, stop, or state"),
+    _t("godseye_street_level", "godseye_nav", "street_level", "extra", "B",
+       "argument street is at, next, prev, or route"),
+    _t("godseye_itinerary", "godseye_nav", "itinerary", "extra", "B",
+       "drive or walk through pins; exact route id before a fuzzy label"),
     _t("godseye_live_compare", "godseye_nav", "compare", "extra", "B", "Wayback or imagery swipe"),
     _t("godseye_timeline", "godseye_nav", "timeline", "extra", "B",
        "argument timeline is set, play, step, stop, state, or list_dates"),
@@ -212,11 +217,18 @@ CATALOG: tuple[Target, ...] = (
     _t("godseye_live_set_hud", "godseye_capture", "hud", "live", "B", "HUD visibility and layout"),
     _t("godseye_hud_summary", "godseye_capture", "summary", "hud", "B",
        "Hermes-model caption; the handler closes over ctx.llm, so it is not a live or MCP call"),
+    _t("godseye_pane_shot", "godseye_capture", "pane", "extra", "B",
+       "PNG of the pane, including the drawer, pins, and imagery"),
     # --- godseye_state ---
     _t("godseye_live_get_current_view_state", "godseye_view", "state", "live", "B",
        "folded into view; the per-turn map line is the orientation path"),
     # --- godseye_admin ---
-    _t("godseye_doctor", "godseye_admin", "doctor", "extra", "B", "read-only health check"),
+    _t("godseye_doctor", "godseye_admin", "doctor", "extra", "B",
+       "health check; probe=true or detail=full calls each keyed provider once"),
+    _t("godseye_batch", "godseye_admin", "batch", "extra", "B",
+       "calls is a list of {tool, args}; stop_on_error stops early"),
+    _t("godseye_keys", "godseye_admin", "keys", "extra", "B",
+       "action install reads a KEY=VALUE path; values are never echoed"),
     _t("godseye_rebuild_panel", "godseye_admin", "rebuild", "extra", "B", "rebuild dist/panel"),
     _t("godseye_live_reload_pane", "godseye_admin", "reload", "extra", "B", "reload the open pane"),
     _t("godseye_preview_swap", "godseye_admin", "preview", "extra", "B", "single desktop preview tab"),
@@ -516,6 +528,10 @@ def _prepare_generic(spec: Target, args: dict):
         args["op"] = args.pop("timeline")
     if spec.composable == "godseye_nav" and spec.op == "street_walk" and "walk" in args:
         args["op"] = args.pop("walk")
+    if spec.composable == "godseye_nav" and spec.op == "street_level" and "street" in args:
+        args["op"] = args.pop("street")
+    if spec.composable == "godseye_admin" and spec.op == "doctor" and str(args.get("detail") or "").lower() == "full":
+        args["probe"] = True
     if "style" in args and args["style"] is not None:
         mapped = canonical_style(args["style"])
         if not mapped:
@@ -527,7 +543,12 @@ def _prepare_generic(spec: Target, args: dict):
     if spec.kind == "live":
         allowed.add("fanout")
     forwarded = {key: value for key, value in args.items() if key in allowed}
-    missing = [key for key in (params.get("required") or []) if forwarded.get(key) in (None, "")]
+    required = list(params.get("required") or [])
+    if spec.composable == "godseye_annotate" and spec.op == "annotate" and (args.get("source") or args.get("records") is not None):
+        required = [key for key in required if key != "annotations"]
+    if spec.composable == "godseye_scene" and spec.op == "tour" and (args.get("source") or args.get("records") is not None):
+        required = [key for key in required if key != "stops"]
+    missing = [key for key in required if forwarded.get(key) in (None, "")]
     if missing:
         return None, None, None, {
             "ok": False,
@@ -912,6 +933,8 @@ def _public_key(spec: Target, key: str) -> str | None:
         return "timeline"
     if spec.composable == "godseye_nav" and spec.op == "street_walk" and key == "op":
         return "walk"
+    if spec.composable == "godseye_nav" and spec.op == "street_level" and key == "op":
+        return "street"
     if key == "op":
         return None
     return key
@@ -1094,19 +1117,23 @@ _LEADS = {
         "Public feeds: hazards, aircraft, vessels, satellites, weather, imagery, infrastructure, and mapped cameras. "
         "One op per call. CCTV and ALPR are public or mapped cameras, not a way to identify a person."
     ),
-    "godseye_annotate": "Pins, drawings, filters, and pin drawers on the open pane. One op per call.",
+    "godseye_annotate": (
+        "Pins, drawings, filters, and pin drawers on the open pane. One op per call. "
+        "source is a .jsonl, .csv, or .json path. records is a list of {lat, lon, label, description_md, images, links, tags, category, id}."
+    ),
     "godseye_nav": (
-        "Measure, isochrone, fly a drawn route, walk it in Street View, compare imagery, or scrub time. "
+        "Measure, isochrone, fly a drawn route, walk it in Street View, step Street Level, build an itinerary, compare imagery, or scrub time. "
         "op=timeline argument timeline: set, play, step, stop, state, list_dates. "
-        "op=street_walk argument walk: start, pause, resume, step, stop, state. One op per call."
+        "op=street_walk argument walk: start, pause, resume, step, stop, state. "
+        "op=street_level argument street: at, next, prev, route. One op per call."
     ),
     "godseye_track": "Follow an entity, frame overhead traffic, or open the cockpit. One op per call.",
     "godseye_scene": "Save, load, export, restore, tour, or play back a scene. One op per call.",
     "godseye_watch": "Create, list, pause, or delete a watch. One op per call. list check=<id> runs one watch now.",
-    "godseye_capture": "HUD layout and a one-line caption. One op per call.",
+    "godseye_capture": "HUD layout, a one-line caption, or a PNG of the pane. One op per call.",
     "godseye_admin": (
-        "Health check, control room, app start/stop/restart, panel rebuild, pane reload, or the desktop preview tab. "
-        "One op per call. Start, stop, and restart run only when you call them."
+        "Health check, control room, app start/stop/restart, batch, key install, panel rebuild, pane reload, or the desktop preview tab. "
+        "One op per call. Start, stop, and restart run only when you call them. keys takes a file path and never a secret value."
     ),
 }
 

@@ -121,6 +121,7 @@
       timeline: spec.timeline === true, h: null, ents: [pin, dot] }
     pins.set(id, p)
     place(p)
+    stackLabels()
     refreshView(true)
     try { g().annotations?.setHidden?.(id, true) } catch {}  // hide upstream's floating SVG reticle
     try { g().viewer.scene.requestRender?.() } catch {}
@@ -132,7 +133,46 @@
     for (const e of p.ents) try { ds.entities.remove(e) } catch {}
     pins.delete(id)
     if (openId === id) close({ silent: true })
+    stackLabels()
     refreshView(true)
+  }
+  // Two labels on the same spot used to draw on top of each other. Stack them upward and hide the ones past the fourth.
+  function labelOffsets(rows) {
+    const groups = []
+    for (const row of rows || []) {
+      let group = null
+      for (const existing of groups) {
+        const origin = existing[0]
+        const dlat = (row.lat - origin.lat) * 111320
+        const dlon = (row.lon - origin.lon) * 111320 * Math.cos((origin.lat * Math.PI) / 180)
+        if (Math.hypot(dlat, dlon) <= 30) { group = existing; break }
+      }
+      if (!group) { group = []; groups.push(group) }
+      group.push(row)
+    }
+    const out = {}
+    for (const group of groups) {
+      group.sort((a, b) => String(a.id).localeCompare(String(b.id)))
+      group.forEach((row, index) => {
+        out[row.id] = { y: -46 - index * 22, show: index < 4 }
+      })
+    }
+    return out
+  }
+  function stackLabels() {
+    const Ce = C()
+    if (!Ce) return
+    const rows = [...pins.values()].filter((p) => p.label).map((p) => ({ id: p.id, lat: p.lat, lon: p.lon }))
+    const layout = labelOffsets(rows)
+    for (const p of pins.values()) {
+      const label = p.ents && p.ents[0] && p.ents[0].label
+      const slot = layout[p.id]
+      if (!label || !slot) continue
+      try {
+        label.pixelOffset = new Ce.Cartesian2(0, slot.y)
+        label.show = slot.show
+      } catch {}
+    }
   }
   const clear = (opts) => {
     const dropTimeline = Boolean(opts && opts.timeline)
@@ -280,7 +320,20 @@
       const fig = document.createElement('figure')
       const img = document.createElement('img')
       img.loading = 'lazy'; img.decoding = 'async'; img.alt = im.alt; img.referrerPolicy = 'no-referrer'
+      const noteStatus = (status) => { im.status = status; if (p.meta && Array.isArray(p.meta.images)) {
+        const hit = p.meta.images.find((row) => row.url === im.url); if (hit) hit.status = status
+      } }
+      img.addEventListener('load', () => noteStatus('loaded'), { once: true })
       img.addEventListener('error', () => {
+        let status = 'error'
+        try {
+          const rows = performance.getEntriesByName(im.url)
+          const last = rows[rows.length - 1]
+          const code = last && last.responseStatus
+          if (code === 404) status = '404'
+          else if (code === 0) status = 'csp-blocked'
+        } catch {}
+        noteStatus(status)
         const b = document.createElement('div'); b.className = 'broken'
         b.textContent = `Image unavailable: ${im.alt}`
         img.replaceWith(b)
@@ -303,7 +356,10 @@
       body.appendChild(ul)
     }
   }
-  const pinInfo = (p) => p && { id: p.id, label: p.label || p.meta.title, latitude: p.lat, longitude: p.lon }
+  const pinInfo = (p) => p && {
+    id: p.id, label: p.label || p.meta.title, latitude: p.lat, longitude: p.lon,
+    title: p.meta.title, description_md: p.meta.md, images: p.meta.images, links: p.meta.links, tags: p.tags,
+  }
   const find = (q) => {
     if (!q) return null
     if (q.id && pins.has(String(q.id))) return pins.get(String(q.id))
@@ -349,6 +405,18 @@
   const command = (args = {}) => {
     const action = String(args.action || 'open')
     if (action === 'close') return { action: 'hermes_pin_drawer', ...close({ fromAgent: true }) }
+    if (action === 'update') {
+      const p = find(args)
+      if (!p) return { ok: false, action: 'hermes_pin_update', error: 'not_found' }
+      if (args.label) p.label = String(args.label).slice(0, 80)
+      p.meta = drawerMeta({ ...p.meta, title: args.title || p.meta.title, description_md: args.description_md ?? p.meta.md, images: args.images || p.meta.images, links: args.links || p.meta.links, label: p.label }, p.label)
+      if (args.tags && typeof args.tags === 'object') p.tags = pinTags({ tags: args.tags })
+      const label = p.ents && p.ents[0] && p.ents[0].label
+      if (label && p.label) label.text = p.label
+      if (openId === p.id) fillDrawer(p)
+      stackLabels()
+      return { ok: true, action: 'hermes_pin_update', pin: pinInfo(p), redraw: false }
+    }
     if (action === 'state') return { ok: true, action: 'hermes_pin_drawer', open: Boolean(openId), pin: pinInfo(pins.get(openId)), pins: [...pins.values()].slice(0, 50).map(pinInfo) }
     return { action: 'hermes_pin_drawer', ...open({ id: args.id, label: args.label, latitude: args.latitude, longitude: args.longitude }, { flyTo: Boolean(args.flyTo) }) }
   }
@@ -511,7 +579,7 @@
     if (args.action === 'expand') return { action: 'hermes_pin_filter', ...expandCluster(String(args.cluster_id || '')) }
     return setFilters(args)
   }
-  window.__hermesPins = { add, remove, clear, detach, open, close, command, renderMarkdown, heightFor, syncWithBoard,
+  window.__hermesPins = { add, remove, clear, detach, open, close, command, renderMarkdown, heightFor, syncWithBoard, labelOffsets,
     setFilters, filterCommand, filterState, expandCluster, refreshView,
     state: () => ({ open: openId, filters: { ...filters }, clusters: [...clusters.values()].map((c) => ({ id: c.id, count: c.ids.length })),
       pins: [...pins.values()].map((p) => ({ ...pinInfo(p), h: p.h, visible: p.visible !== false, clustered: Boolean(p.clustered) })) }) }

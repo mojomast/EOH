@@ -34,7 +34,7 @@ from pathlib import Path
 from . import composer, config
 
 UNIT = "gods-eye-view.service"
-OPTIONAL_KEYS = ("AISSTREAM_API_KEY", "FIRMS_MAP_KEY")
+OPTIONAL_KEYS = ("AISSTREAM_API_KEY", "FIRMS_MAP_KEY", "TOMTOM_API_KEY")
 _REV = __import__("re").compile(r"^[A-Za-z0-9._+\-]{1,40}$")
 _HEX = __import__("re").compile(r"^[0-9a-f]{7,40}$")
 

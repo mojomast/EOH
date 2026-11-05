@@ -257,8 +257,15 @@ def find_places(args: dict) -> dict:
     radius = float(args.get("radiusM") or 0)
     center = None
     bbox = args.get("bbox")
+    bbox_warning = None
     if bbox:
-        bbox = [float(x) for x in bbox]
+        from .areas import interpret_bbox
+        try:
+            parsed = interpret_bbox(bbox, prefer="swne")
+        except ValueError as exc:
+            return {"ok": False, "code": "BAD_AREA", "error": str(exc)}
+        bbox = parsed["bbox"]
+        bbox_warning = parsed.get("warning")
     elif isinstance(near, dict) or (args.get("lat") is not None and args.get("lon") is not None):
         src = near if isinstance(near, dict) else args
         center = {"lat": float(src["lat"]), "lon": float(src["lon"]), "name": src.get("name")}
@@ -318,7 +325,10 @@ def find_places(args: dict) -> dict:
             pois.append(p)
     if center:
         pois.sort(key=lambda p: (p["lat"] - center["lat"]) ** 2 + (p["lon"] - center["lon"]) ** 2)
-    return _finish(args, pois[:limit], f"overpass:{data.get('_endpoint')}", bbox, query, center)
+    finished = _finish(args, pois[:limit], f"overpass:{data.get('_endpoint')}", bbox, query, center)
+    if bbox_warning and isinstance(finished, dict):
+        finished["bboxWarning"] = bbox_warning
+    return finished
 
 
 def _nominatim_category(cat, cuisine, name, bbox, limit) -> list[dict]:

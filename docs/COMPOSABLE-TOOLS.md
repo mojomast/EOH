@@ -8,7 +8,7 @@ The model catalog is eleven tools. Each takes a required `op` and calls the same
 
 `godseye_investigation_export` is `godseye_scene` `op=export` (GeoJSON, KML, and the optional pack). It is not a separate registered tool.
 
-`godseye_nav` `op=timeline` is the Wayback and event-history slider. The sub-action is an argument named `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`). `op=compare` stays the imagery swipe. `op=street_walk` walks a saved route in the Street Level viewer. Its sub-action is an argument named `walk` (`start`, `pause`, `resume`, `step`, `stop`, `state`).
+`godseye_nav` `op=timeline` is the Wayback and event-history slider. The sub-action is an argument named `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`). `op=compare` stays the imagery swipe. `op=street_walk` walks a saved route in the Street Level viewer. Its sub-action is an argument named `walk` (`start`, `pause`, `resume`, `step`, `stop`, `state`). `op=street_level` opens one panorama. Its sub-action is an argument named `street` (`at`, `next`, `prev`, `route`).
 
 Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 
@@ -20,13 +20,13 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 | `godseye_query` | `find_places`, `osm`, `context`, `what_is_here`, `brief`, `brief_and_show`, `analyst`, `military`, `poi`, `resolve_area`, `entity`, `terrain`, `features` |
 | `godseye_layers` | `visibility`, `menu`, `panel`, `context_mode`, `style`, `sonar`, `detection`, `stack`, `post` |
 | `godseye_feeds` | `earthquakes`, `fires`, `launches`, `aircraft_in_area`, `find_aircraft`, `aircraft_track`, `aircraft_info`, `vessels_in_area`, `find_vessel`, `vessel_track`, `next_pass`, `overhead`, `find_cctv`, `cctv_snapshot`, `alpr`, `traffic`, `weather`, `imagery`, `cables`, `infrastructure`, `flood`, `cyclones`, `fire_perimeters`, `military_sites`, `imagery_live`, `iss_pass`, `satellite_pass`, `cctv_control`, `radio` |
-| `godseye_annotate` | `annotate`, `clear`, `draw`, `list`, `delete`, `filter`, `drawer`, `research` |
-| `godseye_nav` | `measure`, `isochrone`, `fly_route`, `street_walk`, `compare`, `timeline` |
+| `godseye_annotate` | `annotate`, `clear`, `draw`, `list`, `delete`, `update`, `filter`, `drawer`, `research` |
+| `godseye_nav` | `measure`, `isochrone`, `fly_route`, `street_walk`, `street_level`, `itinerary`, `compare`, `timeline` |
 | `godseye_track` | `track`, `stop`, `select_nearest`, `frame`, `cockpit` |
 | `godseye_scene` | `save`, `list`, `load`, `delete`, `report`, `export`, `restore`, `tour`, `tour_status`, `tour_stop`, `playback` |
 | `godseye_watch` | `create`, `list`, `pause`, `delete` |
-| `godseye_capture` | `hud`, `summary` |
-| `godseye_admin` | `doctor`, `rebuild`, `reload`, `preview`, `status`, `app_start`, `app_stop`, `app_restart` |
+| `godseye_capture` | `hud`, `summary`, `pane` |
+| `godseye_admin` | `doctor`, `batch`, `keys`, `rebuild`, `reload`, `preview`, `status`, `app_start`, `app_stop`, `app_restart` |
 
 `op=fly` accepts `style`. `nvg`, `night`, `night vision`, and `night-vision` mean `surveillance`. `flir`, `ir`, and `infrared` mean `thermal`. After a successful fly the router calls the existing `set_visual_style` handler. A failed fly does not change the style. `godseye_layers` `op=style` is the same handler. The same aliases are accepted there.
 
@@ -34,7 +34,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 
 The composable entry applies the same person-tracking refusal as the rest of the plugin, including strings nested inside `area` or `location`. It refuses before any pane or network call. Feed ops keep that rule. CCTV and ALPR stay mapped public cameras: the feeds description says they are not a way to identify a person, and the handlers still run `policy.refuse_reason`.
 
-`godseye_nav` `op=measure` takes the old inner `op` (`distance`, `area`, or `route`) as an argument named `measure`, then puts it back to `op` before the handler. `dispatch_legacy` for the retired measure name still forwards the old `op` unchanged. `op=timeline` does the same with an argument named `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`). `op=street_walk` does the same with an argument named `walk` (`start`, `pause`, `resume`, `step`, `stop`, `state`). `dispatch_legacy` for those absorbed names still forwards `op`.
+`godseye_nav` `op=measure` takes the old inner `op` (`distance`, `area`, or `route`) as an argument named `measure`, then puts it back to `op` before the handler. `dispatch_legacy` for the retired measure name still forwards the old `op` unchanged. `op=timeline` does the same with an argument named `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`). `op=street_walk` does the same with an argument named `walk` (`start`, `pause`, `resume`, `step`, `stop`, `state`). `op=street_level` does the same with an argument named `street` (`at`, `next`, `prev`, `route`). `dispatch_legacy` for those absorbed names still forwards `op`.
 
 `godseye_capture` `op=summary` closes over `ctx.llm`. `register_tools` binds that closure. It is not a live or MCP dispatch.
 
@@ -46,6 +46,9 @@ The starting table is in the 2026-11-05 research note, section 1. These rows dif
 - **`zoom_to_globe` is `op=globe`**, not `zoom`. The live tool's own description says a relative zoom cannot reach the whole Earth.
 - **`fly_route` stays on `godseye_nav`.** It dollies along a route that was already drawn. It is not a camera fly. A dense line is thinned and sent in chunks of about 300 points. `lighten` defaults on: Street Level is turned off and the globe is coarsened until the dolly ends.
 - **`street_walk` is `godseye_nav`.** The sub-action is the argument `walk`, so it does not collide with `op`. It samples a saved route and opens the nearest Street View panorama at each point.
+- **`street_level` is `godseye_nav`.** The sub-action is the argument `street` (`at`, `next`, `prev`, `route`). One hop per call. `itinerary` builds a drive or walk through pins and can hand the line to the chunked dolly.
+- **`annotate` reads a dataset.** `source` is a `.jsonl`, `.csv`, or `.json` path. `records` is a list of `{lat, lon, label, description_md, images, links, tags, category, id}`. `replace: true` matches a stable `id` or a pin within 25 m. Exact duplicates are skipped. `op=update` patches one pin without a redraw. `op=delete` accepts `ids`.
+- **Boxes take named keys.** `{south, west, north, east}` is accepted everywhere a bbox is taken. A four-number list is checked and rejected when neither order is a real box. `area: {place, radius_km}` is geocoded. `op=doctor` with `probe: true` calls each keyed provider once, including TomTom. `op=keys` reads a path and never a secret value. `op=batch` runs up to 16 composable calls. `op=pane` returns a PNG of the pane.
 - **`resolve_area`, `poi_details`, and `get_entity_context` are query ops.** `resolve_area` is how `analyst` and `osm` get an `areaId`. `poi_details` is the one-venue step after `find_places`. Entity context is the "entity" role in the research note.
 - **`get_terrain_height` and `get_map_features` are query ops** (`terrain`, `features`). They are point lookups, not feeds.
 - **`show_in_gods_eye_view` is `godseye_view` `op=show`.** The registered schema keeps the argument names and drops the nested MCP descriptions, so the view tool stays small.
@@ -128,7 +131,8 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_live_clear_annotations` | `godseye_annotate` | `clear` | B | clear marks on the pane |
 | `godseye_live_draw` | `godseye_annotate` | `draw` | B | user draw mode or Hermes shapes |
 | `godseye_live_list_annotations` | `godseye_annotate` | `list` | B | stored marks for this chat |
-| `godseye_live_delete_annotation` | `godseye_annotate` | `delete` | B | delete one stored mark |
+| `godseye_live_delete_annotation` | `godseye_annotate` | `delete` | B | delete one stored mark, or ids for several |
+| `godseye_live_update_annotation` | `godseye_annotate` | `update` | B | patch one pin without a redraw |
 | `godseye_live_filter_pins` | `godseye_annotate` | `filter` | B | category, rating, open-now chips |
 | `godseye_live_pin_drawer` | `godseye_annotate` | `drawer` | B | open or close one pin drawer |
 | `godseye_research_pins` | `godseye_annotate` | `research` | B | fill drawers from free sources |
@@ -136,6 +140,8 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_isochrone` | `godseye_nav` | `isochrone` | B | minutes of reach |
 | `godseye_live_fly_route` | `godseye_nav` | `fly_route` | B | dolly along an existing route; dense lines are thinned and chunked; not a camera fly |
 | `godseye_street_walk` | `godseye_nav` | `street_walk` | B | argument walk is start, pause, resume, step, stop, or state |
+| `godseye_street_level` | `godseye_nav` | `street_level` | B | argument street is at, next, prev, or route |
+| `godseye_itinerary` | `godseye_nav` | `itinerary` | B | drive or walk through pins; exact route id before a fuzzy label |
 | `godseye_live_compare` | `godseye_nav` | `compare` | B | Wayback or imagery swipe |
 | `godseye_timeline` | `godseye_nav` | `timeline` | B | argument timeline is set, play, step, stop, state, or list_dates |
 | `godseye_live_track_entity` | `godseye_track` | `track` | B | follow one entity |
@@ -160,8 +166,11 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_watch_delete` | `godseye_watch` | `delete` | B | requires confirm=true |
 | `godseye_live_set_hud` | `godseye_capture` | `hud` | B | HUD visibility and layout |
 | `godseye_hud_summary` | `godseye_capture` | `summary` | B | Hermes-model caption; the handler closes over ctx.llm, so it is not a live or MCP call |
+| `godseye_pane_shot` | `godseye_capture` | `pane` | B | PNG of the pane, including the drawer, pins, and imagery |
 | `godseye_live_get_current_view_state` | `godseye_view` | `state` | B | folded into view; the per-turn map line is the orientation path |
-| `godseye_doctor` | `godseye_admin` | `doctor` | B | read-only health check |
+| `godseye_doctor` | `godseye_admin` | `doctor` | B | health check; probe=true or detail=full calls each keyed provider once |
+| `godseye_batch` | `godseye_admin` | `batch` | B | calls is a list of {tool, args}; stop_on_error stops early |
+| `godseye_keys` | `godseye_admin` | `keys` | B | action install reads a KEY=VALUE path; values are never echoed |
 | `godseye_rebuild_panel` | `godseye_admin` | `rebuild` | B | rebuild dist/panel |
 | `godseye_live_reload_pane` | `godseye_admin` | `reload` | B | reload the open pane |
 | `godseye_preview_swap` | `godseye_admin` | `preview` | B | single desktop preview tab |

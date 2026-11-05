@@ -103,7 +103,13 @@ def test_drawer_open_close_by_label_coords_and_unknown():
       const d = P.command({ action: 'open', label: 'nope' })
       P.add('anno-2', 1, 2, {}); P.open('anno-2'); P.remove('anno-2')
       console.log(JSON.stringify({ a, b: b.pin.id, st: st.open, c: c.open, d: d.ok, afterRemove: P.state().open }))""")
-    assert r["a"]["ok"] and r["a"]["pin"] == {"id": "anno-1", "label": "Sumo", "latitude": 45.5, "longitude": -73.5}
+    assert r["a"]["ok"] and r["a"]["pin"] == {
+        "id": "anno-1", "label": "Sumo", "latitude": 45.5, "longitude": -73.5,
+        "title": "Sumo", "description_md": "**hi**",
+        "images": [{"alt": "A", "caption": "", "url": "https://img.example/a.jpg"}],
+        "links": [{"label": "", "url": "https://a.example/"}],
+        "tags": {"alert": False, "cats": [], "hours": None, "rating": None},
+    }
     assert r["b"] == "anno-1" and r["st"] is True and r["c"] is False and r["d"] is False and r["afterRemove"] is None
 
 
