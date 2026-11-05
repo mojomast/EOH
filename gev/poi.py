@@ -215,7 +215,14 @@ def _poi(el: dict) -> dict | None:
             "opening_hours": t.get("opening_hours"), "cuisine": t.get("cuisine"),
             "phone": t.get("phone") or t.get("contact:phone"),
             "menu": t.get("website:menu") or t.get("menu:url"),
+            **_extra_tags(t),
             "osm": f"{el.get('type')}/{el.get('id')}"}
+
+
+def _extra_tags(t: dict) -> dict:
+    """wikipedia / wikidata / image tags kept for the pin drawer (only when present)."""
+    out = {k: t.get(k) for k in ("wikipedia", "wikidata", "image", "wikimedia_commons") if t.get(k)}
+    return out
 
 
 def _esc(s: str) -> str:
@@ -261,7 +268,8 @@ def find_places(args: dict) -> dict:
                                    "addressdetails": 1, "extratags": 1})
         pois = [{"name": r.get("name") or r.get("display_name"), "lat": float(r["lat"]), "lon": float(r["lon"]),
                  "address": r.get("display_name"), "website": (r.get("extratags") or {}).get("website"),
-                 "opening_hours": (r.get("extratags") or {}).get("opening_hours"), "osm": f"{r.get('osm_type')}/{r.get('osm_id')}"}
+                 "opening_hours": (r.get("extratags") or {}).get("opening_hours"),
+                 **_extra_tags(r.get("extratags") or {}), "osm": f"{r.get('osm_type')}/{r.get('osm_id')}"}
                 for r in res]
         return _finish(args, pois, "nominatim", bbox, query, center)
     filt = CATEGORIES.get(cat or "", f'["amenity"="{_esc(cat)}"]' if cat else "")
@@ -327,7 +335,7 @@ def _nominatim_category(cat, cuisine, name, bbox, limit) -> list[dict]:
                          "lon": round(float(r["lon"]), 6), "address": addr,
                          "website": ex.get("website") or ex.get("contact:website"),
                          "opening_hours": ex.get("opening_hours"), "cuisine": ex.get("cuisine"),
-                         "phone": ex.get("phone"), "menu": ex.get("website:menu"),
+                         "phone": ex.get("phone"), "menu": ex.get("website:menu"), **_extra_tags(ex),
                          "osm": f"{r.get('osm_type')}/{r.get('osm_id')}"})
         if len(res) < 40 or len(pois) >= limit:
             break
@@ -341,9 +349,68 @@ def _finish(args, pois, source, bbox, query, center) -> dict:
             "attribution": "© OpenStreetMap contributors (ODbL)"}
 
 
+def _http_url(u) -> str | None:
+    u = str(u or "").strip()
+    if u and not re.match(r"^[a-z][a-z0-9+.-]*:", u, re.I) and re.match(r"^[\w-]+(\.[\w-]+)+(/|$)", u):
+        u = "https://" + u  # OSM often tags bare domains
+    return u if re.match(r"^https?://[^\s<>\"']+$", u, re.I) else None
+
+
+def _md(s) -> str:
+    """Escape markdown control characters in OSM tag text."""
+    return re.sub(r"([\\`*_\[\]<>#|])", r"\\\1", str(s))
+
+
+def commons_image(tag) -> str | None:
+    """Wikimedia Commons file -> a resolvable Special:FilePath URL (no request is made here)."""
+    tag = str(tag or "").strip()
+    m = re.match(r"^(?:File|Image):(.+)$", tag, re.I)
+    if not m:
+        return None
+    from urllib.parse import quote
+    return "https://commons.wikimedia.org/wiki/Special:FilePath/" + quote(m.group(1).strip().replace(" ", "_")) + "?width=640"
+
+
+def drawer_fields(p: dict) -> dict:
+    """Pin-drawer fields (description_md, images[], links[]) from the OSM tags already fetched."""
+    lines = []
+    if p.get("cuisine"):
+        lines.append(f"**Cuisine:** {_md(str(p['cuisine']).replace(';', ', '))}")
+    if p.get("address"):
+        lines.append(f"**Address:** {_md(p['address'])}")
+    if p.get("opening_hours"):
+        lines.append(f"**Hours:** `{str(p['opening_hours']).replace('`', '')}`")
+    if p.get("phone"):
+        lines.append(f"**Phone:** {_md(p['phone'])}")
+    links = []
+    for label, key in (("Website", "website"), ("Menu", "menu")):
+        u = _http_url(p.get(key))
+        if u:
+            links.append({"label": label, "url": u})
+    wp = str(p.get("wikipedia") or "")
+    if ":" in wp:
+        from urllib.parse import quote
+        lang, title = wp.split(":", 1)
+        if re.match(r"^[a-z-]{2,12}$", lang):
+            links.append({"label": "Wikipedia", "url": f"https://{lang}.wikipedia.org/wiki/{quote(title.strip().replace(' ', '_'))}"})
+    if re.match(r"^Q\d+$", str(p.get("wikidata") or "")):
+        links.append({"label": "Wikidata", "url": f"https://www.wikidata.org/wiki/{p['wikidata']}"})
+    if re.match(r"^(node|way|relation|[NWR])/\d+$", str(p.get("osm") or "")):
+        kind, oid = p["osm"].split("/")
+        kind = {"N": "node", "W": "way", "R": "relation"}.get(kind, kind)
+        links.append({"label": "OpenStreetMap", "url": f"https://www.openstreetmap.org/{kind}/{oid}"})
+    images = []
+    for u in (commons_image(p.get("wikimedia_commons")), commons_image(p.get("image")), _http_url(p.get("image"))):
+        if u and not any(i["url"] == u for i in images):
+            images.append({"url": u, "alt": str(p.get("name") or "photo")[:120]})
+    out = {"title": str(p.get("name") or "")[:120], "description_md": "\n\n".join(lines) or None,
+           "links": links, "images": images[:2]}
+    return {k: v for k, v in out.items() if v}
+
+
 def pin_annotations(pois: list[dict], label_prefix: str = "") -> list[dict]:
     return [{"type": "pin", "target": p["name"][:200], "latitude": p["lat"], "longitude": p["lon"],
-             "label": f"{label_prefix}{p['name']}"[:80]} for p in pois[:24]]
+             "label": f"{label_prefix}{p['name']}"[:80], **drawer_fields(p)} for p in pois[:24]]
 
 
 # --- P2: details ------------------------------------------------------------

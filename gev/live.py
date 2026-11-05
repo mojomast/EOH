@@ -42,6 +42,7 @@ class Pane:
     def __init__(self, pane_id: str) -> None:
         self.id = pane_id
         self.sessions: set[str] = set()
+        self.last_session: str | None = None  # session whose scene this pane last drew (for click events)
         self.last_poll = 0.0
         self.polling = 0
         self.queue: list[dict] = []
@@ -274,12 +275,22 @@ class Relay:
 
     def _record(self, session_id, pane: Pane, name: str, args: dict, res: dict) -> None:
         key = self.scene_key(session_id, pane)
+        pane.last_session = key
         self.scenes.record(key, name, args, res)
         if name in ("fly_to_location", "move_camera") and isinstance(res, dict) and res.get("ok"):
             with self.cond:  # follow up with the real camera pose (lat/lon/height/pitch)
                 self._internal(pane, "get_current_view_state", {},
                                lambda payload: self.scenes.record(key, "get_current_view_state", {}, payload))
                 self.cond.notify_all()
+
+    def drawer_event(self, body: dict) -> dict:
+        """The user opened/closed a pin drawer by clicking in the pane: keep it in the scene."""
+        pane = self.panes.get(str(body.get("pane") or ""))
+        if not pane:
+            return {"ok": False, "error": "unknown pane"}
+        pin = body.get("pin") if isinstance(body.get("pin"), dict) else None
+        self.scenes.note_drawer(pane.last_session or self.scene_key(None, pane), pin)
+        return {"ok": True}
 
     # -- scene + tour operations ---------------------------------------------------------------
     def scene_op(self, body: dict) -> dict:
@@ -412,6 +423,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.tour_op(body))
             if self.path == "/panes":
                 return self._send(200, relay.panes_op(body))
+            if self.path == "/drawer":
+                return self._send(200, relay.drawer_event(body))
             if self.path == "/result":
                 relay.result(body.get("id", 0), body.get("payload") or {})
                 return self._send(200, {"ok": True})

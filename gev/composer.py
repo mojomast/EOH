@@ -91,6 +91,21 @@ def hits_from(data: dict, top_n: int = 5) -> list[dict]:
     return rows[:max(0, int(top_n))]
 
 
+DRAWER_KEYS = ("title", "description_md", "images", "links")
+
+
+def hit_drawer(hit: dict, place: str) -> dict:
+    """Default pin-drawer content for a brief hit: its section, source, distance and position."""
+    sec = str(hit.get("section") or "")
+    lines = [f"**{sec.replace('_', ' ').title()}** near {place}" if sec else f"Near {place}"]
+    if SECTION_SOURCES.get(sec):
+        lines.append(f"Source: {SECTION_SOURCES[sec]}")
+    if isinstance(hit.get("distance_km"), (int, float)):
+        lines.append(f"Distance: {hit['distance_km']:.1f} km")
+    lines.append(f"Position: `{hit['lat']:.5f}, {hit['lon']:.5f}`")
+    return {"title": str(hit.get("label") or sec)[:120], "description_md": "\n\n".join(lines)}
+
+
 # Section key -> short public data-source label for caption lines (never "worldwide").
 SECTION_SOURCES = {
     "aircraft": "OpenSky/adsb.lol", "military_aircraft": "OpenSky/adsb.lol",
@@ -222,8 +237,11 @@ def brief_and_show(args: dict, session_id: str | None = None, live=None, mcp=Non
                 if note(f"layer {layer}", r):
                     shown["layers"].append(layer)
             if hits:
+                details = [d if isinstance(d, dict) else {} for d in (args.get("pin_details") or [])]
                 marks = [{"type": "pin", "latitude": h["lat"], "longitude": h["lon"], "label": h["label"],
-                          "color": "red" if military else "amber"} for h in hits]
+                          "color": "red" if military else "amber", **hit_drawer(h, label),
+                          **({k: v for k, v in details[i].items() if k in DRAWER_KEYS} if i < len(details) else {})}
+                         for i, h in enumerate(hits)]
                 r = live("annotate_map", {"annotations": marks}, session_id)
                 shown["annotated"] = ((r.get("result") or {}).get("drawn") or len(marks)) if note("annotate", r) else 0
             r = live("hermes_caption", {"text": caption}, session_id)

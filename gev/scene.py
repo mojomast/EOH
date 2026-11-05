@@ -64,6 +64,30 @@ class SceneStore:
     def _has(scene: dict) -> bool:
         return bool(scene.get("annotations") or scene.get("camera"))
 
+    @staticmethod
+    def _drawer(sc: dict, args: dict, result: dict) -> bool:
+        """Remember which pin's drawer is open (by coordinates + label: pane ids change on restore)."""
+        action = str((args or {}).get("action") or "open")
+        if action == "state":
+            return False
+        pin = result.get("pin") if isinstance(result.get("pin"), dict) else None
+        if action == "close" or not result.get("open") or not pin:
+            had = sc.get("drawer") is not None
+            sc["drawer"] = None
+            return had
+        if not isinstance(pin.get("latitude"), (int, float)) or not isinstance(pin.get("longitude"), (int, float)):
+            return False
+        sc["drawer"] = {"latitude": pin["latitude"], "longitude": pin["longitude"], "label": pin.get("label")}
+        return True
+
+    def note_drawer(self, key: str | None, pin: dict | None) -> None:
+        """A user click opened/closed a drawer in the pane (reported by the pane)."""
+        with self.lock:
+            sc = self.scene(key)
+            self._drawer(sc, {"action": "open" if pin else "close"}, {"open": bool(pin), "pin": pin})
+            sc["updated"] = time.time()
+            self._save()
+
     # -- recording -----------------------------------------------------------------------------
     def record(self, key: str | None, name: str, args: dict, res: dict) -> None:
         if not isinstance(res, dict) or not res.get("ok"):
@@ -76,6 +100,9 @@ class SceneStore:
                 self._add_annotations(sc, args, result)
             elif name == "clear_annotations":
                 sc["annotations"] = []
+                sc["drawer"] = None
+            elif name == "hermes_pin_drawer":
+                changed = self._drawer(sc, args, result)
             elif name == "hermes_caption":
                 sc["caption"] = (args or {}).get("text") or None
             elif name in ("get_current_view_state", "fly_to_location", "move_camera"):
@@ -129,7 +156,7 @@ class SceneStore:
     def list(self, key: str | None) -> dict:
         with self.lock:
             sc = self.scene(key)
-            return {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"),
+            return {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
                     "annotations": [{"id": a["id"], "type": a["spec"].get("type", "pin"),
                                      "label": a["spec"].get("label") or a["spec"].get("target"),
                                      "latitude": a["spec"].get("latitude"), "longitude": a["spec"].get("longitude")}
@@ -139,7 +166,12 @@ class SceneStore:
         with self.lock:
             sc = self.scene(key)
             before = len(sc["annotations"])
+            gone = [a for a in sc["annotations"] if a["id"] == ann_id]
             sc["annotations"] = [a for a in sc["annotations"] if a["id"] != ann_id]
+            dr = sc.get("drawer")
+            for a in gone:
+                if dr and a["spec"].get("latitude") == dr.get("latitude") and a["spec"].get("longitude") == dr.get("longitude"):
+                    sc["drawer"] = None
             if len(sc["annotations"]) != before:
                 sc["updated"] = time.time()
                 self._save()
@@ -164,6 +196,11 @@ class SceneStore:
                 cmds.append(("clear_annotations", {}))
             for i in range(0, len(specs), 24):
                 cmds.append(("annotate_map", {"annotations": specs[i:i + 24], "persist": True}))
+            dr = sc.get("drawer")
+            if dr and specs:
+                cmds.append(("hermes_pin_drawer", {"action": "open", "latitude": dr["latitude"],
+                                                   "longitude": dr["longitude"], "label": dr.get("label"),
+                                                   "flyTo": False}))
             if sc.get("caption") and not redraw_only:
                 cmds.append(("hermes_caption", {"text": sc["caption"]}))
             return cmds

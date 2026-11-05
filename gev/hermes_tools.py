@@ -74,6 +74,20 @@ FRAMING_PROP = {"type": "string", "enum": ["street", "rooftop", "district"],
                                "rangeM overrides the range (minimum 100 m). The result's camera has pitchDeg/headingDeg."}
 
 
+DRAWER_PROPS = {
+    "description_md": {"type": "string", "maxLength": 4000,
+                       "description": "Pin drawer body (click the pin or godseye_live_pin_drawer). Markdown: "
+                                      "**bold**, *italic*, `code`, # headings, - lists, [text](https://...) links. "
+                                      "Raw HTML is shown as text."},
+    "images": {"type": "array", "maxItems": 6, "description": "Pin drawer images (http/https URLs only, lazy-loaded).",
+               "items": {"type": "object", "properties": {"url": {"type": "string"}, "alt": {"type": "string"},
+                                                          "caption": {"type": "string"}}, "required": ["url"]}},
+    "links": {"type": "array", "maxItems": 12, "description": "Pin drawer links (http/https only; open in a new tab).",
+              "items": {"type": "object", "properties": {"url": {"type": "string"}, "label": {"type": "string"}},
+                        "required": ["url"]}},
+}
+
+
 def extend_live_schema(name: str, schema: dict) -> dict:
     """Hermes-side features the pane shim adds on top of upstream tools."""
     props = schema.setdefault("properties", {})
@@ -90,7 +104,8 @@ def extend_live_schema(name: str, schema: dict) -> dict:
                 t["enum"] = t["enum"] + ["card"]
             ip["label"] = {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "maxItems": 3}],
                            "description": "Mark label. Use a newline-separated string or a list for 2-3 lines."}
-            ip["title"] = {"type": "string", "description": "card: heading line"}
+            ip["title"] = {"type": "string", "description": "card: heading line; pin: drawer title (default: label)"}
+            ip.update(DRAWER_PROPS)
             ip["rows"] = {"type": "array", "maxItems": 8, "description": "card: rows like a menu or price list",
                           "items": {"type": "object", "properties": {"text": {"type": "string"},
                                                                      "price": {"type": ["string", "number"]}},
@@ -180,7 +195,11 @@ EXTRA_TOOLS = {
             "lon": {"type": "number", "minimum": -180, "maximum": 180},
             "radius_km": {"type": "number", "minimum": 1, "maximum": 2000},
             "top_n": {"type": "integer", "minimum": 0, "maximum": 24, "default": 5},
-            "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."}}},
+            "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."},
+            "pin_details": {"type": "array", "maxItems": 24, "description": "Optional drawer content per pinned hit, "
+                            "in hit order (nearest first): {title, description_md, images[], links[]}. Defaults are "
+                            "built from each hit's row.", "items": {"type": "object", "properties": {
+                                "title": {"type": "string"}, **DRAWER_PROPS}}}}},
         "🛰️"),
     "godseye_doctor": (
         "Health check for Eye Of Hermes (EOH): Node 24, upstream checkout, app on :4173, upstream "
@@ -243,6 +262,18 @@ EXTRA_TOOLS = {
                         "description": "route = pin every stop and draw a route through them first."},
             "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."}},
          "required": ["stops"]}, "🧭"),
+    "godseye_live_pin_drawer": (
+        "Open or close the info drawer of a pin on the live globe (the same drawer a click opens). It shows the "
+        "pin's title, description_md, images and links (set them in annotate_map). Pick the pin by id (annotate_map "
+        "item id), label, or latitude/longitude (nearest pin). The open drawer is restored with the scene.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["open", "close", "state"], "default": "open"},
+            "id": {"type": "string", "description": "Pane annotation id from annotate_map items[].id, e.g. anno-3."},
+            "label": {"type": "string"},
+            "latitude": {"type": "number", "minimum": -90, "maximum": 90},
+            "longitude": {"type": "number", "minimum": -180, "maximum": 180},
+            "flyTo": {"type": "boolean", "default": False, "description": "Also fly the camera to the pin."},
+            "fanout": FANOUT_PROP}}, "🗂️"),
     "godseye_live_tour_status": (
         "Status of a tour job: state, index, current stop, remaining, errors.",
         {"type": "object", "properties": {"jobId": {"type": "string"}}, "required": ["jobId"]}, "🧭"),
@@ -327,6 +358,9 @@ def extra_handler(name: str):
                 out = composer.scene_op("delete", sid, id=str(args.get("id") or ""))
             elif name == "godseye_live_restore_scene":
                 out = composer.scene_op("restore", sid)
+            elif name == "godseye_live_pin_drawer":
+                fan = bool(args.pop("fanout", False))
+                out = composer.live_call("hermes_pin_drawer", args, sid, fanout=fan)
             elif name == "godseye_live_reload_pane":
                 out = composer.live_call("hermes_reload", {}, sid, fanout=bool(args.get("fanout")))
             elif name == "godseye_rebuild_panel":

@@ -60,6 +60,7 @@ provides_tools:
   - godseye_rebuild_panel
   - godseye_live_run_tour
   - godseye_live_tour_status
+  - godseye_live_pin_drawer
   - godseye_live_stop_tour
   - godseye_live_fly_to_location
   - godseye_live_select_nearest_aircraft

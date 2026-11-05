@@ -55,6 +55,13 @@ of tools:
 `godseye_live_set_layer_visibility {layerId: "ais-live-vessels", enabled: true}` →
 `godseye_live_set_visual_style {style: "surveillance"}`.
 
+**"List ramen places in Montreal" / "tell me about that pin."**
+`godseye_find_places {query: "ramen restaurants in Montreal", pin: true}` pins them with drawer content
+(address, hours, website, links). To add your own notes to a pin, include `title`, `description_md`
+(markdown), `images:[{url, alt}]` and `links:[{url, label}]` (http/https only) in its `annotate_map`
+spec. Show one with `godseye_live_pin_drawer {action: "open", label: "Sumo Ramen", flyTo: true}`;
+close with `{action: "close"}`. The user can also click any pin. Never put private URLs in a drawer.
+
 **"Save this as my home view" / "go home"** → `godseye_home {action: "set"}` / `{action: "go"}`.
 
 **"Send me a link to this."** → `godseye_share_link`.

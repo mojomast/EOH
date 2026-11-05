@@ -102,6 +102,12 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
       const win = frame()
       if (!win || event.source !== win) return false
       if (event.data?.type === 'hermes-gev:ready') { markReady(); return true }
+      if (event.data?.type === 'hermes-gev:drawer') {  // a click opened/closed a pin drawer: persist it
+        const pin = event.data.detail?.pin
+        const ok = pin && Number.isFinite(pin.latitude) && Number.isFinite(pin.longitude)
+        ctx.rest('/live/drawer', { method: 'POST', body: { pane: paneId, pin: ok ? { latitude: pin.latitude, longitude: pin.longitude, label: String(pin.label ?? '').slice(0, 120) } : null } }).catch(() => {})
+        return true
+      }
       if (event.data?.type !== 'hermes-gev:result') return false
       pending.get(event.data.id)?.(event.data.payload)
       return true
@@ -155,6 +161,11 @@ export function publicLink(url, status) {
   return url.startsWith(from) ? to + url.slice(from.length) : url
 }
 
+// Links the panel may ask the host to open (pin drawer links, app links): http(s) only.
+export function safeLink(url) {
+  try { const u = new URL(String(url || '')); return u.protocol === 'https:' || u.protocol === 'http:' } catch { return false }
+}
+
 export function createPanelHost({ ctx, frame, initialView, status = () => null }) {
   const post = (msg) => frame()?.postMessage({ jsonrpc: '2.0', ...msg }, '*')
   const reply = (id, result) => post({ id, result })
@@ -186,6 +197,7 @@ export function createPanelHost({ ctx, frame, initialView, status = () => null }
         return reply(id, await callTool('panel_request', params.arguments || {}))
       }
       if (method === 'ui/open-link') {
+        if (!safeLink(params?.url)) return fail(id, 'only http(s) links can be opened')
         await ctx.os.openExternal(publicLink(String(params?.url || ''), status()))
         return reply(id, {})
       }
