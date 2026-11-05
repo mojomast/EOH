@@ -23,10 +23,12 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PANE_STALE_S = 30.0
+INFLIGHT_STALE_S = 170.0  # longer than the pane's own 150 s command timeout
 POLL_WAIT_S = 20.0
 RESULT_WAIT_S = 60.0
 MAX_BODY = 512 * 1024
 PICKUP_S = 8.0
+BUSY_WAIT_S = 45.0  # extra time a working pane (scene restore, long flight) gets to pick a command up
 DEFAULT_PANE = "default"
 NO_PANE = {"ok": False, "error": "no_pane", "message": "No God's Eye View pane is open in Hermes Desktop or the Webapp. Ask the user to open the God's Eye View pane (and keep it visible), then retry."}
 PANE_BUSY = {"ok": False, "error": "pane_busy", "message": "The God's Eye View pane is open but still busy with an earlier command; retry in a few seconds."}
@@ -45,9 +47,12 @@ class Pane:
         self.queue: list[dict] = []
         self.inflight: set[int] = set()
         self.created = time.monotonic()
+        self.restored: str | None = None
 
     def fresh(self, now: float) -> bool:
-        return bool(self.polling or self.inflight) or now - self.last_poll < PANE_STALE_S
+        if self.polling or now - self.last_poll < PANE_STALE_S:
+            return True
+        return bool(self.inflight) and now - self.last_poll < INFLIGHT_STALE_S  # a working pane, not a ghost
 
     def info(self, now: float) -> dict:
         return {"id": self.id, "sessions": sorted(self.sessions), "lastPollAgeS": 0.0 if self.polling else round(now - self.last_poll, 1),
@@ -59,11 +64,15 @@ class Relay:
     """Routes each command to ONE pane: the pane bound to the calling session, else the most
     recently active pane. Never "whoever polls first". ``fanout=True`` sends to every open pane."""
 
-    def __init__(self) -> None:
+    def __init__(self, scenes=None) -> None:
+        from .scene import SceneStore
         self.cond = threading.Condition()
         self.panes: dict[str, Pane] = {}
         self.results: dict[int, dict] = {}
+        self.callbacks: dict[int, object] = {}  # internal commands: result goes to a callback
         self.ids = itertools.count(1)
+        self.scenes = scenes if scenes is not None else SceneStore(None)
+        self.tours: dict[str, object] = {}
 
     # -- pane side -----------------------------------------------------------------------------
     def _pane(self, pane_id: str | None) -> Pane:
@@ -72,11 +81,22 @@ class Relay:
             self.panes[pid] = Pane(pid)
         return self.panes[pid]
 
-    def next(self, wait: float = POLL_WAIT_S, pane_id: str | None = None, sessions=None) -> dict | None:
+    def _internal(self, pane: Pane, name: str, args: dict, callback=None) -> None:
+        cid = next(self.ids)
+        self.callbacks[cid] = callback
+        pane.queue.append({"id": cid, "name": name, "args": args})
+
+    def next(self, wait: float = POLL_WAIT_S, pane_id: str | None = None, sessions=None, fresh: bool = False) -> dict | None:
         with self.cond:
             pane = self._pane(pane_id)
             if sessions:
                 pane.sessions = {str(s)[:200] for s in sessions if s}
+            if fresh:  # a new or reloaded frame: bring its scene back before anything else
+                key = self.scenes.pick(sorted(pane.sessions))
+                if key:
+                    for name, args in self.scenes.restore_commands(key):
+                        self._internal(pane, name, args)
+                    pane.restored = key
             pane.last_poll = time.monotonic()
             pane.polling += 1
             self.cond.notify_all()
@@ -98,9 +118,17 @@ class Relay:
     def result(self, cid: int, payload: dict) -> None:
         with self.cond:
             cid = int(cid)
-            self.results[cid] = payload
             for pane in self.panes.values():
                 pane.inflight.discard(cid)
+            if cid in self.callbacks:
+                cb = self.callbacks.pop(cid)
+                if cb:
+                    try:
+                        cb(payload)
+                    except Exception:
+                        pass
+            else:
+                self.results[cid] = payload
             self.cond.notify_all()
 
     # -- tool side -----------------------------------------------------------------------------
@@ -130,7 +158,7 @@ class Relay:
         return live[:1]
 
     def submit(self, name: str, args: dict, wait: float = RESULT_WAIT_S, session_id: str | None = None,
-               pane_id: str | None = None, fanout: bool = False) -> dict:
+               pane_id: str | None = None, fanout: bool = False, record: bool = True) -> dict:
         with self.cond:
             targets = self.targets(session_id, pane_id, fanout)
             if not targets:
@@ -142,12 +170,90 @@ class Relay:
                 sent.append((pane, cid))
             self.cond.notify_all()
             out = {pane.id: self._await(pane, cid, wait) for pane, cid in sent}
+        if record:
+            for pane, _cid in sent:
+                self._record(session_id, pane, name, args, out[pane.id])
         if not fanout:
             res = next(iter(out.values()))
             if isinstance(res, dict) and "pane" not in res:
                 res = {**res, "pane": sent[0][0].id}
             return res
         return {"ok": any(r.get("ok") for r in out.values()), "fanout": out}
+
+    def scene_key(self, session_id: str | None, pane: Pane | None = None) -> str:
+        from .scene import DEFAULT_KEY
+        if session_id:
+            return str(session_id)
+        if pane and pane.sessions:
+            return sorted(pane.sessions)[0]
+        return DEFAULT_KEY
+
+    def _record(self, session_id, pane: Pane, name: str, args: dict, res: dict) -> None:
+        key = self.scene_key(session_id, pane)
+        self.scenes.record(key, name, args, res)
+        if name in ("fly_to_location", "move_camera") and isinstance(res, dict) and res.get("ok"):
+            with self.cond:  # follow up with the real camera pose (lat/lon/height/pitch)
+                self._internal(pane, "get_current_view_state", {},
+                               lambda payload: self.scenes.record(key, "get_current_view_state", {}, payload))
+                self.cond.notify_all()
+
+    # -- scene + tour operations ---------------------------------------------------------------
+    def scene_op(self, body: dict) -> dict:
+        op, sid = body.get("op"), body.get("session_id")
+        targets = self.targets(sid, body.get("pane_id"))
+        key = self.scene_key(sid, targets[0] if targets else None)
+        if op == "list":
+            return self.scenes.list(key)
+        if op == "delete":
+            if not self.scenes.delete(key, str(body.get("id") or "")):
+                listing = self.scenes.list(key)
+                return {"ok": False, "error": "not_found", "message": f"No annotation {body.get('id')!r} in this scene.",
+                        "annotations": listing["annotations"]}
+            out = {"ok": True, "deleted": body.get("id"), "remaining": len(self.scenes.list(key)["annotations"])}
+            if targets:  # redraw what is left on the pane (no geocoding: stored coordinates)
+                steps = [self.submit(n, a, session_id=sid, pane_id=targets[0].id, record=False)
+                         for n, a in self.scenes.restore_commands(key, redraw_only=True)]
+                out["pane"] = targets[0].id
+                out["redrawn"] = all(r.get("ok") for r in steps)
+            return out
+        if op == "restore":
+            if not targets:
+                return dict(NO_PANE)
+            steps = [(n, self.submit(n, a, session_id=sid, pane_id=targets[0].id, record=False, wait=90))
+                     for n, a in self.scenes.restore_commands(key, clear=True)]
+            return {"ok": all(r.get("ok") for _, r in steps), "pane": targets[0].id, "scene": key,
+                    "steps": [{"name": n, "ok": bool(r.get("ok")), **({"error": r.get("error") or (r.get("result") or {}).get("error")} if not r.get("ok") else {})} for n, r in steps],
+                    "annotations": len(self.scenes.list(key)["annotations"])}
+        return {"ok": False, "error": "bad op"}
+
+    def tour_op(self, body: dict) -> dict:
+        from . import tour
+        op, sid = body.get("op"), body.get("session_id")
+        if op == "start":
+            if not self.targets(sid):
+                return dict(NO_PANE)
+            try:
+                spec = tour.plan(body.get("args") or {})
+            except ValueError as exc:
+                return {"ok": False, "error": "bad_tour", "message": str(exc)}
+            for t in self.tours.values():  # one tour at a time per session
+                if getattr(t, "session", None) == sid and t.state in ("pending", "running"):
+                    t.cancel()
+            job = tour.Tour(spec, lambda n, a: self.submit(n, a, session_id=sid, wait=90))
+            job.session = sid
+            self.tours[job.id] = job
+            threading.Thread(target=job, name=job.id, daemon=True).start()
+            return {"ok": True, "jobId": job.id, "stops": len(spec["stops"]), "framing": spec["framing"],
+                    "dwellMs": spec["dwellMs"], "estimatedS": round(len(spec["stops"]) * (spec["dwellMs"] / 1000 + 8))}
+        job = self.tours.get(str(body.get("jobId") or ""))
+        if job is None and op == "cancel" and not body.get("jobId"):
+            live = [t for t in self.tours.values() if t.state in ("pending", "running")]
+            job = live[-1] if live else None
+        if job is None:
+            return {"ok": False, "error": "not_found", "message": "No such tour job."}
+        if op == "cancel":
+            job.cancel()
+        return job.status()
 
     def _await(self, pane: Pane, cid: int, wait: float) -> dict:
         deadline = time.monotonic() + wait
@@ -156,6 +262,9 @@ class Relay:
             now = time.monotonic()
             queued = any(c["id"] == cid for c in pane.queue)
             if queued and now >= pickup:  # nobody picked it up
+                if pane.inflight and now < pickup + BUSY_WAIT_S and now < deadline:
+                    self.cond.wait(0.25)  # alive and working through earlier commands: keep our place
+                    continue
                 pane.queue = [c for c in pane.queue if c["id"] != cid]
                 return dict(PANE_BUSY if pane.inflight else NO_PANE)
             if now >= deadline:
@@ -196,7 +305,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, {"paneOpen": relay.pane_open(), "panes": relay.list()})
             if url.path == "/next":
                 sessions = [s for s in ",".join(q.get("sessions", [])).split(",") if s]
-                return self._send(200, {"command": relay.next(pane_id=(q.get("pane") or [None])[0], sessions=sessions)})
+                return self._send(200, {"command": relay.next(pane_id=(q.get("pane") or [None])[0], sessions=sessions,
+                                                              fresh=(q.get("fresh") or ["0"])[0] == "1")})
             self._send(404, {"error": "not found"})
 
         def do_POST(self):
@@ -210,6 +320,10 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.submit(
                     str(body.get("name", "")), body.get("args") or {}, session_id=body.get("session_id"),
                     pane_id=body.get("pane_id"), fanout=bool(body.get("fanout"))))
+            if self.path == "/scene":
+                return self._send(200, relay.scene_op(body))
+            if self.path == "/tour":
+                return self._send(200, relay.tour_op(body))
             if self.path == "/result":
                 relay.result(body.get("id", 0), body.get("payload") or {})
                 return self._send(200, {"ok": True})
@@ -225,7 +339,8 @@ def start_in_thread(token: str) -> bool:
     if _server is not None:
         return True
     try:
-        _server = ThreadingHTTPServer(("127.0.0.1", port()), make_handler(Relay(), token))
+        from .scene import SceneStore, default_path
+        _server = ThreadingHTTPServer(("127.0.0.1", port()), make_handler(Relay(SceneStore(default_path())), token))
     except OSError:
         return False
     threading.Thread(target=_server.serve_forever, name="godseye-live-relay", daemon=True).start()

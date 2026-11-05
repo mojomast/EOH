@@ -11,6 +11,10 @@
 - Saved home view (`godseye_home`, `/gev home`) in `ctx.state` with a `plugin-data/godseye/home.json` mirror. The pane cold-starts at home (`/home` route).
 - `godseye_share_link`: upstream share-codec `/share/<code>` link on `GODSEYE_PUBLIC_URL`, with a camera-hash fallback.
 - In-frame caption line (`hermes_caption`) over the globe.
+- Scene persistence: annotations (stored with resolved coordinates, so a restore never re-geocodes), camera (look-at target, range, pitch and heading) and caption are saved per session in `plugin-data/godseye/scenes.json`. A reopened pane restores them automatically. New tools: `godseye_live_list_annotations`, `godseye_live_delete_annotation`, `godseye_live_restore_scene`, `godseye_live_reload_pane`.
+- Guided tours: `godseye_live_run_tour` (street/rooftop/district framing with exact pitch, optional orbit, dwell, optional route between stops) runs server-side as one job, with `godseye_live_tour_status` and `godseye_live_stop_tour`. A tour always ends with the camera stopped.
+- Doctor panel checks: `PANEL_MISSING`, `PANEL_STALE`, `KEY_MISSING`, `ION_SCOPES` (local JWT decode, values never shown), plus the active map stack and the scene annotation count. `godseye_rebuild_panel` rebuilds `dist/panel` from `~/.config/gods-eye-view.env` and reloads open panes. `set_map_stack` failures include remediation text.
+- View state now returns pitch, heading, look-at target and range (pane-side shim).
 
 ### Fixed
 - Resizing the window could crash the globe, ending in "Error constructing CesiumWidget: The browser supports WebGL, but initialization failed". The cause was the pane being remounted when the layout changed. Each remount started a new Cesium viewer while the old frame's WebGL context was freed only at GC, so contexts leaked until the browser refused new ones. v0.1.0 had the same problem. The pane is now `lifecycleKeepAlive`, the panel document is cached across remounts, and the frame releases its context on `pagehide`/dispose (`WEBGL_lose_context` + `viewer.destroy()`). Context loss and Cesium's error dialog now show a "click to reload the globe" card instead of a dead dialog.

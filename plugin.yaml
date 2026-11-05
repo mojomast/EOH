@@ -50,6 +50,14 @@ provides_tools:
   - godseye_share_link
   - godseye_home
   - godseye_live_panes
+  - godseye_live_list_annotations
+  - godseye_live_delete_annotation
+  - godseye_live_restore_scene
+  - godseye_live_reload_pane
+  - godseye_rebuild_panel
+  - godseye_live_run_tour
+  - godseye_live_tour_status
+  - godseye_live_stop_tour
   - godseye_live_fly_to_location
   - godseye_live_select_nearest_aircraft
   - godseye_live_adjust_camera_zoom

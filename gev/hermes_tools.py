@@ -77,6 +77,8 @@ def make_live_handler(name: str):
         if reason:
             return json.dumps({"error": reason})
         out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
+        if name == "set_map_stack":
+            out = composer.remediate_map_stack(out)
         text = json.dumps(out)
         return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
     return handler
@@ -159,6 +161,51 @@ EXTRA_TOOLS = {
             "style": {"type": "string", "enum": ["normal", "retro", "surveillance", "thermal", "anime", "noir"]},
             "layers": {"type": "array", "items": {"type": "string"}}}},
         "🏠"),
+    "godseye_live_list_annotations": (
+        "List the annotations stored for this chat's scene (id, type, label, coordinates) and the saved camera. "
+        "The scene is kept server-side and re-applied automatically when a pane is reopened or reloaded.",
+        {"type": "object", "properties": {}}, "📍"),
+    "godseye_live_delete_annotation": (
+        "Delete one stored annotation by id (from godseye_live_list_annotations) and redraw the rest on the pane.",
+        {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}, "🗑️"),
+    "godseye_live_restore_scene": (
+        "Re-apply this chat's stored scene (camera + every annotation, by stored coordinates, no geocoding) to the "
+        "open pane. Normally automatic on pane (re)open; use it after a manual clear or to force a redraw.",
+        {"type": "object", "properties": {}}, "♻️"),
+    "godseye_live_reload_pane": (
+        "Make the open pane re-fetch its panel and rebuild its frame (e.g. after a panel rebuild); the scene is "
+        "restored automatically afterwards.",
+        {"type": "object", "properties": {"fanout": FANOUT_PROP}}, "🔄"),
+    "godseye_rebuild_panel": (
+        "Rebuild God's Eye View's dist/panel bundle (npm run build:panel with ~/.config/gods-eye-view.env exported, "
+        "Node 24) so client keys such as CESIUM_ION_TOKEN are baked in, then reload every open pane. Takes ~20-60 s.",
+        {"type": "object", "properties": {}}, "🛠️"),
+    "godseye_live_run_tour": (
+        "Run a guided tour on the live globe in the background and return a jobId at once. Each stop: caption, "
+        "fly (waits for arrival), framing tilt (street = ~150 m range + tilt, 'standing across the street'; "
+        "rooftop; district), optional continuous orbit, real wall-clock dwell. Ends stationary. Poll with "
+        "godseye_live_tour_status; stop with godseye_live_stop_tour.",
+        {"type": "object", "properties": {
+            "stops": {"type": "array", "minItems": 1, "maxItems": 24, "items": {"type": "object", "properties": {
+                "lat": {"type": "number", "minimum": -90, "maximum": 90},
+                "lon": {"type": "number", "minimum": -180, "maximum": 180},
+                "name": {"type": "string"}, "caption": {"type": "string", "maxLength": 160},
+                "rangeM": {"type": "number", "minimum": 100}}}},
+            "framing": {"type": "string", "enum": ["street", "rooftop", "district"], "default": "street"},
+            "rangeM": {"type": "number", "minimum": 100, "maximum": 20000000,
+                       "description": "Camera range per stop; default from framing (street 150, rooftop 450, district 2500). Minimum 100 m."},
+            "orbit": {"type": ["string", "null"], "enum": ["slow", "normal", "fast", None], "default": None},
+            "dwellMs": {"type": "integer", "minimum": 0, "maximum": 600000, "default": 20000},
+            "connect": {"type": ["string", "null"], "enum": ["route", None], "default": None,
+                        "description": "route = pin every stop and draw a route through them first."},
+            "preview": {"type": ["string", "null"], "description": "Reserved (preview-pane pairing); ignored for now."}},
+         "required": ["stops"]}, "🧭"),
+    "godseye_live_tour_status": (
+        "Status of a tour job: state, index, current stop, remaining, errors.",
+        {"type": "object", "properties": {"jobId": {"type": "string"}}, "required": ["jobId"]}, "🧭"),
+    "godseye_live_stop_tour": (
+        "Cancel a running tour (the given jobId, else the latest) and stop camera motion.",
+        {"type": "object", "properties": {"jobId": {"type": "string"}}}, "⏹️"),
     "godseye_live_panes": (
         "List open God's Eye View panes (id, bound chat sessions, seconds since last poll, busy). Tells "
         "'no pane open' apart from 'pane busy'.",
@@ -179,6 +226,22 @@ def extra_handler(name: str):
                 out = composer.share_link(session_id=sid)
             elif name == "godseye_live_panes":
                 out = composer.relay_status()
+            elif name == "godseye_live_list_annotations":
+                out = composer.scene_op("list", sid)
+            elif name == "godseye_live_delete_annotation":
+                out = composer.scene_op("delete", sid, id=str(args.get("id") or ""))
+            elif name == "godseye_live_restore_scene":
+                out = composer.scene_op("restore", sid)
+            elif name == "godseye_live_reload_pane":
+                out = composer.live_call("hermes_reload", {}, sid, fanout=bool(args.get("fanout")))
+            elif name == "godseye_rebuild_panel":
+                out = composer.rebuild_panel(sid)
+            elif name == "godseye_live_run_tour":
+                out = composer.tour_op("start", sid, args=args)
+            elif name == "godseye_live_tour_status":
+                out = composer.tour_op("status", sid, jobId=args.get("jobId"))
+            elif name == "godseye_live_stop_tour":
+                out = composer.tour_op("cancel", sid, jobId=args.get("jobId"))
             else:
                 action = args.pop("action", "go")
                 if action == "get":

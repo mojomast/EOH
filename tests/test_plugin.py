@@ -240,6 +240,7 @@ def test_relay_fanout_and_pane_list():
 def test_relay_reports_pane_busy(monkeypatch):
     from gev import live
     monkeypatch.setattr(live, "PICKUP_S", 0.2)
+    monkeypatch.setattr(live, "BUSY_WAIT_S", 0.3)
     r = live.Relay()
     r.next(wait=0, pane_id="A")
     r.panes["A"].queue.append({"id": 999, "name": "x", "args": {}})

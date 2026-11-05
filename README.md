@@ -50,6 +50,17 @@ A live 3D globe of public aircraft, ships, satellites, hazards and weather in a 
 <td><img src="docs/screenshots/hermes-chat-brief-san-diego.jpg" alt="hermes chat ran a military-awareness brief of San Diego on the globe"><br><sub><code>hermes chat</code>: "brief me on San Diego, focus on military activity" (military_awareness)</sub></td>
 </tr></table>
 
+### Client keys, scenes and tours (v0.2)
+
+Client keys (`CESIUM_ION_TOKEN`, `GOOGLE_MAPS_API_KEY`, `MAPILLARY_CLIENT_TOKEN`) are compiled into the pane's `dist/panel` bundle by `npm run build:panel`, so changing the env alone does nothing until the panel is rebuilt. Keep them in `~/.config/gods-eye-view.env` (override with `GODSEYE_ENV_FILE`, `chmod 600`). Then call `godseye_rebuild_panel`, which builds with that env and reloads open panes. `godseye_doctor` reports `PANEL_STALE` (env newer than the bundle), `KEY_MISSING` (key not set or not baked in) and `ION_SCOPES` (the token claims more than `assets:read`/`assets:list`; it ships to the browser, so it should be read-only). Key values are never printed.
+
+To rebuild automatically on service start, you can add this line to the app unit yourself (it is not installed for you):
+`ExecStartPre=/bin/sh -c 'set -a; . %h/.config/gods-eye-view.env; cd %h/gods-eye-view && npm run build:panel'`
+
+Scenes persist per chat session, and reopening the pane restores pins, routes, the camera and the caption. Tools: `godseye_live_list_annotations`, `godseye_live_delete_annotation`, `godseye_live_restore_scene`, `godseye_live_reload_pane`.
+
+Tours: `godseye_live_run_tour {stops:[{name,lat,lon}], framing:"street"|"rooftop"|"district", orbit:"slow"|null, dwellMs, connect:"route"}` returns a jobId right away. Check it with `godseye_live_tour_status` and cancel with `godseye_live_stop_tour`.
+
 ## Try it
 
 - "What am I looking at in God's Eye View?"

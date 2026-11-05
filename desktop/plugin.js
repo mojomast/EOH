@@ -36,23 +36,38 @@ export function newPaneId() {
 // Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
 // frame, and post the results back. Each pane polls with its own id and session ids.
 // Returns { onMessage, stop }.
-export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions() }) {
+export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null }) {
   let stopped = false
+  let fresh = true  // first poll of a new frame: the relay restores this session's scene
   const pending = new Map()
+  // Commands go to the frame only once its app is up: a message posted earlier would land in the
+  // iframe's initial about:blank document and be lost (seen as a stuck "pane busy").
+  let markReady
+  const frameReady = new Promise((r) => { markReady = r })
+  const pinger = setInterval(() => { try { frame()?.postMessage({ type: 'hermes-gev:ping' }, '*') } catch {} }, 2000)
+  frameReady.then(() => clearInterval(pinger))
   const nextPath = () => {
     const q = new URLSearchParams({ pane: paneId })
+    if (fresh) q.set('fresh', '1')
     const ids = sessions()
     if (ids.length) q.set('sessions', ids.join(','))
     return '/live/next?' + q
   }
   async function loop() {
+    await Promise.race([frameReady, new Promise((r) => setTimeout(r, 180000))])
     while (!stopped) {
       let cmd = null
-      try { cmd = (await ctx.rest(nextPath()))?.command } catch { await new Promise((r) => setTimeout(r, 3000)); continue }
+      try { cmd = (await ctx.rest(nextPath()))?.command; fresh = false } catch { await new Promise((r) => setTimeout(r, 3000)); continue }
       if (!cmd || stopped) continue
+      if (cmd.name === 'hermes_reload') {  // pane-level: re-fetch /panel and rebuild the frame
+        await ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId, payload: { ok: true, action: 'hermes_reload', pane: paneId } } }).catch(() => {})
+        stopped = true
+        onReload?.()
+        break
+      }
       const done = new Promise((resolve) => pending.set(cmd.id, resolve))
       frame()?.postMessage({ type: 'hermes-gev:run', id: cmd.id, name: cmd.name, args: cmd.args }, '*')
-      const payload = await Promise.race([done, new Promise((r) => setTimeout(() => r({ ok: false, error: 'pane timeout' }), 55000))])
+      const payload = await Promise.race([done, new Promise((r) => setTimeout(() => r({ ok: false, error: 'pane timeout' }), 150000))])
       pending.delete(cmd.id)
       ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId, payload } }).catch(() => {})
     }
@@ -62,11 +77,13 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
     paneId,
     onMessage(event) {
       const win = frame()
-      if (!win || event.source !== win || event.data?.type !== 'hermes-gev:result') return false
+      if (!win || event.source !== win) return false
+      if (event.data?.type === 'hermes-gev:ready') { markReady(); return true }
+      if (event.data?.type !== 'hermes-gev:result') return false
       pending.get(event.data.id)?.(event.data.payload)
       return true
     },
-    stop() { stopped = true }
+    stop() { stopped = true; clearInterval(pinger) }
   }
 }
 
@@ -84,6 +101,7 @@ export function glEvent(event, win) {
 
 // Panel documents survive pane remounts, so a remount never refetches or rebuilds the data: URL.
 const panelCache = new Map()
+export function clearPanelCache() { panelCache.clear() }
 export function loadPanel(ctx, fullUi) {
   const key = fullUi ? 'full' : 'globe'
   if (!panelCache.has(key)) {
@@ -165,6 +183,7 @@ function GlobePane({ ctx }) {
   const [homeView, setHomeView] = useState(undefined)
   const [gl, setGl] = useState(null)
   const [nonce, setNonce] = useState(0)
+  const [epoch, setEpoch] = useState(0)
   const ref = useRef(null)
   const paneIdRef = useRef(null)
   if (!paneIdRef.current) paneIdRef.current = newPaneId()
@@ -184,14 +203,16 @@ function GlobePane({ ctx }) {
     let live = true
     loadPanel(ctx, fullUi).then((u) => live && setSrc(u)).catch((e) => live && setErr(String(e?.message || e)))
     return () => { live = false }
-  }, [fullUi])
+  }, [fullUi, epoch])
 
   useEffect(() => {
     if (!src || homeView === undefined) return
     let lastWin = null  // refs are cleared before cleanup runs; keep the window to dispose it
     const frame = () => { const w = ref.current?.contentWindow; if (w) lastWin = w; return w || lastWin }
     const onMessage = createPanelHost({ ctx, frame, initialView: homeView || undefined, status: () => statusRef.current })
-    const live = createLiveRelay({ ctx, frame, paneId: paneIdRef.current })
+    // godseye_live_reload_pane / godseye_rebuild_panel: fetch a fresh panel, rebuild the frame.
+    const onReload = () => { disposeFrame(frame()); clearPanelCache(); setSrc(null); setEpoch((n) => n + 1); setNonce((n) => n + 1) }
+    const live = createLiveRelay({ ctx, frame, paneId: paneIdRef.current, onReload })
     const onGl = (e) => {
       const kind = glEvent(e, frame())
       if (kind) setGl(kind === 'restored' ? null : kind)

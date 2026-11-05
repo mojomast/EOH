@@ -324,6 +324,29 @@ def doctor() -> dict:
     age = min((x["lastPollAgeS"] for x in panes), default=None)
     add("pane connected", bool(panes), f"{len(panes)} open, last poll {age}s ago" if panes else "no pane polling",
         "Open the God's Eye View pane in Hermes Desktop or the Webapp and keep it visible.")
+    for c in panel_checks(started=service_started_at()):
+        checks.append({k: v for k, v in c.items() if k != "fix" or not c["ok"]})
+    if panes:
+        info = pane_scene_info()
+        r = info if info.get("action") == "hermes_scene_info" else (info.get("result") or {})
+        ms = r.get("mapStack") or {}
+        if ms:
+            photoreal = next((x for x in ms.get("stacks", []) if x["id"] == "photoreal"), None)
+            detail = f"active {ms.get('activeId')} ({ms.get('switchOrigin') or 'manual'})"
+            if ms.get("lastError"):
+                detail += f"; last fallback: {ms['lastError']}"
+            baked = any(c["check"] == "key CESIUM_ION_TOKEN" and c["ok"] for c in checks)
+            if photoreal is not None:
+                detail += "; photoreal " + ("available" if photoreal["available"] else
+                                            "unavailable: the baked Cesium ion token was refused (see last fallback)" if baked else
+                                            "unavailable: no Cesium ion token in this bundle")
+            add("map stack", not (photoreal is not None and not photoreal["available"]), detail,
+                ("The token is in the bundle but ion/Google refused it: check it is valid and can read asset 2275207 "
+                 "(Google Photorealistic 3D Tiles) at https://ion.cesium.com/tokens, then godseye_rebuild_panel.")
+                if baked else MAP_STACK_FIX)
+        sc = scene_op("list")
+        if sc.get("ok"):
+            add("scene", True, f"{len(sc['annotations'])} stored annotations; restored automatically on pane (re)open")
     add("public URL", True, "GODSEYE_PUBLIC_URL set" if config.public_url() != config.api_base()
         else "using the API base for links (set GODSEYE_PUBLIC_URL for links other devices can open)")
     return {"ok": all(c["ok"] for c in checks), "checks": checks, "panes": st.get("panes", [])}
@@ -332,7 +355,8 @@ def doctor() -> dict:
 def format_doctor(d: dict) -> str:
     lines = [("✅ " if d["ok"] else "⚠️ ") + "God's Eye View doctor"]
     for c in d["checks"]:
-        lines.append(f"{'✓' if c['ok'] else '✗'} {c['check']}: {c['detail']}" + (f"\n    fix: {c['fix']}" if c.get("fix") else ""))
+        code = f"[{c['code']}] " if c.get("code") else ""
+        lines.append(f"{'✓' if c['ok'] else '✗'} {code}{c['check']}: {c['detail']}" + (f"\n    fix: {c['fix']}" if c.get("fix") and not c["ok"] else ""))
     return "\n".join(lines)
 
 
@@ -426,3 +450,182 @@ def gev_command(raw: str, live=None, mcp=None) -> str:
     if cmd == "doctor":
         return format_doctor(doctor())
     return f"Unknown subcommand '{cmd}'. " + HELP
+
+
+# -- v0.2 P0: scene, tour, panel freshness ---------------------------------------------------------
+CLIENT_KEYS = {  # baked into dist/panel at build time (build/vite.js define)
+    "CESIUM_ION_TOKEN": "Cesium ion photorealistic 3D / terrain (map stack 'photoreal')",
+    "GOOGLE_MAPS_API_KEY": "Google basemaps, Places labels for the HUD",
+    "MAPILLARY_CLIENT_TOKEN": "Mapillary street-level imagery",
+}
+SAFE_ION_SCOPES = {"assets:read", "assets:list"}
+
+
+def relay_post(path: str, body: dict, timeout: float = 600) -> dict:
+    from . import live
+    return live.call(path, _token(), body, timeout)
+
+
+def scene_op(op: str, session_id: str | None = None, **extra) -> dict:
+    body = {"op": op, **({"session_id": str(session_id)} if session_id else {}), **extra}
+    return relay_post("/scene", body)
+
+
+def tour_op(op: str, session_id: str | None = None, **extra) -> dict:
+    body = {"op": op, **({"session_id": str(session_id)} if session_id else {}), **extra}
+    return relay_post("/tour", body, 30)
+
+
+def env_file() -> Path:
+    import os
+    raw = os.environ.get("GODSEYE_ENV_FILE", "")
+    return Path(raw).expanduser() if raw else Path.home() / ".config" / "gods-eye-view.env"
+
+
+def read_env(path: Path) -> dict:
+    out = {}
+    try:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip().removeprefix("export ").strip()
+            v = v.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+                v = v[1:-1]
+            out[k] = v
+    except OSError:
+        pass
+    return out
+
+
+def panel_bundle(root: Path | None = None) -> Path | None:
+    root = root or config.checkout()
+    if not root:
+        return None
+    files = sorted((root / "dist" / "panel" / "assets").glob("index-*.js"), key=lambda p: p.stat().st_mtime)
+    return files[-1] if files else None
+
+
+def ion_scopes(token: str) -> list[str] | None:
+    """Scopes claimed by a Cesium ion JWT, decoded locally (no network, never printed)."""
+    import base64
+    try:
+        payload = token.split(".")[1]
+        data = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except Exception:
+        return None
+    scopes = data.get("scopes", data.get("scope"))
+    if isinstance(scopes, str):
+        scopes = scopes.replace(",", " ").split()
+    return [str(s) for s in scopes] if isinstance(scopes, list) else None
+
+
+def service_started_at(unit: str = "gods-eye-view.service") -> float | None:
+    try:
+        out = subprocess.run(["systemctl", "--user", "show", "-p", "ActiveEnterTimestamp", "--value", unit],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        if not out or out == "n/a":
+            return None
+        from email.utils import parsedate_to_datetime  # noqa: F401 - format is "Thu 2026-11-05 09:53:27 EST"
+        import datetime as dt
+        parts = out.split()
+        stamp = dt.datetime.strptime(" ".join(parts[1:3]), "%Y-%m-%d %H:%M:%S")
+        return time.mktime(stamp.timetuple())
+    except Exception:
+        return None
+
+
+def panel_checks(root: Path | None = None, envf: Path | None = None, started: float | None = None) -> list[dict]:
+    """PANEL_STALE / KEY_MISSING / ION_SCOPES findings. Values are compared, never returned."""
+    root = root or config.checkout()
+    envf = envf or env_file()
+    out = []
+    fix_build = "Run godseye_rebuild_panel (or: set -a; . %s; set +a; cd %s && PATH=~/.local/node24/bin:$PATH npm run build:panel), then godseye_live_reload_pane." % (envf, root or "~/gods-eye-view")
+    bundle = panel_bundle(root)
+    if root is None:
+        return out
+    if bundle is None:
+        out.append({"check": "panel bundle", "ok": False, "code": "PANEL_MISSING", "detail": "dist/panel is not built", "fix": fix_build})
+        return out
+    text = bundle.read_text(errors="ignore")
+    file_env = read_env(envf)
+    repo_env = read_env(root / ".env")
+    bmt = bundle.stat().st_mtime
+    stale = []
+    if envf.is_file() and envf.stat().st_mtime > bmt:
+        stale.append(f"{envf} is newer than the panel bundle")
+    if started and started > bmt and envf.is_file() and envf.stat().st_mtime > bmt:
+        stale.append("the app service restarted with that env after the bundle was built")
+    out.append({"check": "panel freshness", "ok": not stale, **({"code": "PANEL_STALE"} if stale else {}),
+                "detail": "; ".join(stale) or f"bundle built after {envf.name if envf.is_file() else 'env'} changed",
+                "fix": fix_build})
+    for key, what in CLIENT_KEYS.items():
+        val = file_env.get(key) or repo_env.get(key) or ""
+        where = envf if key in file_env else (root / ".env" if key in repo_env else envf)
+        if not val:
+            ok = key != "CESIUM_ION_TOKEN"  # the one the photoreal stack hard-requires
+            out.append({"check": f"key {key}", "ok": ok, **({} if ok else {"code": "KEY_MISSING"}),
+                        "detail": f"not set in {where} ({what})",
+                        "fix": f"Add {key}=... to {where} (chmod 600), then run godseye_rebuild_panel."})
+            continue
+        baked = val in text
+        out.append({"check": f"key {key}", "ok": baked, **({} if baked else {"code": "KEY_MISSING"}),
+                    "detail": f"set in {where}; {'present in' if baked else 'NOT present in'} dist/panel bundle",
+                    "fix": f"{key} is baked into dist/panel at build time. " + fix_build})
+        if key == "CESIUM_ION_TOKEN":
+            scopes = ion_scopes(val)
+            extra = sorted(set(scopes or []) - SAFE_ION_SCOPES)
+            if extra:
+                out.append({"check": "Cesium ion token scopes", "ok": False, "code": "ION_SCOPES",
+                            "detail": f"token is shipped to the browser but claims {', '.join(extra)}",
+                            "fix": "Create a token limited to assets:read (and assets:list) at https://ion.cesium.com/tokens "
+                                   "and put that one in the env file; see https://cesium.com/learn/ion/cesium-ion-access-tokens/"})
+    return out
+
+
+def pane_scene_info(session_id: str | None = None) -> dict:
+    return live_call("hermes_scene_info", {}, session_id)
+
+
+def rebuild_panel(session_id: str | None = None, runner=None, reload=True) -> dict:
+    """npm run build:panel with the app's env file exported (Node 24), then reload open panes."""
+    import os
+    root, node = config.checkout(), config.node_bin()
+    if not root or not node:
+        return {"ok": False, "error": "God's Eye View checkout or Node 24 not found"}
+    env = dict(os.environ)
+    env.update({k: v for k, v in read_env(env_file()).items()})
+    env["PATH"] = str(Path(node).parent) + os.pathsep + env.get("PATH", "")
+    t0 = time.time()
+    run = runner or (lambda: subprocess.run(["npm", "run", "build:panel"], cwd=root, env=env, capture_output=True,
+                                            text=True, timeout=900))
+    try:
+        proc = run()
+    except Exception as exc:
+        return {"ok": False, "error": f"build failed to run: {type(exc).__name__}"}
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-8:])
+        for v in read_env(env_file()).values():  # never echo a key back
+            if len(v) >= 8:
+                tail = tail.replace(v, "***")
+        return {"ok": False, "error": "build:panel failed", "log": tail[-1500:]}
+    out = {"ok": True, "builtS": round(time.time() - t0, 1),
+           "checks": [{k: c[k] for k in ("check", "ok", "code", "detail") if k in c} for c in panel_checks(root)]}
+    if reload:
+        out["reload"] = live_call("hermes_reload", {}, session_id, fanout=True)
+    return out
+
+
+MAP_STACK_FIX = ("Client keys are compiled into the pane's dist/panel bundle. Put CESIUM_ION_TOKEN in "
+                 "~/.config/gods-eye-view.env (or GODSEYE_ENV_FILE), then call godseye_rebuild_panel: it rebuilds "
+                 "the panel with that env and reloads the open pane. godseye_doctor shows KEY_MISSING/PANEL_STALE.")
+
+
+def remediate_map_stack(out: dict) -> dict:
+    res = out.get("result") if isinstance(out.get("result"), dict) else out
+    err = str((res or {}).get("error") or out.get("error") or "")
+    if not (res or {}).get("ok", out.get("ok")) and re.search(r"token|key|ion", err, re.I):
+        out = {**out, "remediation": MAP_STACK_FIX}
+    return out
