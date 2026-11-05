@@ -59,14 +59,41 @@ GLOBE_PANEL_URI = "ui://gods-eye-view/globe"
 PANEL_TOOLS = {"panel_request", "show_in_gods_eye_view"}
 
 
+def _panel_config(perf: str | None):
+    """Rewrite config.json and build the gev:config body. Field names only in the loggable parts."""
+    from gev import config, runtime_config
+    from gev.composer import env_file
+    written = runtime_config.write_checkout()
+    mode = runtime_config.perf_mode(perf)
+    root = config.checkout()
+    overlay = runtime_config.overlay_from_env(runtime_config.merged_env(root, env_file())) if root else {}
+    return {
+        "configMessage": runtime_config.config_message(overlay, mode),
+        "configFields": written.get("fields") or [],
+        "configRev": runtime_config.revision(overlay, mode),
+        "_overlay": overlay,
+        "_mode": mode,
+    }
+
+
 @router.get("/panel")
-async def panel(fullUi: bool = True):
+async def panel(fullUi: bool = True, perf: str | None = None, configOnly: bool = False):
     import asyncio
     from gev import panel_inject
-    result = await asyncio.to_thread(mcp_client.client().read_resource, GLOBE_PANEL_URI)
-    item = (result or {}).get("contents", [{}])[0]
-    html = item.get("text", "")
-    return {"html": panel_inject.prepare(html, full_ui=fullUi) if html else "", "mimeType": item.get("mimeType")}
+
+    def _build():
+        meta = _panel_config(perf)
+        public = {"configMessage": meta["configMessage"], "configFields": meta["configFields"],
+                  "configRev": meta["configRev"]}
+        if configOnly:
+            return public
+        result = mcp_client.client().read_resource(GLOBE_PANEL_URI)
+        item = (result or {}).get("contents", [{}])[0]
+        html = item.get("text", "")
+        prepared = panel_inject.prepare(html, full_ui=fullUi, perf=meta["_mode"], config=meta["_overlay"]) if html else ""
+        return {"html": prepared, "mimeType": item.get("mimeType"), **public}
+
+    return await asyncio.to_thread(_build)
 
 
 @router.post("/tool")
@@ -140,3 +167,11 @@ async def live_drawer(body: dict):
     import asyncio
     from gev import live
     return await asyncio.to_thread(live.call, "/drawer", bridge.ensure_token(), body, 15)
+
+
+@router.post("/live/state")
+async def live_state(body: dict):
+    """Pane heartbeat: compact map snapshot for the per-turn line. No secrets."""
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/state", bridge.ensure_token(), body or {}, 5)

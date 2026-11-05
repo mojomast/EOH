@@ -281,6 +281,57 @@
   // only on GC, so a pane that remounts leaks contexts until Cesium can no longer create one.
   // Release ours explicitly when the frame goes away, and report loss instead of dying silently.
   const tell = (type, detail) => { try { window.parent.postMessage({ type, detail }, '*') } catch {} }
+  // Compact facts for the per-turn map line. The host posts this to the relay; it is not a tool call.
+  const mapSnapshot = () => {
+    const p = pose()
+    const g = window.__godsEyeView || {}
+    let layers
+    try {
+      const snap = g.layerSnapshot?.getAll?.() || g.dataLayers?.getAll?.() || g.layers?.getAll?.() || null
+      if (Array.isArray(snap)) {
+        layers = snap.filter((x) => x && x.enabled !== false && x.visible !== false)
+          .map((x) => x.id || x.layerId).filter((id) => typeof id === 'string' && id.length < 33).slice(0, 12)
+      }
+    } catch {}
+    let pins = null, drawer = null, pinsRead = false
+    try {
+      const st = window.__hermesPins?.state?.()
+      if (st && Array.isArray(st.pins)) {
+        pinsRead = true
+        pins = st.pins.length
+        const open = st.open ? st.pins.find((pin) => pin.id === st.open) : null
+        drawer = open ? String(open.label || 'open').slice(0, 40) : null
+      }
+    } catch {}
+    const out = {
+      lat: p && typeof p.targetLat === 'number' ? p.targetLat : null,
+      lon: p && typeof p.targetLon === 'number' ? p.targetLon : null,
+      rangeM: p && typeof p.rangeM === 'number' ? p.rangeM : null,
+      pitch: p && typeof p.pitchDeg === 'number' ? p.pitchDeg : null,
+      heading: p && typeof p.headingDeg === 'number' ? p.headingDeg : null
+    }
+    // Omit fields the frame could not read so a heartbeat does not wipe the relay cache.
+    if (Array.isArray(layers)) out.layers = layers
+    if (pinsRead) { out.pins = pins; out.drawer = drawer }
+    return out
+  }
+  // Fork embed protocol. New builds handle gev:visibility and gev:config and reply
+  // with gev:visibility-applied / gev:config-applied. An inline panel replies to its
+  // own window, so those replies are forwarded to the parent. Older builds expose
+  // setHostVisible / applyHostConfig; call them when present. This file has no key values.
+  const legacyCall = (name, arg) => {
+    const fn = window.__godsEyeView?.[name]
+    if (typeof fn !== 'function') return false
+    try { fn(arg); return true } catch { return false }
+  }
+  const forwardReply = (msg) => {
+    const out = { type: msg.type }
+    if (typeof msg.visible === 'boolean') out.visible = msg.visible
+    if (typeof msg.ok === 'boolean') out.ok = msg.ok
+    if (msg.perf === 'embed' || msg.perf === 'custom' || msg.perf === null) out.perf = msg.perf
+    if (msg.error === 'already-applied') out.error = msg.error
+    try { window.parent.postMessage(out, '*') } catch {}
+  }
   let disposed = false
   const dispose = () => {
     if (disposed) return
@@ -306,7 +357,29 @@
   addEventListener('message', async (event) => {
     const m = event.data
     if (event.source === window.parent && m?.type === 'hermes-gev:dispose') return dispose()
-    if (event.source === window.parent && m?.type === 'hermes-gev:ping') return isReady && tell('hermes-gev:ready')
+    if (event.source === window && (m?.type === 'gev:visibility-applied' || m?.type === 'gev:config-applied')) {
+      return void forwardReply(m)
+    }
+    if (event.source === window.parent && m?.type === 'gev:visibility') {
+      legacyCall('setHostVisible', !!m.visible)
+      return
+    }
+    if (event.source === window.parent && m?.type === 'gev:config') {
+      const nested = m.config && typeof m.config === 'object' ? m.config : {}
+      const cfg = {}
+      for (const key of ['googleMapsApiKey', 'cesiumIonToken', 'photonUrl', 'mapillaryToken', 'perf']) {
+        if (typeof nested[key] === 'string') cfg[key] = nested[key]
+        if (typeof m[key] === 'string') cfg[key] = m[key]
+      }
+      if (Object.keys(cfg).length) legacyCall('applyHostConfig', cfg)
+      return
+    }
+    if (event.source === window.parent && m?.type === 'hermes-gev:ping') {
+      if (!isReady) return
+      tell('hermes-gev:ready')
+      tell('hermes-gev:state', mapSnapshot())
+      return
+    }
     if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
     let payload
     try {

@@ -27,10 +27,25 @@ of tools:
    infrastructure. Never search for a named person, recognise faces, or track or locate an
    individual, even if they are "on" an aircraft or ship. Decline and offer the public-data view.
 2. **Data first, then show.** Answer from a data tool (or `godseye_situation_brief` /
-   `godseye_military_awareness`), then optionally show it live. Do not describe the screen
-   without reading it: call `godseye_live_get_current_view_state` first.
+   `godseye_military_awareness`), then optionally show it live. Orient from the `EOH pane=...`
+   line already in the turn (connected or busy, camera, layers, pins, drawer). Call
+   `godseye_live_get_current_view_state` only when that line is missing or you need `detail=full`.
+   A hidden pane is paused with `{type:'gev:visibility'}`. Client keys are in `dist/panel/config.json`
+   (rewritten when the pane is served). `?perf=embed` is the default viewer profile. Do not print key values.
 3. **Check results are capped.** Read `total` and `truncated` before saying "there is nothing".
 4. **Sections can be unavailable** (e.g. fires need a FIRMS key). Say so instead of guessing.
+
+## Tokens and errors
+
+- Large tools default to `detail: "concise"` (ids and counts, no screenshots). Pass
+  `detail: "full"` when you need coordinates, rows, geometry or an image
+  (`get_cctv_snapshot`, `get_weather_map`, `get_recent_imagery`). The same default covers
+  live context, measure, isochrone, compare, draw, research pins, investigation list/load/report,
+  pin filters and watch list/create. A short distance, area, contour summary or open/closed
+  state stays in concise; route lines, polygons, long catalogs and screenshots do not.
+- A failed call includes `code`, `message` and `fix`. Do what `fix` says (open the pane,
+  wait and retry once, rebuild the panel, switch to `godseye_find_places`, pass `confirm=true`
+  only after the user agrees) instead of guessing a new argument.
 
 ## The pane
 
@@ -45,7 +60,8 @@ of tools:
 
 - Pins from `godseye_find_places` carry `tags`. Use `godseye_live_filter_pins` to narrow them, e.g. `{categories:["ramen"], open_now:true}`. Read `action:"state"` before you claim something is open. `open:null` means the hours are unknown, so say that rather than guessing. `{clear:true}` resets the filters.
 - Create a watch (`godseye_watch_create`) only when the user asks to watch an area. Report any `key_missing` or `KEY_MISSING` feed plainly. Never delete a watch without asking; `godseye_watch_delete` needs `confirm:true`.
-- When the turn context has "[EOH watch alert]" lines, tell the user about them briefly. The new items are already pinned.
+- When the turn context has "[EOH watch alert]" lines, tell the user about them briefly. The new items are already pinned. Those lines arrive in the same turn as the `EOH pane=` map line.
+
 ## "This", "here", measure, reach, compare
 
 - Deixis = context first. Whenever the user says **this, here, around here, that building, what
@@ -80,7 +96,8 @@ of tools:
 `military_awareness`, pins the nearest contacts in red).
 
 **"What am I looking at?"**
-`godseye_live_get_current_view_state`, then `godseye_live_analyst_query` for counts if needed.
+Read the `EOH pane=` line. Call `godseye_live_analyst_query` for counts if needed. Use
+`godseye_live_get_current_view_state` with `detail: "full"` only when the line is missing.
 
 **"Night-vision view of the Strait of Hormuz with ships."**
 `godseye_live_fly_to_location {query: "Strait of Hormuz", waitForArrival: true}` →
