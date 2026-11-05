@@ -562,6 +562,18 @@ EXTRA_TOOLS = {
             "name": {"type": "string", "description": "Saved investigation name; omit to export the live scene."},
             "share": {"type": "boolean", "default": False, "description": "Also call godseye_share_link."},
             "capture": {"type": "boolean", "default": True, "description": "Try pane canvas screenshot."}}}, "📄"),
+    "godseye_investigation_export": (
+        "Export a saved investigation, or the current scene if name is omitted, as GeoJSON (RFC 7946, longitude then "
+        "latitude) and KML. Pins are Points with their drawer and enrichment properties; drawings and areas are "
+        "Polygons or LineStrings; routes are LineStrings. format=pack also writes a zip of the GeoJSON, the KML, the "
+        "Markdown report and any saved screenshots. Files are written under plugin-data/godseye/exports/. Returns "
+        "paths and a short summary. Google photoreal tile imagery is not embedded (those terms allow viewing only). "
+        "Property values are the investigation's own data.",
+        {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Saved investigation name. Omit to export the current scene."},
+            "format": {"type": "string", "enum": ["geojson", "kml", "both", "pack"], "default": "both",
+                       "description": "both writes GeoJSON and KML. pack adds a zip with the report and saved screenshots."}}},
+        "📤"),
 }
 
 
@@ -645,6 +657,8 @@ def extra_handler(name: str):
                 out = composer.investigation_op("delete", sid, args=args)
             elif name == "godseye_investigation_report":
                 out = composer.investigation_op("report", sid, args=args)
+            elif name == "godseye_investigation_export":
+                out = composer.investigation_op("export", sid, args=args)
             else:
                 action = args.pop("action", "go")
                 if action == "get":
@@ -724,8 +738,8 @@ def register_extras(ctx) -> dict:
     if hasattr(ctx, "register_command"):
         try:
             ctx.register_command("gev", composer.gev_command,
-                                 description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor, research, save, list, load, delete, report",
-                                 args_hint="<fly|layers|status|brief|home|share|doctor|research|save|list|load|delete|report> [args]")
+                                 description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor, research, save, list, load, delete, report, export",
+                                 args_hint="<fly|layers|status|brief|home|share|doctor|research|save|list|load|delete|report|export> [args]")
             done["command"] = True
         except Exception:
             pass

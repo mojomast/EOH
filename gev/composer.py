@@ -466,7 +466,7 @@ def format_doctor(d: dict) -> str:
 HELP = ("/gev fly <place> · /gev layers [on|off <names>] · /gev status · /gev brief <place> · "
         "/gev home [set] · /gev share · /gev doctor · /gev research [light|full] · "
         "/gev save <name> · /gev list · /gev load <name> · /gev delete <name> --confirm · "
-        "/gev report [name]")
+        "/gev report [name] · /gev export [name] [geojson|kml|both|pack]")
 
 
 def _msg(res: dict, ok: str) -> str:
@@ -600,6 +600,23 @@ def gev_command(raw: str, live=None, mcp=None) -> str:
         if not out.get("ok"):
             return f"⚠️ {out.get('message') or out.get('error')}"
         return f"📄 Report:\n  HTML: {out['html']}\n  Markdown: {out['markdown']}"
+    if cmd == "export":
+        fmt = "both"
+        parts = list(rest)
+        if parts and parts[-1].lower() in ("geojson", "kml", "both", "pack"):
+            fmt = parts[-1].lower()
+            parts = parts[:-1]
+        eargs = {"format": fmt}
+        if parts:
+            eargs["name"] = " ".join(parts)
+        out = investigation_op("export", None, args=eargs)
+        if not out.get("ok"):
+            return f"⚠️ {out.get('message') or out.get('error')}"
+        lines = [f"📤 {out.get('summary')}"]
+        for key in ("geojson", "kml", "markdown", "pack"):
+            if out.get(key):
+                lines.append(f"  {key}: {out[key]}")
+        return "\n".join(lines)
     return f"Unknown subcommand '{cmd}'. " + HELP
 
 
@@ -970,6 +987,11 @@ def investigation_op(op: str, session_id: str | None = None, args: dict | None =
                 args.get("name"),
                 scene_store=None if args.get("name") else scenes,
                 session_key=key, screenshot_data_url=shot, screenshot_note=note, share=share)
+        if op == "export":
+            from . import geoexport
+            return geoexport.export_investigation(
+                args.get("name") or None, scene_store=scenes, session_key=key,
+                fmt=str(args.get("format") or "both"), notes=args.get("notes"))
         return {"ok": False, "error": "bad op"}
     except ValueError as exc:
         return {"ok": False, "error": "bad_args", "message": str(exc)}
