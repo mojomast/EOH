@@ -69,6 +69,7 @@ SYSTEM_PROMPT = (
     "If a live tool reports no pane, tell the user to open the Eye Of Hermes (EOH) pane. Feeds work without it. "
     "CCTV and ALPR are public or mapped cameras, not a way to identify a person. "
     "godseye_query op=brief_and_show briefs a place and shows it. godseye_admin op=doctor checks setup. "
+    "godseye_admin op=status reads the control room. op=app_start, app_stop, and app_restart change the app only when called. "
     + policy.POLICY)
 
 
@@ -281,6 +282,24 @@ EXTRA_TOOLS = {
         "and panel bundle (values never printed), active map stack, layer feed states from "
         "feedProvenance, and annotation count. Every failed check includes fix text. Read-only.",
         {"type": "object", "properties": {}}, "🩺"),
+    "godseye_control_status": (
+        "Control room status: God's Eye View app, live relay, HUD bridge, panes and last heartbeat, "
+        "WebGL recovery, and public-feed fetch state. Missing optional keys are names only. Read-only. "
+        "Does not start or stop the app.",
+        {"type": "object", "properties": {}}, "🛠️"),
+    "godseye_app_start": (
+        "Start the God's Eye View app. User-triggered. On Linux, uses the gods-eye-view.service user unit "
+        "when that unit is installed, otherwise a plugin-managed Node process. Waits for HTTP 200. "
+        "Refuses when the port belongs to another process. Unsupported on macOS and Windows.",
+        {"type": "object", "properties": {}}, "▶️"),
+    "godseye_app_stop": (
+        "Stop the God's Eye View app. User-triggered. A plugin-managed process is signaled only when the "
+        "Node executable, the checkout path, and the listen port all match. Never kills an unrelated process.",
+        {"type": "object", "properties": {}}, "⏹️"),
+    "godseye_app_restart": (
+        "Restart the God's Eye View app. User-triggered. Same ownership rules as stop, then waits for HTTP 200. "
+        "An open socket is not treated as ready.",
+        {"type": "object", "properties": {}}, "🔁"),
     "godseye_share_link": (
         "A God's Eye View share link for the current live view (camera, style, layers), on the user's "
         "public God's Eye View URL. Needs the pane open.",
@@ -620,6 +639,18 @@ def extra_handler(name: str):
                 out = composer.brief_and_show(args, session_id=sid)
             elif name == "godseye_doctor":
                 out = composer.doctor()
+            elif name == "godseye_control_status":
+                from . import control_room
+                out = control_room.status()
+            elif name == "godseye_app_start":
+                from . import control_room
+                out = control_room.app_action("start")
+            elif name == "godseye_app_stop":
+                from . import control_room
+                out = control_room.app_action("stop")
+            elif name == "godseye_app_restart":
+                from . import control_room
+                out = control_room.app_action("restart")
             elif name == "godseye_share_link":
                 out = composer.share_link(session_id=sid)
             elif name == "godseye_find_places":

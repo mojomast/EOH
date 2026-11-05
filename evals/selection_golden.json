@@ -1977,6 +1977,70 @@
           ]
         }
       }
+    },
+    {
+      "id": "control-status",
+      "task": "show the control room",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "status",
+        "arguments": {
+          "op": "status"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "app-start",
+      "task": "start the globe app",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "app_start",
+        "arguments": {
+          "op": "app_start"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "app-stop",
+      "task": "stop the globe app",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "app_stop",
+        "arguments": {
+          "op": "app_stop"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
+      "id": "app-restart",
+      "task": "restart the globe app",
+      "expect": {
+        "tool": "godseye_admin",
+        "op": "app_restart",
+        "arguments": {
+          "op": "app_restart"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
     }
   ]
 }

@@ -281,6 +281,10 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_admin", "rebuild"): {},
         ("godseye_admin", "reload"): {},
         ("godseye_admin", "preview"): {"url": "https://example.com"},
+        ("godseye_admin", "status"): {},
+        ("godseye_admin", "app_start"): {},
+        ("godseye_admin", "app_stop"): {},
+        ("godseye_admin", "app_restart"): {},
     })
     for target in router.CATALOG:
         args = dict(samples[(target.composable, target.op)])
@@ -479,7 +483,7 @@ def test_measure_schemas_shrinks_the_catalog():
     import measure_schemas
     report = measure_schemas.measure()
     assert report["after"]["tools"] == 11
-    assert report["baseline"]["tools"] == 83
+    assert report["baseline"]["tools"] == 87
     assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert report["after"]["bytes"] < report["baseline"]["bytes"]
     assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]

@@ -26,7 +26,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 | `godseye_scene` | `save`, `list`, `load`, `delete`, `report`, `export`, `restore`, `tour`, `tour_status`, `tour_stop`, `playback` |
 | `godseye_watch` | `create`, `list`, `pause`, `delete` |
 | `godseye_capture` | `hud`, `summary` |
-| `godseye_admin` | `doctor`, `rebuild`, `reload`, `preview` |
+| `godseye_admin` | `doctor`, `rebuild`, `reload`, `preview`, `status`, `app_start`, `app_stop`, `app_restart` |
 
 `op=fly` accepts `style`. `nvg`, `night`, `night vision`, and `night-vision` mean `surveillance`. `flir`, `ir`, and `infrared` mean `thermal`. After a successful fly the router calls the existing `set_visual_style` handler. A failed fly does not change the style. `godseye_layers` `op=style` is the same handler. The same aliases are accepted there.
 
@@ -163,3 +163,7 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_rebuild_panel` | `godseye_admin` | `rebuild` | B | rebuild dist/panel |
 | `godseye_live_reload_pane` | `godseye_admin` | `reload` | B | reload the open pane |
 | `godseye_preview_swap` | `godseye_admin` | `preview` | B | single desktop preview tab |
+| `godseye_control_status` | `godseye_admin` | `status` | B | control room; read-only |
+| `godseye_app_start` | `godseye_admin` | `app_start` | B | start the app; user-triggered |
+| `godseye_app_stop` | `godseye_admin` | `app_stop` | B | stop the app after ownership checks |
+| `godseye_app_restart` | `godseye_admin` | `app_restart` | B | restart the app; refuses a foreign port |

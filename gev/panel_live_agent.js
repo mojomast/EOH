@@ -43,6 +43,31 @@
     } catch {}
     return out
   }
+  // Last fetch on a layer object, when the app exposes one. No payloads, no key values.
+  const layerFetch = (layer) => {
+    const raw = layer && (layer.lastFetch || layer.fetch) || null
+    const at = layer?.fetchedAt || layer?.lastFetchedAt || raw?.at || raw?.fetchedAt
+    let ageS = null
+    if (typeof raw?.ageS === 'number' && Number.isFinite(raw.ageS) && raw.ageS >= 0) ageS = Math.round(raw.ageS)
+    else if (typeof raw?.ageMs === 'number' && Number.isFinite(raw.ageMs) && raw.ageMs >= 0) ageS = Math.round(raw.ageMs / 1000)
+    else if (typeof at === 'number' && Number.isFinite(at)) {
+      const ms = at > 1e12 ? at : at * 1000
+      ageS = Math.max(0, Math.round((Date.now() - ms) / 1000))
+    }
+    let ok = null
+    if (typeof raw?.ok === 'boolean') ok = raw.ok
+    else if (layer?.error || layer?.lastError) ok = false
+    else if (layer?.feedState === 'unavailable') ok = false
+    else if (layer?.feedState === 'nominal' || layer?.feedState === 'partial') ok = true
+    const out = {}
+    if (ok === true || ok === false) out.ok = ok
+    if (ageS != null) out.ageS = ageS
+    if (ok === false) {
+      const msg = raw?.error || layer?.error || layer?.lastError
+      if (typeof msg === 'string' && msg) out.error = msg.slice(0, 160)
+    }
+    return Object.keys(out).length ? out : null
+  }
   // Read-only facts for the doctor: active map stack and why it fell back, annotation count, pose.
   const sceneInfo = () => {
     const g = window.__godsEyeView || {}
@@ -58,11 +83,16 @@
     let feedProvenance = null
     try {
       const snap = g.layerSnapshot?.getAll?.() || g.dataLayers?.getAll?.() || g.layers?.getAll?.() || null
-      const layers = Array.isArray(snap) ? snap.map((x) => ({
-        id: x.id || x.layerId, name: x.name || x.label || x.id,
-        feedState: x.feedState || x.state || (x.enabled === false ? 'off' : null),
-        source: x.source || x.provider || undefined
-      })).filter((x) => x.id || x.name) : []
+      const layers = Array.isArray(snap) ? snap.map((x) => {
+        const row = {
+          id: x.id || x.layerId, name: x.name || x.label || x.id,
+          feedState: x.feedState || x.state || (x.enabled === false ? 'off' : null),
+          source: x.source || x.provider || undefined
+        }
+        const fetch = layerFetch(x)
+        if (fetch) row.lastFetch = fetch
+        return row
+      }).filter((x) => x.id || x.name) : []
       if (layers.length) {
         const rank = { unavailable: 0, loading: 1, degraded: 2, stale: 3, fallback: 4, partial: 5, nominal: 6, off: 7 }
         const active = layers.filter((l) => l.feedState && l.feedState !== 'off')
@@ -74,7 +104,23 @@
         feedProvenance = { overall: overall || (layers.length ? 'off' : null), layers }
       }
     } catch {}
-    return { ok: true, action: 'hermes_scene_info', ready: Boolean(g.viewer), mapStack: stack, annotations, camera: pose(), feedProvenance }
+    let webgl = 'unknown'
+    try {
+      const gl = g.viewer?.scene?.context?._gl
+      if (gl) webgl = (typeof gl.isContextLost === 'function' && gl.isContextLost()) ? 'lost' : 'ok'
+    } catch {}
+    const flag = window.__HERMES_GL_RECOVER
+    let recover = true
+    if (!(flag === undefined || flag === null || flag === '')) {
+      recover = typeof flag === 'boolean' ? flag : !['0', 'false', 'off', 'no'].includes(String(flag).trim().toLowerCase())
+    }
+    const rendering = {
+      webgl,
+      contextLosses: Number.isFinite(window.__hermesGlLosses) ? window.__hermesGlLosses : 0,
+      recover,
+      recreateViewer: typeof g.recreateViewer === 'function'
+    }
+    return { ok: true, action: 'hermes_scene_info', ready: Boolean(g.viewer), mapStack: stack, annotations, camera: pose(), feedProvenance, rendering }
   }
   // Exact framing: orbit the look-at point to an explicit pitch/heading/range (no eased nudge).
   const frame = (args) => {
@@ -435,6 +481,7 @@
     try { g.viewer = next } catch {}
     return next
   }
+  const noteLoss = () => { window.__hermesGlLosses = (Number(window.__hermesGlLosses) || 0) + 1 }
   const GL = window.__hermesGlRecover
   let glCtl = null
   if (GL && typeof GL.attach === 'function') {
@@ -494,6 +541,7 @@
     // including on intentional teardown (loseContext, then destroy).
     e.preventDefault()
     if (disposed) return
+    noteLoss()
     if (glCtl) glCtl.onContextLost(e)
     else tell('hermes-gev:gl-lost')
   }, true)

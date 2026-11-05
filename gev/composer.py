@@ -387,6 +387,7 @@ def doctor() -> dict:
     add("live relay", relay_ok, "running" if relay_ok else (st.get("message") or "not running"),
         "Restart the Hermes dashboard/gateway with the godseye plugin enabled (the relay runs in its backend).")
     panes = [x for x in st.get("panes", []) if x.get("open")]
+    scene_payload: dict = {}
     age = min((x["lastPollAgeS"] for x in panes), default=None)
     add("pane connected", bool(panes), f"{len(panes)} open, last poll {age}s ago" if panes else "no pane polling",
         "Open the Eye Of Hermes (EOH) pane in Hermes Desktop or the Webapp and keep it visible.")
@@ -400,6 +401,7 @@ def doctor() -> dict:
         r = info if info.get("action") == "hermes_scene_info" else (info.get("result") or info)
         if not isinstance(r, dict):
             r = {}
+        scene_payload = r
         ms = r.get("mapStack") or {}
         if ms:
             photoreal = next((x for x in ms.get("stacks", []) if x["id"] == "photoreal"), None)
@@ -451,7 +453,8 @@ def doctor() -> dict:
             "a lost context shows the click-to-reload card."
         )
     add("webgl recover", True, gl_detail)
-    return {"ok": all(c["ok"] for c in checks), "checks": checks, "panes": st.get("panes", [])}
+    return {"ok": all(c["ok"] for c in checks), "checks": checks, "panes": st.get("panes", []),
+            "signals": control_signals(scene_payload)}
 
 
 def format_doctor(d: dict) -> str:
@@ -737,6 +740,66 @@ def provider_key_checks(envf: Path | None = None) -> list[dict]:
                     "detail": (f"set in {where} ({what})" if ok else f"not set in {where} ({what})"),
                     "fix": f"Add {key}=... to {where} (chmod 600) and restart the God's Eye View app/service."})
     return out
+
+
+_SECRET_TEXT = re.compile(
+    r"(?i)(?:api[_-]?key|map[_-]?key|token|secret|password)\s*[=:]\s*\S+"
+    r"|AIza[0-9A-Za-z\-_]{8,}|eyJ[A-Za-z0-9_\-]{8,}|sk-[A-Za-z0-9]{8,}"
+)
+
+
+def scrub_text(text: str) -> str:
+    """Drop credential-shaped substrings. Key names without a value stay."""
+    return _SECRET_TEXT.sub("[redacted]", str(text))
+
+
+def control_signals(scene: dict | None) -> dict:
+    """Compact rendering and per-feed fetch facts from a pane scene. No secrets.
+
+    Doctor already fetched this payload for its checks. The control room reads
+    these fields instead of issuing a second live command.
+    """
+    src = scene if isinstance(scene, dict) else {}
+    rendering = src.get("rendering") if isinstance(src.get("rendering"), dict) else {}
+    webgl = rendering.get("webgl")
+    if webgl not in ("ok", "lost", "unknown"):
+        webgl = "unknown"
+    losses = rendering.get("contextLosses")
+    if isinstance(losses, bool) or not isinstance(losses, (int, float)) or losses < 0:
+        losses = None
+    else:
+        losses = int(losses)
+    recover = rendering.get("recover") if isinstance(rendering.get("recover"), bool) else None
+    hook = rendering.get("recreateViewer") if isinstance(rendering.get("recreateViewer"), bool) else None
+    fp = src.get("feedProvenance") if isinstance(src.get("feedProvenance"), dict) else {}
+    layers = []
+    for layer in fp.get("layers") or []:
+        if not isinstance(layer, dict):
+            continue
+        item = {
+            "id": str(layer.get("id") or layer.get("name") or "")[:40],
+            "feedState": (str(layer.get("feedState") or layer.get("state") or "")[:24] or None),
+        }
+        fetch = layer.get("lastFetch") if isinstance(layer.get("lastFetch"), dict) else None
+        if fetch:
+            safe = {}
+            if isinstance(fetch.get("ok"), bool):
+                safe["ok"] = fetch["ok"]
+            age = fetch.get("ageS")
+            if isinstance(age, (int, float)) and not isinstance(age, bool) and 0 <= age < 10 ** 9:
+                safe["ageS"] = int(age)
+            err = fetch.get("error")
+            if isinstance(err, str) and err:
+                safe["error"] = scrub_text(err)[:160]
+            if safe:
+                item["lastFetch"] = safe
+        if item["id"]:
+            layers.append(item)
+    overall = fp.get("overall") if isinstance(fp.get("overall"), str) else None
+    return {
+        "rendering": {"webgl": webgl, "contextLosses": losses, "recover": recover, "recreateViewer": hook},
+        "feedProvenance": {"overall": overall[:24] if isinstance(overall, str) else None, "layers": layers},
+    }
 
 
 def feed_state_checks(scene_or_view: dict | None) -> list[dict]:

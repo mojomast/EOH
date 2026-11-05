@@ -56,6 +56,8 @@ class Pane:
         self.restored: str | None = None
         self.label: str | None = None
         self.snapshot: dict = {}  # last compact map state (heartbeat or a view-state result)
+        self.last_heartbeat = 0.0
+        self.context_losses = 0
 
     def fresh(self, now: float) -> bool:
         if self.polling or now - self.last_poll < PANE_STALE_S:
@@ -69,6 +71,10 @@ class Pane:
                "open": self.fresh(now)}
         if self.label:
             out["label"] = self.label
+        if self.context_losses:
+            out["contextLosses"] = self.context_losses
+        if self.last_heartbeat:
+            out["lastHeartbeatAgeS"] = round(max(0.0, now - self.last_heartbeat), 1)
         return out
 
 
@@ -124,6 +130,7 @@ class Relay:
             pending = self.pending_snaps.pop(pane.id, None)
             if pending:
                 pane.snapshot = {**(getattr(pane, "snapshot", None) or {}), **pending}
+                pane.last_heartbeat = time.monotonic()
             if fresh:  # a new or reloaded frame: bring its scene back before anything else
                 key = self.scenes.pick(sorted(pane.sessions))
                 if key:
@@ -351,6 +358,7 @@ class Relay:
                 self.pending_snaps[pid] = {**self.pending_snaps.get(pid, {}), **clean}
                 return {"ok": True, "pending": True}
             pane.snapshot = {**(pane.snapshot or {}), **clean}
+            pane.last_heartbeat = time.monotonic()
             return {"ok": True}
 
     def map_line(self, session_id: str | None = None) -> str:
@@ -434,6 +442,8 @@ class Relay:
         key = self._scene_key_for_gl(pane, body)
         keys = self._notice_keys(pane, body, key)
         with self.cond:
+            if event == "lost" and pane is not None:
+                pane.context_losses = int(getattr(pane, "context_losses", 0)) + 1
             for sid in keys:
                 bucket = self.gl_notices.setdefault(sid, [])
                 bucket.append(notice)

@@ -218,6 +218,10 @@ CATALOG: tuple[Target, ...] = (
     _t("godseye_rebuild_panel", "godseye_admin", "rebuild", "extra", "B", "rebuild dist/panel"),
     _t("godseye_live_reload_pane", "godseye_admin", "reload", "extra", "B", "reload the open pane"),
     _t("godseye_preview_swap", "godseye_admin", "preview", "extra", "B", "single desktop preview tab"),
+    _t("godseye_control_status", "godseye_admin", "status", "extra", "B", "control room; read-only"),
+    _t("godseye_app_start", "godseye_admin", "app_start", "extra", "B", "start the app; user-triggered"),
+    _t("godseye_app_stop", "godseye_admin", "app_stop", "extra", "B", "stop the app after ownership checks"),
+    _t("godseye_app_restart", "godseye_admin", "app_restart", "extra", "B", "restart the app; refuses a foreign port"),
 )
 
 BY_LEGACY: dict[str, Target] = {t.legacy: t for t in CATALOG}
@@ -285,6 +289,10 @@ _BLURB = {
     ("godseye_view", "state"): "Full camera read. Prefer the per-turn EOH map line. detail=full for the raw object.",
     ("godseye_query", "terrain"): "Ground elevation. points is a list of {lat, lon}.",
     ("godseye_query", "features"): "Named OSM features. kind is administrative_areas, named_places, or monuments.",
+    ("godseye_admin", "status"): "Control room: app, relay, panes, WebGL, and feeds. Read-only. Key names only.",
+    ("godseye_admin", "app_start"): "Start the God's Eye View app. User-triggered. Linux: systemd --user or a plugin-managed Node process.",
+    ("godseye_admin", "app_stop"): "Stop that app. Refuses when the port belongs to another process.",
+    ("godseye_admin", "app_restart"): "Restart that app. Waits for HTTP 200. An open socket is not ready.",
 }
 
 
@@ -1088,7 +1096,10 @@ _LEADS = {
     "godseye_scene": "Save, load, export, restore, tour, or play back a scene. One op per call.",
     "godseye_watch": "Create, list, pause, or delete a watch. One op per call. list check=<id> runs one watch now.",
     "godseye_capture": "HUD layout and a one-line caption. One op per call.",
-    "godseye_admin": "Health check, panel rebuild, pane reload, or the desktop preview tab. One op per call.",
+    "godseye_admin": (
+        "Health check, control room, app start/stop/restart, panel rebuild, pane reload, or the desktop preview tab. "
+        "One op per call. Start, stop, and restart run only when you call them."
+    ),
 }
 
 
@@ -1110,7 +1121,7 @@ def register_composable(ctx) -> None:
         ("godseye_scene", generic_schema("godseye_scene"), "Scenes, tours, and export", "🎬"),
         ("godseye_watch", generic_schema("godseye_watch"), "Watches", "👀"),
         ("godseye_capture", generic_schema("godseye_capture"), "HUD and caption", "🖼️"),
-        ("godseye_admin", generic_schema("godseye_admin"), "Doctor, rebuild, reload, preview", "🛠️"),
+        ("godseye_admin", generic_schema("godseye_admin"), "Doctor, control room, rebuild, reload, preview", "🛠️"),
     )
     for name, schema, blurb, emoji in specs:
         ctx.register_tool(
