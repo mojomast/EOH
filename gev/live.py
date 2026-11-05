@@ -30,8 +30,8 @@ MAX_BODY = 512 * 1024
 PICKUP_S = 8.0
 BUSY_WAIT_S = 45.0  # extra time a working pane (scene restore, long flight) gets to pick a command up
 DEFAULT_PANE = "default"
-NO_PANE = {"ok": False, "error": "no_pane", "message": "No God's Eye View pane is open in Hermes Desktop or the Webapp. Ask the user to open the God's Eye View pane (and keep it visible), then retry."}
-PANE_BUSY = {"ok": False, "error": "pane_busy", "message": "The God's Eye View pane is open but still busy with an earlier command; retry in a few seconds."}
+NO_PANE = {"ok": False, "error": "no_pane", "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp. Ask the user to open the Eye Of Hermes (EOH) pane (and keep it visible), then retry."}
+PANE_BUSY = {"ok": False, "error": "pane_busy", "message": "The Eye Of Hermes (EOH) pane is open but still busy with an earlier command; retry in a few seconds."}
 
 
 def port() -> int:
@@ -244,6 +244,14 @@ class Relay:
 
     def submit(self, name: str, args: dict, wait: float = RESULT_WAIT_S, session_id: str | None = None,
                pane_id: str | None = None, fanout: bool = False, record: bool = True) -> dict:
+        if name == "annotate_map" and isinstance(args, dict):
+            try:
+                from . import enrich
+                intent = args.get("intent") or args.get("context")
+                args = {**args, "annotations": enrich.enrich_annotations(
+                    args.get("annotations") or [], intent=intent, mode="light")}
+            except Exception:
+                args = dict(args or {})
         with self.cond:
             targets = self.targets(session_id, pane_id, fanout)
             if not targets:
@@ -277,6 +285,17 @@ class Relay:
         key = self.scene_key(session_id, pane)
         pane.last_session = key
         self.scenes.record(key, name, args, res)
+        if name == "annotate_map" and isinstance(res, dict) and res.get("ok"):
+            try:
+                from . import enrich
+                result = res.get("result") if isinstance(res.get("result"), dict) else res
+                intent = (args or {}).get("intent") or (args or {}).get("context")
+                enrich.after_annotate(
+                    self.scenes, key, args or {}, result or {},
+                    intent=intent,
+                    live=lambda n, a: self.submit(n, a, session_id=session_id, pane_id=pane.id, record=True))
+            except Exception:
+                pass
         if name in ("fly_to_location", "move_camera") and isinstance(res, dict) and res.get("ok"):
             with self.cond:  # follow up with the real camera pose (lat/lon/height/pitch)
                 self._internal(pane, "get_current_view_state", {},
@@ -373,7 +392,7 @@ class Relay:
                 return dict(PANE_BUSY if pane.inflight else NO_PANE)
             if now >= deadline:
                 pane.inflight.discard(cid)
-                return {"ok": False, "error": "timeout", "message": "The God's Eye View pane did not answer in time."}
+                return {"ok": False, "error": "timeout", "message": "The Eye Of Hermes (EOH) pane did not answer in time."}
             self.cond.wait(max(0.05, min(pickup if queued else deadline, deadline) - now))
         return self.results.pop(cid)
 
@@ -444,15 +463,17 @@ def make_handler(relay: Relay, token: str):
 
 
 _server = None
+_relay = None
 
 
 def start_in_thread(token: str) -> bool:
-    global _server
+    global _server, _relay
     if _server is not None:
         return True
     try:
         from .scene import SceneStore, default_path
-        _server = ThreadingHTTPServer(("127.0.0.1", port()), make_handler(Relay(SceneStore(default_path())), token))
+        _relay = Relay(SceneStore(default_path()))
+        _server = ThreadingHTTPServer(("127.0.0.1", port()), make_handler(_relay, token))
     except OSError:
         return False
     threading.Thread(target=_server.serve_forever, name="godseye-live-relay", daemon=True).start()

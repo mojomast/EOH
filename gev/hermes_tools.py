@@ -111,6 +111,13 @@ def extend_live_schema(name: str, schema: dict) -> dict:
     if name == "annotate_map":
         props["flyTo"] = {"anyOf": [{"type": "boolean"}, {"type": "string", "enum": ["all"]}],
                           "description": "true frames the first mark; 'all' frames every mark drawn in this call."}
+        props["intent"] = {"type": "string", "maxLength": 240,
+                           "description": "REQUIRED whenever you create pins: the user's request in their words "
+                                          "(e.g. 'ramen near me', 'FIRMS fires last 24h'). Shapes which facts go "
+                                          "in each pin's drawer. Always also fill description_md / images / links "
+                                          "yourself when you know them."}
+        props["context"] = {"type": "string", "maxLength": 240,
+                            "description": "Alias of intent (user request / investigation context)."}
         items = (props.get("annotations") or {}).get("items")
         if isinstance(items, dict):
             ip = items.setdefault("properties", {})
@@ -141,6 +148,10 @@ def make_live_handler(name: str):
         reason = policy.refuse_reason(args)
         if reason:
             return json.dumps({"error": reason})
+        if name == "annotate_map":
+            from . import enrich
+            intent = args.get("intent") or args.get("context")
+            args["annotations"] = enrich.enrich_annotations(args.get("annotations") or [], intent=intent, mode="light")
         out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
         if name == "set_map_stack":
             out = composer.remediate_map_stack(out)
@@ -212,6 +223,10 @@ EXTRA_TOOLS = {
             "radius_km": {"type": "number", "minimum": 1, "maximum": 2000},
             "top_n": {"type": "integer", "minimum": 0, "maximum": 24, "default": 5},
             "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."},
+            "intent": {"type": "string", "maxLength": 240,
+                       "description": "User's request (default: question or place). Shapes which facts each "
+                                      "pinned hit shows in its drawer."},
+            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."},
             "pin_details": {"type": "array", "maxItems": 24, "description": "Optional drawer content per pinned hit, "
                             "in hit order (nearest first): {title, description_md, images[], links[]}. Defaults are "
                             "built from each hit's row.", "items": {"type": "object", "properties": {
@@ -276,7 +291,10 @@ EXTRA_TOOLS = {
             "dwellMs": {"type": "integer", "minimum": 0, "maximum": 600000, "default": 20000},
             "connect": {"type": ["string", "null"], "enum": ["route", None], "default": None,
                         "description": "route = pin every stop and draw a route through them first."},
-            "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."}},
+            "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."},
+            "intent": {"type": "string", "maxLength": 240,
+                       "description": "User's request for this tour; used to fill each stop pin's drawer."},
+            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."}},
          "required": ["stops"]}, "🧭"),
     "godseye_live_pin_drawer": (
         "Open or close the info drawer of a pin on the live globe (the same drawer a click opens). It shows the "
@@ -361,7 +379,11 @@ EXTRA_TOOLS = {
             "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
                      "description": "[south, west, north, east]"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
-            "pin": {"type": "boolean", "default": False, "description": "Pin results (max 24) via annotate_map."}}},
+            "pin": {"type": "boolean", "default": False, "description": "Pin results (max 24) via annotate_map."},
+            "intent": {"type": "string", "maxLength": 240,
+                       "description": "User's request (default: the query). Shapes pin drawer facts "
+                                      "(e.g. cuisine/hours/menu for food). Always pass this when pinning."},
+            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."}}},
         "🍜"),
     "godseye_poi_details": (
         "Best-effort details for one venue: OSM record, website, menu URL if found, and verbatim price "
@@ -377,6 +399,72 @@ EXTRA_TOOLS = {
             "prune": {"type": "boolean", "description": "Drop stale closed pane records now."},
             "label": {"type": "string", "description": "Optional label for this chat's pane (shown in the list)."},
             "pane_id": {"type": "string", "description": "Pane id to label; default = this session's bound pane."}}}, "🪟"),
+    "godseye_live_context": (
+        "What the user is looking at in the EOH pane: camera (center, heading, pitch, range, position), visible bbox, "
+        "the selected pin (drawer open), the last clicked ground point, shapes the user drew (box/polygon/line with "
+        "distance or area), and focus = the best guess for 'this/here' (open pin > newest drawing > last click > view "
+        "centre). By default also answers 'what is this': Nominatim reverse geocode of the focus (1 request per 1.2 s) "
+        "plus nearby named places/buildings (Overpass). Call it FIRST whenever the user says this, here, around here, "
+        "that building, what am I looking at.",
+        {"type": "object", "properties": {
+            "describe": {"type": "boolean", "default": True, "description": "Reverse geocode + nearby places for the focus."},
+            "nearby": {"type": "boolean", "default": True},
+            "category": {"type": "string", "description": "Nearby filter, e.g. restaurant, cafe, hotel (default: any named place)."},
+            "radius_m": {"type": "number", "minimum": 30, "maximum": 2000, "description": "Nearby radius (default from zoom)."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 8}}}, "👁️"),
+    "godseye_what_is_here": (
+        "Reverse geocode a coordinate (Nominatim: name, address, OSM type, website/wikipedia tags) and list nearby named "
+        "places/buildings, nearest first. Works without a pane.",
+        {"type": "object", "properties": {
+            "lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180},
+            "radius_m": {"type": "number", "minimum": 30, "maximum": 2000, "default": 150},
+            "category": {"type": "string"}, "nearby": {"type": "boolean", "default": True},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 8}}, "required": ["lat", "lon"]}, "📌"),
+    "godseye_measure": (
+        "Measure on the globe. op=distance: great-circle distance through 2+ points (total + per leg + bearing); "
+        "op=area: area + perimeter of a polygon (3+ points); op=route: travel distance/time by walk/bike/drive via the "
+        "public OSRM server (clear routing_unavailable error when it is down). Points can be coordinates, pins on the pane "
+        "(pins: ids or labels) or a shape the user drew (use_drawn: 'latest' or a shape id; a box/polygon defaults to "
+        "area). draw=true draws the line/polygon with its label on the pane.",
+        {"type": "object", "properties": {
+            "op": {"type": "string", "enum": ["distance", "area", "route"]},
+            "points": {"type": "array", "items": {"type": "object", "properties": {"lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180}}, "required": ["lat", "lon"]}, "maxItems": 200},
+            "pins": {"type": "array", "items": {"type": "string"}, "description": "Pin ids (anno-3) or labels, in order."},
+            "use_drawn": {"type": "string", "description": "'latest' or a drawn shape id from godseye_live_context."},
+            "mode": {"type": "string", "enum": ["walk", "bike", "drive"], "default": "walk", "description": "op=route only."},
+            "draw": {"type": "boolean", "default": True}, "label": {"type": "string"}, "color": {"type": "string"}}}, "📏"),
+    "godseye_isochrone": (
+        "Reach within N minutes (walk/bike/drive) from a point: isochrone polygons from the public Valhalla server, "
+        "else an approximate reach polygon from one OSRM table call (marked approximate), else a clear "
+        "routing_unavailable error (never a fake straight-line circle). Without lat/lon it uses the pane focus "
+        "(selected pin / last click / view centre). Draws the rings with labels on the pane.",
+        {"type": "object", "properties": {
+            "lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180},
+            "minutes": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 120}, "maxItems": 4, "default": [10]},
+            "mode": {"type": "string", "enum": ["walk", "bike", "drive"], "default": "walk"},
+            "draw": {"type": "boolean", "default": True},
+            "include_polygon": {"type": "boolean", "default": False, "description": "Return polygon coordinates too."}}}, "⏱️"),
+    "godseye_live_draw": (
+        "Shapes on the live globe. action=start kind=box|polygon|line puts the pane in draw mode for the USER (box: 2 "
+        "clicks; polygon/line: clicks, double-click or Enter finishes, Esc cancels); action=add draws Hermes' own "
+        "line/polygon/box from points with a label; list / remove (id) / clear (who=all|user|hermes) / cancel. "
+        "Hermes-drawn shapes are restored with the scene.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["start", "add", "list", "remove", "clear", "cancel"], "default": "add"},
+            "kind": {"type": "string", "enum": ["box", "polygon", "line"]},
+            "points": {"type": "array", "items": {"type": "object", "properties": {"lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180}}, "required": ["lat", "lon"]}, "maxItems": 600},
+            "id": {"type": "string"}, "label": {"type": "string", "maxLength": 80}, "color": {"type": "string"},
+            "who": {"type": "string", "enum": ["all", "user", "hermes"], "default": "all"}}}, "✏️"),
+    "godseye_live_compare": (
+        "Side-by-side swipe on the live globe between two imagery layers with a draggable divider. Sides: 'current' "
+        "(what the globe shows now), 'osm', or 'wayback:YYYY[-MM[-DD]]' = Esri World Imagery Wayback historical "
+        "imagery release on/before that date (keyless). God's Eye View map stacks cannot be split (one at a time). "
+        "action=list_dates lists Wayback release dates; position (0-1) / toggle (before/after flip) / state / stop.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["start", "stop", "position", "toggle", "state", "list_dates"], "default": "start"},
+            "left": {"type": "string", "default": "wayback:2014", "description": "Left side (before)."},
+            "right": {"type": "string", "default": "current", "description": "Right side (after)."},
+            "position": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5}}}, "🪞"),
     "godseye_preview_swap": (
         "Open a URL in the Hermes desktop preview pane, closing the previous URL this plugin opened "
         "(single-tab swap). desktop_preview is a Hermes core tool and cannot gain a native swap action; "
@@ -387,7 +475,63 @@ EXTRA_TOOLS = {
             "label": {"type": "string", "description": "Optional preview tab label."},
             "action": {"type": "string", "enum": ["swap", "close"], "default": "swap",
                        "description": "swap = close previous + open url; close = dismiss the tracked tab only."}}}, "🖼️"),
+
+    "godseye_research_pins": (
+        "Research pins in the current scene and write a short summary, photos and sources into each pin's "
+        "drawer (description_md with a Sources section, images[], links[]), then persist them. Free keyless "
+        "sources only: Wikipedia/Wikidata REST, Wikimedia Commons, OSM tags already on the pin, website meta "
+        "description. mode=light (fast, cached, local+tiny wiki) or full (default). Never invents facts — "
+        "missing channels are marked unavailable. Cap: 24 pins, few HTTP calls each, disk cache. "
+        "This plugin cannot call Hermes web_search; when sources are thin, run web_search yourself and pass "
+        "verified snippets as agent_notes:[{id|label, summary, links[], images[]}].",
+        {"type": "object", "properties": {
+            "ids": {"type": "array", "items": {"type": "string"}, "maxItems": 24,
+                    "description": "Scene annotation ids (a1…) or pane ids (anno-3). Default: all pins."},
+            "labels": {"type": "array", "items": {"type": "string"}, "maxItems": 24},
+            "all": {"type": "boolean", "default": True, "description": "Research every pin when ids/labels omitted."},
+            "mode": {"type": "string", "enum": ["light", "full"], "default": "full"},
+            "agent_notes": {"type": "array", "maxItems": 24, "items": {"type": "object", "properties": {
+                "id": {"type": "string"}, "label": {"type": "string"}, "summary": {"type": "string"},
+                "images": {"type": "array", "items": {"type": "object"}},
+                "links": {"type": "array", "items": {"type": "object"}}}}},
+            "persist": {"type": "boolean", "default": True}}}, "🔎"),
+    "godseye_investigation_save": (
+        "Save the whole current scene (pins with drawer content, notes, routes, cards, camera/saved views) "
+        "as a named investigation under plugin-data/godseye/investigations/.",
+        {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Investigation name (letters, digits, space _ . -)."},
+            "notes": {"type": "string", "maxLength": 4000},
+            "views": {"type": "array", "maxItems": 12, "items": {"type": "object"},
+                      "description": "Optional named camera views [{name, lat, lon, heightM, ...}]."}},
+         "required": ["name"]}, "💾"),
+    "godseye_investigation_list": (
+        "List saved investigations (name, pin/route counts, saved_at, path).",
+        {"type": "object", "properties": {}}, "📚"),
+    "godseye_investigation_load": (
+        "Load a named investigation into this chat's scene and restore it on the open pane.",
+        {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "restore": {"type": "boolean", "default": True}}, "required": ["name"]}, "📂"),
+    "godseye_investigation_delete": (
+        "Delete a named investigation. Requires confirm=true; refused without it.",
+        {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "confirm": {"type": "boolean", "description": "Must be true to delete."}},
+         "required": ["name", "confirm"]}, "🗑️"),
+    "godseye_investigation_report": (
+        "Export a self-contained HTML + Markdown report for a named investigation (or the current scene): "
+        "title, map screenshot when the pane can capture its canvas (otherwise a note), pin table, each pin's "
+        "drawer, routes and sources. Saved under plugin-data/godseye/reports/; returns paths. Optionally "
+        "include a share link for the current view.",
+        {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Saved investigation name; omit to export the live scene."},
+            "share": {"type": "boolean", "default": False, "description": "Also call godseye_share_link."},
+            "capture": {"type": "boolean", "default": True, "description": "Try pane canvas screenshot."}}}, "📄"),
 }
+
+
+CONTEXT_TOOLS = {"godseye_live_context": "live_context", "godseye_what_is_here": None, "godseye_measure": "measure",
+                 "godseye_isochrone": "isochrone", "godseye_live_draw": "draw", "godseye_live_compare": "compare"}
 
 
 def extra_handler(name: str):
@@ -405,7 +549,10 @@ def extra_handler(name: str):
                 from . import poi
                 out = poi.find_places(args)
                 if args.get("pin") and out.get("ok") and out["places"]:
-                    out["pinned"] = composer.live_call("annotate_map", {"annotations": poi.pin_annotations(out["places"])}, sid)
+                    intent = args.get("intent") or args.get("context") or args.get("query")
+                    anns = poi.pin_annotations(out["places"], intent=intent)
+                    out["pinned"] = composer.live_call(
+                        "annotate_map", {"annotations": anns, "intent": intent, "persist": True}, sid)
             elif name == "godseye_poi_details":
                 from . import poi
                 out = poi.poi_details(args)
@@ -418,6 +565,14 @@ def extra_handler(name: str):
                     out = preview_mod.close_tracked()
                 else:
                     out = preview_mod.swap(str(args.get("url") or ""), label=str(args.get("label") or ""))
+            elif name in CONTEXT_TOOLS:
+                from . import context, measure as measure_mod
+                if name == "godseye_what_is_here":
+                    out = measure_mod.what_is_here(float(args["lat"]), float(args["lon"]), radius_m=float(args.get("radius_m") or 150),
+                                                   nearby=bool(args.get("nearby", True)), category=args.get("category"),
+                                                   limit=int(args.get("limit") or 8))
+                else:
+                    out = getattr(context, CONTEXT_TOOLS[name])(args, session_id=sid)
             elif name == "godseye_live_list_annotations":
                 out = composer.scene_op("list", sid)
             elif name == "godseye_live_delete_annotation":
@@ -442,6 +597,18 @@ def extra_handler(name: str):
                 out = composer.tour_op("status", sid, jobId=args.get("jobId"))
             elif name == "godseye_live_stop_tour":
                 out = composer.tour_op("cancel", sid, jobId=args.get("jobId"))
+            elif name == "godseye_research_pins":
+                out = composer.research_pins_op(args, session_id=sid)
+            elif name == "godseye_investigation_save":
+                out = composer.investigation_op("save", sid, args=args)
+            elif name == "godseye_investigation_list":
+                out = composer.investigation_op("list", sid, args=args)
+            elif name == "godseye_investigation_load":
+                out = composer.investigation_op("load", sid, args=args)
+            elif name == "godseye_investigation_delete":
+                out = composer.investigation_op("delete", sid, args=args)
+            elif name == "godseye_investigation_report":
+                out = composer.investigation_op("report", sid, args=args)
             else:
                 action = args.pop("action", "go")
                 if action == "get":
@@ -518,8 +685,9 @@ def register_extras(ctx) -> dict:
         done["watch"] = None
     if hasattr(ctx, "register_command"):
         try:
-            ctx.register_command("gev", composer.gev_command, description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor",
-                                 args_hint="<fly|layers|status|brief|home|share|doctor> [args]")
+            ctx.register_command("gev", composer.gev_command,
+                                 description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor, research, save, list, load, delete, report",
+                                 args_hint="<fly|layers|status|brief|home|share|doctor|research|save|list|load|delete|report> [args]")
             done["command"] = True
         except Exception:
             pass

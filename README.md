@@ -43,6 +43,8 @@ A live 3D globe of public aircraft, ships, satellites, hazards and weather in a 
 | 📘 **Analyst playbook skill** | `godseye:godseye-analyst` covers when to use data tools and when to use live tools, how to handle the pane, the public-data-only policy, and example sequences. |
 | 🩺 **Doctor** (`godseye_doctor`, `/gev doctor`) | Checks Node 24, the upstream checkout, `:4173`, the #1571/#1572 patches, the live relay, connected panes, **per-provider key presence** (`CESIUM_ION_TOKEN`, `GOOGLE_MAPS_API_KEY`, `MAPILLARY_CLIENT_TOKEN`, `AISSTREAM_API_KEY`, `FIRMS_MAP_KEY` — values never printed), the **active map stack**, **layer feed states** from `feedProvenance` (nominal/fallback/unavailable), and the **annotation count**. Every failed check comes with fix text. It is read-only and installs nothing. |
 | 🏠 **Home view** (`godseye_home`, `/gev home`) | Saves lat/lon/altitude, layers and style in `ctx.state`, mirrored to `plugin-data/godseye/home.json`. "Go home" flies back there, and a cold-started pane opens at home. |
+| 🔎 **Research pins** (`godseye_research_pins`, `/gev research`) | Fill each pin drawer from Wikipedia/Wikidata/Commons/OSM/website meta (light by default; full on request). |
+| 💾 **Investigations** (`godseye_investigation_*`, `/gev save|list|load|delete|report`) | Named scene snapshots + HTML/Markdown reports under the plugin data dir. |
 | 🔗 **Share links** (`godseye_share_link`, `/gev share`) | A `/share/<code>` link for the current view, made with upstream's own share codec on `GODSEYE_PUBLIC_URL`. If the codec can't run, it falls back to a camera-hash URL. |
 
 <table><tr>
@@ -65,7 +67,7 @@ Camera framing: `godseye_live_fly_to_location {latitude, longitude, framing:"str
 
 Annotations: `label` can span 2-3 lines (`"Misoya\nMiso ramen\nOpen till 22:00"`). `{type:"card", latitude, longitude | target, title, rows:[{text, price}]}` draws a menu or price callout. A route with an unfindable waypoint still draws the legs it can (never across the gap) and names the missing waypoint. `flyTo:"all"` frames everything drawn in that call.
 
-Pins and the pin drawer: pins (annotation pins, POI pins, brief hits, tour stops) are drawn by the plugin as ground-clamped Cesium markers. The pin's **tip** is the exact spot, a small dot sits on the ground under it, and the ground height is re-sampled as you zoom, so pins stay put at street level. Click a pin (or call `godseye_live_pin_drawer {action:"open", id | label | latitude+longitude, flyTo?}`) to open a side drawer with the pin's title, rendered markdown, images and links. Close it with ✕, Esc or `{action:"close"}`. Set the content on any pin in `annotate_map`: `title`, `description_md` (markdown; raw HTML shows as text), `images:[{url, alt, caption}]` (http/https, lazy-loaded, a broken image shows a note) and `links:[{url, label}]` (http/https only). `godseye_find_places {pin:true}` fills these from OSM tags (address, hours, phone, cuisine, website, menu, Wikipedia/Wikidata, OSM link, and an image when the place has an `image`/`wikimedia_commons` tag; no extra requests are made). `godseye_brief_and_show` fills them for each hit, and `pin_details:[{...}]` overrides them per hit. The open drawer is saved with the scene and reopened by `godseye_live_restore_scene`. The pane frame is sandboxed with no `allow-popups`, so drawer links are opened by Hermes (`ui/open-link` → your browser), never inside the frame.
+Pins and the pin drawer: pins (annotation pins, POI pins, brief hits, tour stops) are drawn by the plugin as ground-clamped Cesium markers. The pin's **tip** is the exact spot, a small dot sits on the ground under it, and the ground height is re-sampled as you zoom, so pins stay put at street level. Click a pin (or call `godseye_live_pin_drawer {action:"open", id | label | latitude+longitude, flyTo?}`) to open a side drawer with the pin's title, rendered markdown, images and links. Close it with ✕, Esc or `{action:"close"}`. Set the content on any pin in `annotate_map`: `title`, `description_md` (markdown; raw HTML shows as text), `images:[{url, alt, caption}]` (http/https, lazy-loaded, a broken image shows a note) and `links:[{url, label}]` (http/https only). `godseye_find_places {pin:true}` fills these from OSM tags (address, hours, phone, cuisine, website, menu, Wikipedia/Wikidata, OSM link, and an image when the place has an `image`/`wikimedia_commons` tag; no extra requests are made). `godseye_brief_and_show` fills them for each hit, and `pin_details:[{...}]` overrides them per hit. The open drawer is saved with the scene and reopened by `godseye_live_restore_scene`. **Every pin gets non-empty drawer content by default**, shaped by an `intent`/`context` arg (pass the user's request on `annotate_map`, `find_places`, `brief_and_show`, and tours). Light enrichment is automatic; `godseye_research_pins` runs a deeper Wikipedia/Wikidata/Commons/website-meta pass (cached, rate-limited, never invents facts). Empty pins are auto-enriched in the background. Named investigations (`godseye_investigation_save` / `_list` / `_load` / `_delete` with `confirm:true`) snapshot the whole scene; `godseye_investigation_report` writes HTML+Markdown under `plugin-data/godseye/reports/` (map screenshot via pane `hermes_capture` when the WebGL canvas is untainted; otherwise the report notes that). `/gev research|save|list|load|delete|report` mirrors these. Hermes agent web search: the plugin cannot call `web_search` itself — run it on the agent side and pass verified snippets as `agent_notes` on `godseye_research_pins`. The pane frame is sandboxed with no `allow-popups`, so drawer links are opened by Hermes (`ui/open-link` → your browser), never inside the frame.
 
 Tours: `godseye_live_run_tour {stops:[{name,lat,lon}], framing:"street"|"rooftop"|"district", orbit:"slow"|null, dwellMs, connect:"route"}` returns a jobId right away. Check it with `godseye_live_tour_status` and cancel with `godseye_live_stop_tour`.
 
@@ -75,6 +77,55 @@ Tours: `godseye_live_run_tour {stops:[{name,lat,lon}], framing:"street"|"rooftop
 - **Filters:** a chip bar over the globe filters by category (from POI `tags`: amenity, shop, tourism, leisure, cuisine), by rating >= 4 when pins carry `rating`/`stars`, and by **Open now**. Open now reads OSM `opening_hours` with a careful subset parser (`gev/panel_oh.js`): `24/7`, weekday ranges and lists, time spans including past midnight, `off`, and later rules overriding earlier ones. Anything else is *unknown*, and unknown pins stay visible unless `include_unknown:false`. The time comes from the pane's local clock. The agent can set the same filters with `godseye_live_filter_pins`, and they persist in the scene.
 - **Watches:** `godseye_watch_create {area, feeds, conditions, interval_s}` watches an area. The area can be `{bbox:[s,w,n,e]}`, `{polygon:[[lat,lon],...]}`, `{lat,lon,radius_km}` or `{view:true}`. Feeds are `earthquakes` (USGS), `fires` (FIRMS, needs `FIRMS_MAP_KEY`), `flights` (OpenSky anonymous), `ships` (needs `AISSTREAM_API_KEY` and the app) and `pois` (OSM, needs `conditions.pois.category` or `cuisine`). A feed without its key reports `KEY_MISSING` in every check. The first run records a baseline; after that, only items never seen before alert, and seen ids persist across restarts. New items are pinned (always visible, even with filters set) with drawer details.
 - **Alert delivery:** Hermes' cron schedules model prompts, not plugin callbacks, so checks run in a small daemon thread that runs only while an active watch exists (`GODSEYE_WATCH_LOOP=0` disables it). Alerts are **queued** and injected into the next chat turn through the `pre_llm_call` hook, and that turn tells you about them. With `deliver:"inject"`, the plugin also calls Hermes' `ctx.inject_message` for the watch's chat. Hermes accepts that only when `plugins.entries.godseye.allow_gateway_injection: true` is set; otherwise the alert stays queued. List, pause and delete with `godseye_watch_list`, `godseye_watch_pause` and `godseye_watch_delete {confirm:true}`.
+### Context, measure and compare (v0.2)
+
+**"What am I looking at?"** `godseye_live_context` asks the pane for the camera (center, heading,
+pitch, range, position), the visible bbox, the selected pin (drawer open), the last clicked ground
+point, and every shape the user drew. `focus` is the best guess for "this/here": open pin > newest
+drawing > last click > screen centre. By default the tool also reverse-geocodes the focus
+(Nominatim `/reverse`, the plugin's descriptive User-Agent, one request per 1.2 s, 1 h cache) and lists
+nearby named places/buildings (Overpass `around:`; when every Overpass mirror is down it samples
+Nominatim `/reverse` at 5 points instead). The analyst skill calls it whenever you say *this*, *here*,
+*around here* or *what's that building*. `godseye_what_is_here {lat, lon}` does the same lookup
+without a pane.
+
+**Draw tool.** A small toolbar sits bottom-left of the globe: **▭ Box** (2 clicks), **⬠ Area** and
+**／ Line** (click points, double-click or Enter finishes, Esc cancels), **✕** clears your drawings.
+Lines show their distance and boxes/polygons their area. Hermes can start draw mode for you
+(`godseye_live_draw {action:"start", kind:"box"}`) and draw its own labelled shapes
+(`action:"add"`); Hermes-drawn shapes persist with the scene, user drawings live in the pane only.
+
+**Measure.** `godseye_measure` gives great-circle distance (per leg, with bearings) between points,
+pins (`pins:["anno-1","Sansotei"]`) or the latest drawing, area + perimeter of a polygon/box
+(spherical, ignores terrain), and `op:"route"` travel distance/time by walk/bike/drive through the
+public OSRM server at routing.openstreetmap.de. `draw:true` (default) draws the line with its label.
+
+**Reach in N minutes.** `godseye_isochrone {minutes:[5,10], mode:"walk"}` (lat/lon optional:
+defaults to the focus) draws isochrone rings from the public Valhalla server
+(valhalla1.openstreetmap.de). If Valhalla is down it builds an approximate reach polygon from one
+OSRM `table` call (16 bearings x 4 distances, flagged `approximate`). If both are down it returns
+`routing_unavailable`; it never substitutes a straight-line circle. Override servers with
+`GODSEYE_VALHALLA_URL` / `GODSEYE_OSRM_URL`.
+
+**Before/after.** `godseye_live_compare {left:"wayback:2014", right:"current"}` shows a split view
+with a draggable divider: each side is an imagery layer (Cesium `ImageryLayer.splitDirection` +
+`scene.splitPosition`). Historical imagery comes from **Esri World Imagery Wayback** (keyless WMTS,
+~200 releases since 2014-02-20; `action:"list_dates"`); a date picks the release on or before it.
+Also `osm` and `current`. `position`, `toggle` (flip before/after), `state`, `stop`.
+Limitations: God's Eye View renders one map stack at a time, so two map stacks cannot be split;
+photoreal 3D tiles sit above imagery and are hidden while comparing; Wayback dates are release
+dates, so the imagery under a spot can be older; God's Eye View itself has no historical imagery.
+
+**Ask Hermes.** The toolbar and the pin drawer have an **Ask Hermes** button. The Desktop plugin SDK
+has no API to submit or prefill a chat message (`ctx.runAction` only allows view/navigation actions),
+so the button copies a ready question ("What is "Marché Bonsecours" (45.50886, -73.55180)…") to the
+clipboard and focuses the composer (`composer.focus`); paste and send.
+
+<table><tr>
+<td><img src="docs/screenshots/eoh-context.jpg" alt="a drawn box with its area, a selected pin and its drawer with Ask Hermes"><br><sub><code>godseye_live_context</code>: selected pin, drawn box (4.91 ha), reverse geocode</sub></td>
+<td><img src="docs/screenshots/eoh-measure.jpg" alt="637 m line between two pins and 5/10 minute walking isochrones"><br><sub><code>godseye_measure</code> + <code>godseye_isochrone</code> (Valhalla, 5/10 min walk)</sub></td>
+<td><img src="docs/screenshots/eoh-compare.jpg" alt="split view: Esri Wayback 2014 left, current imagery right"><br><sub><code>godseye_live_compare</code>: Wayback 2014 | current</sub></td>
+</tr></table>
 
 ## Try it
 
@@ -176,6 +227,10 @@ All settings are optional environment variables, for example in `~/.hermes/.env`
 | `GODSEYE_HUD_BRIDGE` | on | `0` disables the loopback HUD bridge |
 | `GODSEYE_BRIDGE_PORT` | `18791` | HUD bridge port |
 | `GODSEYE_LIVE_PORT` | `18792` | Live-globe relay port |
+| `GODSEYE_NOMINATIM_URL` | `https://nominatim.openstreetmap.org` | Geocoder (search + reverse) |
+| `GODSEYE_VALHALLA_URL` | `https://valhalla1.openstreetmap.de` | Isochrones |
+| `GODSEYE_OSRM_URL` | `https://routing.openstreetmap.de` | Routes + isochrone fallback |
+| `GODSEYE_WAYBACK_CONFIG` | Esri Wayback config JSON | Historical imagery release list |
 | `GODSEYE_BIND` / `GODSEYE_NODE_DIR` | `127.0.0.1` / `~/.local/node24` | `install-service.sh` only |
 
 If the app is reached by a non-localhost name, add that name to God's Eye View's `GEV_ALLOWED_HOSTS`.
@@ -192,9 +247,9 @@ If the app is reached by a non-localhost name, add that name to God's Eye View's
 
 - **Processes:** a single `node server/mcp/stdio.js` child from your God's Eye View checkout. It is started on first tool use and runs with an argument list, not a shell. `scripts/install-service.sh` is optional and is never run by the plugin.
 - **Background threads** run in the Hermes dashboard/gateway process: the loopback HUD bridge (`127.0.0.1:18791`) and the live relay (`127.0.0.1:18792`).
-- **Network:** the plugin talks only to your God's Eye View app (`GODSEYE_API_BASE`) and to loopback. The app itself fetches public data from the providers listed in its DATA_SOURCES.md.
+- **Network:** the plugin talks to your God's Eye View app (`GODSEYE_API_BASE`) and loopback, and, only when a place/measure tool is used, to the keyless public OSM services (Nominatim, Overpass mirrors, Valhalla, OSRM at routing.openstreetmap.de) and Esri World Imagery Wayback (config + tiles, fetched by the pane). The app itself fetches public data from the providers listed in its DATA_SOURCES.md.
 - **Files:** the plugin writes only `~/.hermes/plugin-data/godseye/hud-bridge.env` (0600: loopback URL plus a random token). It reads its own files and your God's Eye View checkout (to detect patches). It reads no `.env`, auth or credential stores, and holds no API keys.
-- **Pane:** the panel document gets four small additions from the backend (`gev/panel_inject.py`): a `<base>`, the full-UI flag, a Cesium worker shim, and the live agent. These run **only inside the sandboxed frame**, never in the Hermes renderer.
+- **Pane:** the panel document gets four small additions from the backend (`gev/panel_inject.py`): a `<base>`, the full-UI flag, a Cesium worker shim, the pin layer + drawer, the context/draw/measure/compare layer, and the live agent. These run **only inside the sandboxed frame**, never in the Hermes renderer.
 - No telemetry and no self-update.
 
 ## Responsible use
@@ -230,7 +285,7 @@ Run **`/gev doctor`** (or ask Hermes to run `godseye_doctor`) first. It checks e
 ## Development
 
 ```sh
-python3 -m pytest -q tests                      # unit tests (34 + 1 e2e)
+python3 -m pytest -q tests                      # unit tests (130 + 1 e2e; JS tests need Node)
 GODSEYE_E2E=1 python3 -m pytest -q tests        # plus a live call against npm run dev
 ```
 

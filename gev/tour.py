@@ -41,7 +41,8 @@ def plan(args: dict) -> dict:
     range_m = max(100, min(20_000_000, int(args.get("rangeM") or FRAMING[framing][0])))
     connect = args.get("connect") if args.get("connect") in ("route",) else None
     return {"stops": stops, "framing": framing, "orbit": orbit, "dwellMs": dwell, "rangeM": range_m,
-            "connect": connect, "preview": args.get("preview")}
+            "connect": connect, "preview": args.get("preview"),
+            "intent": args.get("intent") or args.get("context")}
 
 
 class Tour:
@@ -81,14 +82,23 @@ class Tour:
         self.state = "running"
         try:
             if sp["connect"] == "route":
+                from . import enrich
+                intent = sp.get("intent") or sp.get("context") or "guided tour"
                 pts = [{"latitude": s["lat"], "longitude": s["lon"]} if isinstance(s.get("lat"), (int, float))
                        else {"target": s["name"]} for s in sp["stops"]][:12]
-                marks = [{"type": "pin", "latitude": s["lat"], "longitude": s["lon"], "label": str(s.get("name") or "")[:120]}
-                         for s in sp["stops"] if isinstance(s.get("lat"), (int, float))]
+                marks = []
+                for s in sp["stops"]:
+                    if not isinstance(s.get("lat"), (int, float)):
+                        continue
+                    pin = {"type": "pin", "latitude": s["lat"], "longitude": s["lon"],
+                           "label": str(s.get("name") or "")[:120],
+                           "description_md": str(s.get("caption") or s.get("name") or "Tour stop")[:400]}
+                    marks.append(enrich.ensure_drawer(pin, intent=intent, mode="light",
+                                                      extra={"name": s.get("name"), "caption": s.get("caption")}))
                 if len(pts) >= 2:
                     marks.append({"type": "route", "points": pts, "label": "Tour"})
                 if marks:
-                    self._do("annotate_map", {"annotations": marks[:24], "persist": True})
+                    self._do("annotate_map", {"annotations": marks[:24], "persist": True, "intent": intent})
             pitch = FRAMING[sp["framing"]][1]
             for i, stop in enumerate(sp["stops"]):
                 if self.cancelled.is_set():

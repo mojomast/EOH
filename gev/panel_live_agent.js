@@ -5,7 +5,7 @@
       if (typeof run === 'function') return run
       await new Promise((r) => setTimeout(r, 200))
     }
-    throw new Error('God\'s Eye View is still loading')
+    throw new Error('Eye Of Hermes (EOH) is still loading')
   }
   // Hermes-only caption line over the globe (godseye_brief_and_show / HUD summary line).
   const caption = (text) => {
@@ -92,6 +92,22 @@
     cam.lookAtTransform(cam.transform.constructor.IDENTITY)  // release the lock so orbit/fly still work
     try { v.scene.requestRender?.() } catch {}
     return { ok: true, action: 'hermes_frame', camera: pose() }
+  }
+
+
+  // PNG data URL of the Cesium canvas (may fail when tiles taint the WebGL canvas).
+  const capture = () => {
+    const canvas = window.__godsEyeView?.viewer?.scene?.canvas
+    if (!canvas) return { ok: false, action: 'hermes_capture', error: 'no canvas', note: 'viewer not ready' }
+    try {
+      const dataUrl = canvas.toDataURL('image/png')
+      if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_capture', error: 'empty capture' }
+      return { ok: true, action: 'hermes_capture', mime: 'image/png', dataUrl,
+        width: canvas.width, height: canvas.height }
+    } catch (e) {
+      return { ok: false, action: 'hermes_capture', error: String(e && e.message || e),
+        note: 'Canvas may be tainted by cross-origin imagery; screenshot unavailable.' }
+    }
   }
 
   // ---- framing presets (fly_to_location framing) ----------------------------------------
@@ -300,8 +316,13 @@
         payload = !P ? { ok: false, error: 'pin layer not loaded' } : m.name === 'hermes_pin_filter' ? P.filterCommand(m.args || {}) : P.command(m.args || {})
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
-      if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame') {
-        payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : sceneInfo()
+      if (m.name === 'hermes_context' || m.name === 'hermes_draw' || m.name === 'hermes_compare') {
+        await ready()
+        payload = window.__hermesContext ? window.__hermesContext.command(m.name, m.args || {}) : { ok: false, error: 'context layer not loaded' }
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
+      if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame' || m.name === 'hermes_capture') {
+        payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : m.name === 'hermes_capture' ? capture() : sceneInfo()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       const run = await ready()
