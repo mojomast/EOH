@@ -1,4 +1,4 @@
-// God's Eye View pane for Hermes Desktop and the Webapp. Plain ESM, no build step.
+// Eye Of Hermes (EOH) pane (built on God's Eye View) for Hermes Desktop and the Webapp. Plain ESM, no build step.
 //
 // The pane is an MCP Apps host for God's Eye View's own globe panel (the same panel Claude and
 // ChatGPT show). The panel runs inside the SDK's SandboxedFrame (opaque origin, scripts only) and
@@ -102,6 +102,12 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
       const win = frame()
       if (!win || event.source !== win) return false
       if (event.data?.type === 'hermes-gev:ready') { markReady(); return true }
+      if (event.data?.type === 'hermes-gev:drawer') {  // a click opened/closed a pin drawer: persist it
+        const pin = event.data.detail?.pin
+        const ok = pin && Number.isFinite(pin.latitude) && Number.isFinite(pin.longitude)
+        ctx.rest('/live/drawer', { method: 'POST', body: { pane: paneId, pin: ok ? { latitude: pin.latitude, longitude: pin.longitude, label: String(pin.label ?? '').slice(0, 120) } : null } }).catch(() => {})
+        return true
+      }
       if (event.data?.type !== 'hermes-gev:result') return false
       pending.get(event.data.id)?.(event.data.payload)
       return true
@@ -155,6 +161,11 @@ export function publicLink(url, status) {
   return url.startsWith(from) ? to + url.slice(from.length) : url
 }
 
+// Links the panel may ask the host to open (pin drawer links, app links): http(s) only.
+export function safeLink(url) {
+  try { const u = new URL(String(url || '')); return u.protocol === 'https:' || u.protocol === 'http:' } catch { return false }
+}
+
 export function createPanelHost({ ctx, frame, initialView, status = () => null }) {
   const post = (msg) => frame()?.postMessage({ jsonrpc: '2.0', ...msg }, '*')
   const reply = (id, result) => post({ id, result })
@@ -186,6 +197,7 @@ export function createPanelHost({ ctx, frame, initialView, status = () => null }
         return reply(id, await callTool('panel_request', params.arguments || {}))
       }
       if (method === 'ui/open-link') {
+        if (!safeLink(params?.url)) return fail(id, 'only http(s) links can be opened')
         await ctx.os.openExternal(publicLink(String(params?.url || ''), status()))
         return reply(id, {})
       }
@@ -291,7 +303,7 @@ function GlobePane({ ctx }) {
           ]
         })
         : src && homeView !== undefined
-        ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "God's Eye View", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
+        ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "Eye Of Hermes (EOH)", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
         : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading God\u2019s Eye View…' })
     ]
   })
@@ -299,13 +311,13 @@ function GlobePane({ ctx }) {
 
 export default {
   id: 'godseye',
-  name: "God's Eye View",
+  name: "Eye Of Hermes (EOH)",
   defaultEnabled: false,
   register(ctx) {
     ctx.register({
       id: 'globe',
       area: 'panes',
-      title: "God's Eye View",
+      title: "Eye Of Hermes (EOH)",
       // Keep-alive: the pane host is never remounted or moved when the layout changes (e.g. the
       // window crosses the narrow breakpoint), so the frame and its WebGL context survive resizes.
       // Pane ids are stable per chat session (see stablePaneId); labels show in the chrome + godseye_live_panes.

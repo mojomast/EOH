@@ -43,7 +43,7 @@ LIVE_SNAPSHOT = Path(__file__).with_name("live_tools_snapshot.json")
 LIVE_PREFIX = "godseye_live_"
 
 SYSTEM_PROMPT = (
-    "God's Eye View (live 3D globe of public aircraft, ships, satellites, hazards and weather) "
+    "Eye Of Hermes (EOH), built on God's Eye View (live 3D globe of public aircraft, ships, satellites, hazards and weather) "
     "may be open in the user's Hermes pane. godseye_live_* tools act on that live globe: "
     "godseye_live_get_current_view_state / godseye_live_get_entity_context answer 'what am I looking "
     "at'; godseye_live_analyst_query counts or lists what is loaded (e.g. flights in view); "
@@ -58,7 +58,7 @@ def load_live_catalog() -> list[dict]:
     return json.loads(LIVE_SNAPSHOT.read_text())
 
 
-FANOUT_PROP = {"type": "boolean", "description": "Send to EVERY open God's Eye View pane instead of only the "
+FANOUT_PROP = {"type": "boolean", "description": "Send to EVERY open EOH pane instead of only the "
                "pane next to this chat (default false; only when the user asks for all panes)."}
 
 
@@ -72,6 +72,20 @@ FRAMING_PROP = {"type": "string", "enum": ["street", "rooftop", "district"],
                 "description": "Preset camera framing applied after arrival: street = 150 m range, pitch -15 "
                                "(standing across the street); rooftop = 450 m, -30; district = 2500 m, -45. "
                                "rangeM overrides the range (minimum 100 m). The result's camera has pitchDeg/headingDeg."}
+
+
+DRAWER_PROPS = {
+    "description_md": {"type": "string", "maxLength": 4000,
+                       "description": "Pin drawer body (click the pin or godseye_live_pin_drawer). Markdown: "
+                                      "**bold**, *italic*, `code`, # headings, - lists, [text](https://...) links. "
+                                      "Raw HTML is shown as text."},
+    "images": {"type": "array", "maxItems": 6, "description": "Pin drawer images (http/https URLs only, lazy-loaded).",
+               "items": {"type": "object", "properties": {"url": {"type": "string"}, "alt": {"type": "string"},
+                                                          "caption": {"type": "string"}}, "required": ["url"]}},
+    "links": {"type": "array", "maxItems": 12, "description": "Pin drawer links (http/https only; open in a new tab).",
+              "items": {"type": "object", "properties": {"url": {"type": "string"}, "label": {"type": "string"}},
+                        "required": ["url"]}},
+}
 
 
 def extend_live_schema(name: str, schema: dict) -> dict:
@@ -90,7 +104,8 @@ def extend_live_schema(name: str, schema: dict) -> dict:
                 t["enum"] = t["enum"] + ["card"]
             ip["label"] = {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "maxItems": 3}],
                            "description": "Mark label. Use a newline-separated string or a list for 2-3 lines."}
-            ip["title"] = {"type": "string", "description": "card: heading line"}
+            ip["title"] = {"type": "string", "description": "card: heading line; pin: drawer title (default: label)"}
+            ip.update(DRAWER_PROPS)
             ip["rows"] = {"type": "array", "maxItems": 8, "description": "card: rows like a menu or price list",
                           "items": {"type": "object", "properties": {"text": {"type": "string"},
                                                                      "price": {"type": ["string", "number"]}},
@@ -127,7 +142,7 @@ def make_live_handler(name: str):
 def register_tools(ctx) -> None:
     for tool in load_live_catalog():
         name = LIVE_PREFIX + tool["name"]
-        desc = f"[Live globe in the open God's Eye View pane] {tool.get('description', '')}\n\n{policy.POLICY}"
+        desc = f"[Live globe in the open EOH pane] {tool.get('description', '')}\n\n{policy.POLICY}"
         ctx.register_tool(
             name=name, toolset=TOOLSET,
             schema={"name": name, "description": desc[:4000],
@@ -170,7 +185,7 @@ SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "godseye-analyst
 EXTRA_TOOLS = {
     "godseye_brief_and_show": (
         "Brief a place AND show it on the live globe in one step: runs situation_brief (or "
-        "military_awareness when the question is about military activity), flies the open God's Eye View "
+        "military_awareness when the question is about military activity), flies the open EOH "
         "pane there, turns on the brief's layers, pins the top hits and sets a caption line. Returns the "
         "brief text plus what was shown; if no pane is open it still returns the brief and says so.",
         {"type": "object", "properties": {
@@ -180,10 +195,14 @@ EXTRA_TOOLS = {
             "lon": {"type": "number", "minimum": -180, "maximum": 180},
             "radius_km": {"type": "number", "minimum": 1, "maximum": 2000},
             "top_n": {"type": "integer", "minimum": 0, "maximum": 24, "default": 5},
-            "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."}}},
+            "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."},
+            "pin_details": {"type": "array", "maxItems": 24, "description": "Optional drawer content per pinned hit, "
+                            "in hit order (nearest first): {title, description_md, images[], links[]}. Defaults are "
+                            "built from each hit's row.", "items": {"type": "object", "properties": {
+                                "title": {"type": "string"}, **DRAWER_PROPS}}}}},
         "🛰️"),
     "godseye_doctor": (
-        "Health check for God's Eye View in Hermes: Node 24, upstream checkout, app on :4173, upstream "
+        "Health check for Eye Of Hermes (EOH): Node 24, upstream checkout, app on :4173, upstream "
         "patches, live relay, connected panes, per-provider key presence (CESIUM_ION_TOKEN, "
         "GOOGLE_MAPS_API_KEY, MAPILLARY_CLIENT_TOKEN, AISSTREAM_API_KEY, FIRMS_MAP_KEY) in the env file "
         "and panel bundle (values never printed), active map stack, layer feed states from "
@@ -243,6 +262,18 @@ EXTRA_TOOLS = {
                         "description": "route = pin every stop and draw a route through them first."},
             "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."}},
          "required": ["stops"]}, "🧭"),
+    "godseye_live_pin_drawer": (
+        "Open or close the info drawer of a pin on the live globe (the same drawer a click opens). It shows the "
+        "pin's title, description_md, images and links (set them in annotate_map). Pick the pin by id (annotate_map "
+        "item id), label, or latitude/longitude (nearest pin). The open drawer is restored with the scene.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["open", "close", "state"], "default": "open"},
+            "id": {"type": "string", "description": "Pane annotation id from annotate_map items[].id, e.g. anno-3."},
+            "label": {"type": "string"},
+            "latitude": {"type": "number", "minimum": -90, "maximum": 90},
+            "longitude": {"type": "number", "minimum": -180, "maximum": 180},
+            "flyTo": {"type": "boolean", "default": False, "description": "Also fly the camera to the pin."},
+            "fanout": FANOUT_PROP}}, "🗂️"),
     "godseye_live_tour_status": (
         "Status of a tour job: state, index, current stop, remaining, errors.",
         {"type": "object", "properties": {"jobId": {"type": "string"}}, "required": ["jobId"]}, "🧭"),
@@ -272,7 +303,7 @@ EXTRA_TOOLS = {
         {"type": "object", "properties": {"name": {"type": "string"}, "city": {"type": "string"}},
          "required": ["name"]}, "🧾"),
     "godseye_live_panes": (
-        "List God's Eye View panes (id, optional label, bound chat sessions, last-poll age, busy). "
+        "List Eye Of Hermes (EOH) panes (id, optional label, bound chat sessions, last-poll age, busy). "
         "Stale closed records are pruned automatically; pass prune=true to force a prune now. "
         "Pass label (and optional pane_id) to name the pane bound to this chat. One pane per "
         "session by default; pane ids stay stable across remounts.",
@@ -327,6 +358,9 @@ def extra_handler(name: str):
                 out = composer.scene_op("delete", sid, id=str(args.get("id") or ""))
             elif name == "godseye_live_restore_scene":
                 out = composer.scene_op("restore", sid)
+            elif name == "godseye_live_pin_drawer":
+                fan = bool(args.pop("fanout", False))
+                out = composer.live_call("hermes_pin_drawer", args, sid, fanout=fan)
             elif name == "godseye_live_reload_pane":
                 out = composer.live_call("hermes_reload", {}, sid, fanout=bool(args.get("fanout")))
             elif name == "godseye_rebuild_panel":
@@ -370,7 +404,7 @@ def register_extras(ctx) -> dict:
         done["tools"].append(name)
     if hasattr(ctx, "register_command"):
         try:
-            ctx.register_command("gev", composer.gev_command, description="God's Eye View: fly, layers, status, brief, home, share, doctor",
+            ctx.register_command("gev", composer.gev_command, description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor",
                                  args_hint="<fly|layers|status|brief|home|share|doctor> [args]")
             done["command"] = True
         except Exception:
@@ -378,7 +412,7 @@ def register_extras(ctx) -> dict:
     if hasattr(ctx, "register_skill") and (SKILL_DIR / "SKILL.md").is_file():
         try:
             ctx.register_skill("godseye-analyst", SKILL_DIR / "SKILL.md",
-                               description="God's Eye View analyst playbook: data vs live tools, pane guidance, policy, examples.")
+                               description="Eye Of Hermes (EOH) analyst playbook: data vs live tools, pane guidance, policy, examples.")
             done["skill"] = True
         except Exception:
             pass

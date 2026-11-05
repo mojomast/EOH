@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🌐 hermes-godseye
+# 🌐 Eye Of Hermes (EOH)
 
-**[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) inside [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
+**Eye Of Hermes (EOH)** (repo `hermes-godseye`, plugin id `godseye`): **[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) inside [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
 A live 3D globe of public aircraft, ships, satellites, hazards and weather in a Hermes pane, which Hermes can control and answer questions about. Inference comes from your Hermes model, not OpenAI.
 
 [Install](#install) · [Features](#features) · [New in v0.2](#new-in-v02) · [Try it](#try-it) · [Architecture](#architecture) · [Config](#configuration) · [Troubleshooting](#troubleshooting)
@@ -64,6 +64,8 @@ Scenes persist per chat session, and reopening the pane restores pins, routes, t
 Camera framing: `godseye_live_fly_to_location {latitude, longitude, framing:"street"}` puts you about 150 m away at pitch -15° (rooftop 450 m/-30°, district 2500 m/-45°). The minimum range is 100 m. Results and `get_current_view_state` include `pitchDeg`/`headingDeg`.
 
 Annotations: `label` can span 2-3 lines (`"Misoya\nMiso ramen\nOpen till 22:00"`). `{type:"card", latitude, longitude | target, title, rows:[{text, price}]}` draws a menu or price callout. A route with an unfindable waypoint still draws the legs it can (never across the gap) and names the missing waypoint. `flyTo:"all"` frames everything drawn in that call.
+
+Pins and the pin drawer: pins (annotation pins, POI pins, brief hits, tour stops) are drawn by the plugin as ground-clamped Cesium markers. The pin's **tip** is the exact spot, a small dot sits on the ground under it, and the ground height is re-sampled as you zoom, so pins stay put at street level. Click a pin (or call `godseye_live_pin_drawer {action:"open", id | label | latitude+longitude, flyTo?}`) to open a side drawer with the pin's title, rendered markdown, images and links. Close it with ✕, Esc or `{action:"close"}`. Set the content on any pin in `annotate_map`: `title`, `description_md` (markdown; raw HTML shows as text), `images:[{url, alt, caption}]` (http/https, lazy-loaded, a broken image shows a note) and `links:[{url, label}]` (http/https only). `godseye_find_places {pin:true}` fills these from OSM tags (address, hours, phone, cuisine, website, menu, Wikipedia/Wikidata, OSM link, and an image when the place has an `image`/`wikimedia_commons` tag; no extra requests are made). `godseye_brief_and_show` fills them for each hit, and `pin_details:[{...}]` overrides them per hit. The open drawer is saved with the scene and reopened by `godseye_live_restore_scene`. The pane frame is sandboxed with no `allow-popups`, so drawer links are opened by Hermes (`ui/open-link` → your browser), never inside the frame.
 
 Tours: `godseye_live_run_tour {stops:[{name,lat,lon}], framing:"street"|"rooftop"|"district", orbit:"slow"|null, dwellMs, connect:"route"}` returns a jobId right away. Check it with `godseye_live_tour_status` and cancel with `godseye_live_stop_tour`.
 
@@ -175,6 +177,7 @@ If the app is reached by a non-localhost name, add that name to God's Eye View's
 
 - The pane uses the Desktop Plugin SDK's `SandboxedFrame`: an opaque origin with `allow-scripts` only. The plugin never adds `allow-same-origin`.
 - The frame reaches the app only through the plugin backend. Only `panel_request` and `show_in_gods_eye_view` are allowed there.
+- Pin drawer content is sanitized in the frame: markdown is HTML-escaped before rendering, only http(s) links and images are kept, and the host opens only http(s) URLs.
 - The live-control script inside the frame accepts messages only from its parent window. Hermes can run only the listed upstream actions.
 - The HUD bridge and live relay listen on **127.0.0.1 only** and require a random bearer token. The token is stored in `~/.hermes/plugin-data/godseye/hud-bridge.env` (mode 0600). The plugin holds no model API keys; inference goes through `ctx.llm`.
 

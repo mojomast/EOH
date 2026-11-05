@@ -1,11 +1,11 @@
 ---
 name: godseye-analyst
-description: God's Eye View analyst playbook. When to use the godseye_* data tools vs the godseye_live_* globe tools, how to handle the pane, the public-data-only policy, and example sequences.
+description: Eye Of Hermes (EOH) analyst playbook (built on God's Eye View). When to use the godseye_* data tools vs the godseye_live_* globe tools, how to handle the pane, the public-data-only policy, and example sequences.
 ---
 
-# God's Eye View analyst playbook
+# Eye Of Hermes (EOH) analyst playbook
 
-God's Eye View is a live 3D globe of **public** aircraft (ADS-B), ships (AIS), satellites,
+Eye Of Hermes (EOH) is a Hermes front end for God's Eye View, a live 3D globe of **public** aircraft (ADS-B), ships (AIS), satellites,
 earthquakes, fires, weather, cyclones and mapped infrastructure. In Hermes it comes as two kinds
 of tools:
 
@@ -31,8 +31,8 @@ of tools:
 
 ## The pane
 
-- Live tools act on the God's Eye View pane next to this chat (else the most recently active
-  pane). If a live tool returns `no_pane`, tell the user to open the God's Eye View pane in
+- Live tools act on the EOH pane next to this chat (else the most recently active
+  pane). If a live tool returns `no_pane`, tell the user to open the Eye Of Hermes (EOH) pane in
   Hermes Desktop or the Webapp and keep it visible; data tools still work.
 - `pane_busy` means a pane is open but still running an earlier command: wait a few seconds and
   retry once. `godseye_live_panes` lists panes with their last-poll age.
@@ -54,6 +54,13 @@ of tools:
 `godseye_live_fly_to_location {query: "Strait of Hormuz", waitForArrival: true}` →
 `godseye_live_set_layer_visibility {layerId: "ais-live-vessels", enabled: true}` →
 `godseye_live_set_visual_style {style: "surveillance"}`.
+
+**"List ramen places in Montreal" / "tell me about that pin."**
+`godseye_find_places {query: "ramen restaurants in Montreal", pin: true}` pins them with drawer content
+(address, hours, website, links). To add your own notes to a pin, include `title`, `description_md`
+(markdown), `images:[{url, alt}]` and `links:[{url, label}]` (http/https only) in its `annotate_map`
+spec. Show one with `godseye_live_pin_drawer {action: "open", label: "Sumo Ramen", flyTo: true}`;
+close with `{action: "close"}`. The user can also click any pin. Never put private URLs in a drawer.
 
 **"Save this as my home view" / "go home"** → `godseye_home {action: "set"}` / `{action: "go"}`.
 

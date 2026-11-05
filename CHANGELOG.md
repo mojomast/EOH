@@ -2,7 +2,12 @@
 
 ## 0.2.0 (unreleased)
 
+### Changed
+- Renamed the user-facing title to **Eye Of Hermes (EOH)** (pane title, plugin description, `/gev` help, skill, README). Plugin id `godseye`, tool names, `/gev`, routes and repo name are unchanged.
+
 ### Added
+- Grounded pins: annotation/POI/brief/tour pins are drawn as Cesium markers anchored at their tip (verticalOrigin BOTTOM) with a ground dot, depth test disabled and the ground height re-sampled per zoom level. Fixes pins hovering above the spot at street level (upstream's screen-space reticle samples the height once, usually at a coarse zoomed-out tile LOD, and never re-samples). Upstream's reticle for those pins is hidden; ids, list and clear are unchanged.
+- Pin info drawer: click a pin (or `godseye_live_pin_drawer`) for a slide-out with title, sanitized markdown, lazy images and http(s) links (opened by the host via `ui/open-link`). New optional annotation fields `title`, `description_md`, `images[]`, `links[]`; `godseye_find_places` fills them from OSM tags, `godseye_brief_and_show` from hits (`pin_details` overrides). The open drawer persists with the scene and is restored.
 - `godseye_find_places`: keyless POI search ("ramen restaurants in Montreal"). Category/cuisine-in-bbox via Overpass (configured endpoint first, then overpass.kumi.systems, overpass.private.coffee, overpass-api.de; 20 s per request, 45 s total, per-endpoint circuit breaker), name/address lookup and a keyword fallback via Nominatim (descriptive User-Agent, 1.2 s pacing, 1 h cache). Returns lat/lon, name, address, website, opening hours; `pin:true` pins up to 24 via annotate_map.
 - `godseye_poi_details` (best effort): OSM record, website, menu URL if linked, and verbatim price snippets from the venue's site. Prices are never invented.
 - `resolve_area` falls back to `around:true` (buffer polygon) for point-only places, then to a Nominatim bbox polygon.

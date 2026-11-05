@@ -107,14 +107,16 @@
     const C3 = v.camera.positionWC.constructor
     const cam = v.camera.positionWC
     for (const c of cards.values()) {
-      const pos = C3.fromDegrees(c.lon, c.lat, 0)
+      const gh = window.__hermesPins?.heightFor?.(c.lat, c.lon)
+      if (Number.isFinite(gh)) c.h = gh
+      const pos = C3.fromDegrees(c.lon, c.lat, c.h ?? 0)
       const xy = v.scene.cartesianToCanvasCoordinates?.(pos)
       // hide when behind the globe: camera->point must not pass the horizon (dot test on the normal)
       const n = { x: pos.x, y: pos.y, z: pos.z }, d = { x: pos.x - cam.x, y: pos.y - cam.y, z: pos.z - cam.z }
       const facing = n.x * d.x + n.y * d.y + n.z * d.z < 0
       if (!xy || !facing) { c.el.style.display = 'none'; continue }
       c.el.style.display = 'block'
-      c.el.style.transform = `translate(${Math.round(xy.x)}px, ${Math.round(xy.y)}px) translate(-50%, calc(-100% - 14px))`
+      c.el.style.transform = `translate(${Math.round(xy.x)}px, ${Math.round(xy.y)}px) translate(-50%, calc(-100% - ${c.pinned ? 50 : 14}px))`
     }
   }
   const ensureCardLayer = () => {
@@ -141,7 +143,7 @@
       rows.map((r) => `<div style="display:flex;gap:12px;justify-content:space-between"><span>${esc(r.text)}</span>` +
         `<span style="color:#ffd27a">${esc(r.price ?? '')}</span></div>`).join('')
     cardLayer.appendChild(el)
-    cards.set(key, { el, lat, lon })
+    cards.set(key, { el, lat, lon, pinned: Boolean(spec.pinned) })
     placeCards()
     try { window.__godsEyeView?.viewer?.scene?.requestRender?.() } catch {}
   }
@@ -152,10 +154,21 @@
   const ptName = (pt) => pt?.target ?? pt?.name ?? null
   const hasCoords = (pt) => Number.isFinite(pt?.latitude) && Number.isFinite(pt?.longitude)
   // Rewrite Hermes-only annotation features into upstream specs; remember what to add afterwards.
+  const DRAWER_KEYS = ['description_md', 'images', 'links']
+  const PIN_TYPES = new Set(['pin', 'marker', 'point', 'highlight', 'card'])
   const prepAnnotate = (args) => {
     const extras = []
-    const anns = (args.annotations || []).map((a, i) => {
-      if (!a || typeof a !== 'object') return a
+    const metas = []
+    const anns = (args.annotations || []).map((a0, i) => {
+      if (!a0 || typeof a0 !== 'object') return a0
+      // drawer content stays Hermes-side (upstream never sees it)
+      const meta = {}
+      for (const k of DRAWER_KEYS) if (a0[k] != null) meta[k] = a0[k]
+      if (a0.title != null) meta.title = a0.title
+      metas[i] = meta
+      const a = { ...a0 }
+      for (const k of DRAWER_KEYS) delete a[k]
+      if (String(a.type || 'pin').toLowerCase() !== 'card') delete a.title
       const t = String(a.type || 'pin').toLowerCase()
       if (t === 'card') {
         const rows = (Array.isArray(a.rows) ? a.rows : []).slice(0, 8).map((r) => ({ text: String(r?.text ?? '').slice(0, 60), price: r?.price == null ? '' : String(r.price).slice(0, 16) }))
@@ -175,7 +188,7 @@
       return a
     })
     const flyAll = args.flyTo === 'all'
-    return { args: { ...args, annotations: anns, flyTo: flyAll ? false : args.flyTo }, extras, flyAll }
+    return { args: { ...args, annotations: anns, flyTo: flyAll ? false : args.flyTo }, extras, flyAll, metas, orig: args.annotations || [] }
   }
   const finishAnnotate = async (run, args, prep, result, signal) => {
     const items = Array.isArray(result?.items) ? result.items : []
@@ -183,6 +196,16 @@
     for (let i = 0; i < items.length; i++) {
       const it = items[i], spec = args.annotations?.[i] || {}, extra = prep.extras[i]
       if (it?.ok && Number.isFinite(it.latitude)) anchors.push([it.latitude, it.longitude])
+      // grounded Hermes pin (tip on the exact spot) + click-to-open drawer
+      const type = String(prep.orig[i]?.type || spec.type || 'pin').toLowerCase()
+      if (it?.ok && it.id && PIN_TYPES.has(type) && Number.isFinite(it.latitude) && window.__hermesPins) {
+        const label = extra?.kind === 'card' ? extra.spec.title : (it.label ?? spec.label)
+        if (window.__hermesPins.add(it.id, it.latitude, it.longitude, { ...spec, ...(prep.metas[i] || {}), label })) {
+          it.grounded = true
+          it.drawer = true
+          if (extra?.kind === 'card') extra.spec.pinned = true
+        }
+      }
       if (it?.ok && extra?.kind === 'card' && Number.isFinite(it.latitude)) {
         addCard(it.id || `card-${i}`, it.latitude, it.longitude, extra.spec)
         it.card = true
@@ -271,6 +294,11 @@
     if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
     let payload
     try {
+      if (m.name === 'hermes_pin_drawer') {
+        await ready()
+        payload = window.__hermesPins ? window.__hermesPins.command(m.args || {}) : { ok: false, error: 'pin layer not loaded' }
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
       if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame') {
         payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : sceneInfo()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
@@ -281,7 +309,7 @@
       try {
         let args = m.args || {}, prep = null, fr = null
         if (m.name === 'annotate_map') { prep = prepAnnotate(args); args = prep.args }
-        if (m.name === 'clear_annotations') clearCards()
+        if (m.name === 'clear_annotations') { clearCards(); try { window.__hermesPins?.clear() } catch {} }
         if (m.name === 'fly_to_location' && FRAMING[args.framing]) {
           fr = FRAMING[args.framing]
           const { framing, ...rest } = args
