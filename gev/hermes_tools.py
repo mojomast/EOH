@@ -96,6 +96,13 @@ def extend_live_schema(name: str, schema: dict) -> dict:
     if name == "annotate_map":
         props["flyTo"] = {"anyOf": [{"type": "boolean"}, {"type": "string", "enum": ["all"]}],
                           "description": "true frames the first mark; 'all' frames every mark drawn in this call."}
+        props["intent"] = {"type": "string", "maxLength": 240,
+                           "description": "REQUIRED whenever you create pins: the user's request in their words "
+                                          "(e.g. 'ramen near me', 'FIRMS fires last 24h'). Shapes which facts go "
+                                          "in each pin's drawer. Always also fill description_md / images / links "
+                                          "yourself when you know them."}
+        props["context"] = {"type": "string", "maxLength": 240,
+                            "description": "Alias of intent (user request / investigation context)."}
         items = (props.get("annotations") or {}).get("items")
         if isinstance(items, dict):
             ip = items.setdefault("properties", {})
@@ -125,6 +132,10 @@ def make_live_handler(name: str):
         reason = policy.refuse_reason(args)
         if reason:
             return json.dumps({"error": reason})
+        if name == "annotate_map":
+            from . import enrich
+            intent = args.get("intent") or args.get("context")
+            args["annotations"] = enrich.enrich_annotations(args.get("annotations") or [], intent=intent, mode="light")
         out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
         if name == "set_map_stack":
             out = composer.remediate_map_stack(out)
@@ -196,6 +207,10 @@ EXTRA_TOOLS = {
             "radius_km": {"type": "number", "minimum": 1, "maximum": 2000},
             "top_n": {"type": "integer", "minimum": 0, "maximum": 24, "default": 5},
             "military": {"type": "boolean", "description": "Force military_awareness (true) or situation_brief (false)."},
+            "intent": {"type": "string", "maxLength": 240,
+                       "description": "User's request (default: question or place). Shapes which facts each "
+                                      "pinned hit shows in its drawer."},
+            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."},
             "pin_details": {"type": "array", "maxItems": 24, "description": "Optional drawer content per pinned hit, "
                             "in hit order (nearest first): {title, description_md, images[], links[]}. Defaults are "
                             "built from each hit's row.", "items": {"type": "object", "properties": {
@@ -260,7 +275,10 @@ EXTRA_TOOLS = {
             "dwellMs": {"type": "integer", "minimum": 0, "maximum": 600000, "default": 20000},
             "connect": {"type": ["string", "null"], "enum": ["route", None], "default": None,
                         "description": "route = pin every stop and draw a route through them first."},
-            "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."}},
+            "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."},
+            "intent": {"type": "string", "maxLength": 240,
+                       "description": "User's request for this tour; used to fill each stop pin's drawer."},
+            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."}},
          "required": ["stops"]}, "🧭"),
     "godseye_live_pin_drawer": (
         "Open or close the info drawer of a pin on the live globe (the same drawer a click opens). It shows the "
@@ -295,7 +313,11 @@ EXTRA_TOOLS = {
             "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
                      "description": "[south, west, north, east]"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
-            "pin": {"type": "boolean", "default": False, "description": "Pin results (max 24) via annotate_map."}}},
+            "pin": {"type": "boolean", "default": False, "description": "Pin results (max 24) via annotate_map."},
+            "intent": {"type": "string", "maxLength": 240,
+                       "description": "User's request (default: the query). Shapes pin drawer facts "
+                                      "(e.g. cuisine/hours/menu for food). Always pass this when pinning."},
+            "context": {"type": "string", "maxLength": 240, "description": "Alias of intent."}}},
         "🍜"),
     "godseye_poi_details": (
         "Best-effort details for one venue: OSM record, website, menu URL if found, and verbatim price "
@@ -321,6 +343,58 @@ EXTRA_TOOLS = {
             "label": {"type": "string", "description": "Optional preview tab label."},
             "action": {"type": "string", "enum": ["swap", "close"], "default": "swap",
                        "description": "swap = close previous + open url; close = dismiss the tracked tab only."}}}, "🖼️"),
+
+    "godseye_research_pins": (
+        "Research pins in the current scene and write a short summary, photos and sources into each pin's "
+        "drawer (description_md with a Sources section, images[], links[]), then persist them. Free keyless "
+        "sources only: Wikipedia/Wikidata REST, Wikimedia Commons, OSM tags already on the pin, website meta "
+        "description. mode=light (fast, cached, local+tiny wiki) or full (default). Never invents facts — "
+        "missing channels are marked unavailable. Cap: 24 pins, few HTTP calls each, disk cache. "
+        "This plugin cannot call Hermes web_search; when sources are thin, run web_search yourself and pass "
+        "verified snippets as agent_notes:[{id|label, summary, links[], images[]}].",
+        {"type": "object", "properties": {
+            "ids": {"type": "array", "items": {"type": "string"}, "maxItems": 24,
+                    "description": "Scene annotation ids (a1…) or pane ids (anno-3). Default: all pins."},
+            "labels": {"type": "array", "items": {"type": "string"}, "maxItems": 24},
+            "all": {"type": "boolean", "default": True, "description": "Research every pin when ids/labels omitted."},
+            "mode": {"type": "string", "enum": ["light", "full"], "default": "full"},
+            "agent_notes": {"type": "array", "maxItems": 24, "items": {"type": "object", "properties": {
+                "id": {"type": "string"}, "label": {"type": "string"}, "summary": {"type": "string"},
+                "images": {"type": "array", "items": {"type": "object"}},
+                "links": {"type": "array", "items": {"type": "object"}}}}},
+            "persist": {"type": "boolean", "default": True}}}, "🔎"),
+    "godseye_investigation_save": (
+        "Save the whole current scene (pins with drawer content, notes, routes, cards, camera/saved views) "
+        "as a named investigation under plugin-data/godseye/investigations/.",
+        {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Investigation name (letters, digits, space _ . -)."},
+            "notes": {"type": "string", "maxLength": 4000},
+            "views": {"type": "array", "maxItems": 12, "items": {"type": "object"},
+                      "description": "Optional named camera views [{name, lat, lon, heightM, ...}]."}},
+         "required": ["name"]}, "💾"),
+    "godseye_investigation_list": (
+        "List saved investigations (name, pin/route counts, saved_at, path).",
+        {"type": "object", "properties": {}}, "📚"),
+    "godseye_investigation_load": (
+        "Load a named investigation into this chat's scene and restore it on the open pane.",
+        {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "restore": {"type": "boolean", "default": True}}, "required": ["name"]}, "📂"),
+    "godseye_investigation_delete": (
+        "Delete a named investigation. Requires confirm=true; refused without it.",
+        {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "confirm": {"type": "boolean", "description": "Must be true to delete."}},
+         "required": ["name", "confirm"]}, "🗑️"),
+    "godseye_investigation_report": (
+        "Export a self-contained HTML + Markdown report for a named investigation (or the current scene): "
+        "title, map screenshot when the pane can capture its canvas (otherwise a note), pin table, each pin's "
+        "drawer, routes and sources. Saved under plugin-data/godseye/reports/; returns paths. Optionally "
+        "include a share link for the current view.",
+        {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Saved investigation name; omit to export the live scene."},
+            "share": {"type": "boolean", "default": False, "description": "Also call godseye_share_link."},
+            "capture": {"type": "boolean", "default": True, "description": "Try pane canvas screenshot."}}}, "📄"),
 }
 
 
@@ -339,7 +413,10 @@ def extra_handler(name: str):
                 from . import poi
                 out = poi.find_places(args)
                 if args.get("pin") and out.get("ok") and out["places"]:
-                    out["pinned"] = composer.live_call("annotate_map", {"annotations": poi.pin_annotations(out["places"])}, sid)
+                    intent = args.get("intent") or args.get("context") or args.get("query")
+                    anns = poi.pin_annotations(out["places"], intent=intent)
+                    out["pinned"] = composer.live_call(
+                        "annotate_map", {"annotations": anns, "intent": intent, "persist": True}, sid)
             elif name == "godseye_poi_details":
                 from . import poi
                 out = poi.poi_details(args)
@@ -371,6 +448,18 @@ def extra_handler(name: str):
                 out = composer.tour_op("status", sid, jobId=args.get("jobId"))
             elif name == "godseye_live_stop_tour":
                 out = composer.tour_op("cancel", sid, jobId=args.get("jobId"))
+            elif name == "godseye_research_pins":
+                out = composer.research_pins_op(args, session_id=sid)
+            elif name == "godseye_investigation_save":
+                out = composer.investigation_op("save", sid, args=args)
+            elif name == "godseye_investigation_list":
+                out = composer.investigation_op("list", sid, args=args)
+            elif name == "godseye_investigation_load":
+                out = composer.investigation_op("load", sid, args=args)
+            elif name == "godseye_investigation_delete":
+                out = composer.investigation_op("delete", sid, args=args)
+            elif name == "godseye_investigation_report":
+                out = composer.investigation_op("report", sid, args=args)
             else:
                 action = args.pop("action", "go")
                 if action == "get":
@@ -404,8 +493,9 @@ def register_extras(ctx) -> dict:
         done["tools"].append(name)
     if hasattr(ctx, "register_command"):
         try:
-            ctx.register_command("gev", composer.gev_command, description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor",
-                                 args_hint="<fly|layers|status|brief|home|share|doctor> [args]")
+            ctx.register_command("gev", composer.gev_command,
+                                 description="Eye Of Hermes (EOH): fly, layers, status, brief, home, share, doctor, research, save, list, load, delete, report",
+                                 args_hint="<fly|layers|status|brief|home|share|doctor|research|save|list|load|delete|report> [args]")
             done["command"] = True
         except Exception:
             pass
