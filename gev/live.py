@@ -48,6 +48,7 @@ class Pane:
         self.inflight: set[int] = set()
         self.created = time.monotonic()
         self.restored: str | None = None
+        self.label: str | None = None
 
     def fresh(self, now: float) -> bool:
         if self.polling or now - self.last_poll < PANE_STALE_S:
@@ -55,9 +56,13 @@ class Pane:
         return bool(self.inflight) and now - self.last_poll < INFLIGHT_STALE_S  # a working pane, not a ghost
 
     def info(self, now: float) -> dict:
-        return {"id": self.id, "sessions": sorted(self.sessions), "lastPollAgeS": 0.0 if self.polling else round(now - self.last_poll, 1),
-                "polling": self.polling > 0, "busy": bool(self.inflight), "queued": len(self.queue),
-                "open": self.fresh(now)}
+        out = {"id": self.id, "sessions": sorted(self.sessions),
+               "lastPollAgeS": 0.0 if self.polling else round(max(0.0, now - self.last_poll), 1),
+               "polling": self.polling > 0, "busy": bool(self.inflight), "queued": len(self.queue),
+               "open": self.fresh(now)}
+        if self.label:
+            out["label"] = self.label
+        return out
 
 
 class Relay:
@@ -73,6 +78,8 @@ class Relay:
         self.ids = itertools.count(1)
         self.scenes = scenes if scenes is not None else SceneStore(None)
         self.tours: dict[str, object] = {}
+        # session_id -> pane_id: stable binding so a reopened pane for the same chat reuses its id
+        self.session_binding: dict[str, str] = {}
 
     # -- pane side -----------------------------------------------------------------------------
     def _pane(self, pane_id: str | None) -> Pane:
@@ -86,11 +93,23 @@ class Relay:
         self.callbacks[cid] = callback
         pane.queue.append({"id": cid, "name": name, "args": args})
 
-    def next(self, wait: float = POLL_WAIT_S, pane_id: str | None = None, sessions=None, fresh: bool = False) -> dict | None:
+    def next(self, wait: float = POLL_WAIT_S, pane_id: str | None = None, sessions=None,
+             fresh: bool = False, label: str | None = None) -> dict | None:
         with self.cond:
+            self._prune_locked(now=time.monotonic())
             pane = self._pane(pane_id)
+            if label is not None:
+                pane.label = str(label).strip()[:80] or None
             if sessions:
-                pane.sessions = {str(s)[:200] for s in sessions if s}
+                claimed = {str(s)[:200] for s in sessions if s}
+                # One pane per session by default: this pane takes the sessions; drop them elsewhere.
+                for other in self.panes.values():
+                    if other is pane:
+                        continue
+                    other.sessions -= claimed
+                pane.sessions = claimed
+                for sid in claimed:
+                    self.session_binding[sid] = pane.id
             if fresh:  # a new or reloaded frame: bring its scene back before anything else
                 key = self.scenes.pick(sorted(pane.sessions))
                 if key:
@@ -143,7 +162,65 @@ class Relay:
     def list(self) -> list[dict]:
         now = time.monotonic()
         with self.cond:
+            self._prune_locked(now=now)  # drop stale closed records every status/list
             return [p.info(now) for p in sorted(self.panes.values(), key=lambda p: p.last_poll, reverse=True)]
+
+    def _prune_locked(self, now: float | None = None) -> list[str]:
+        """Drop closed/stale pane records. Never removes a still-fresh (polling/working) pane."""
+        now = time.monotonic() if now is None else now
+        removed = []
+        for pid, pane in list(self.panes.items()):
+            if pane.fresh(now):
+                continue
+            removed.append(pid)
+            del self.panes[pid]
+            for sid, bound in list(self.session_binding.items()):
+                if bound == pid:
+                    del self.session_binding[sid]
+        return removed
+
+    def prune(self) -> dict:
+        with self.cond:
+            removed = self._prune_locked()
+            return {"ok": True, "removed": removed, "panes": [p.info(time.monotonic()) for p in self.panes.values()]}
+
+    def set_label(self, pane_id: str | None, label: str | None, session_id: str | None = None) -> dict:
+        with self.cond:
+            pane = None
+            if pane_id and pane_id in self.panes:
+                pane = self.panes[pane_id]
+            elif session_id:
+                prefer = self.session_binding.get(str(session_id))
+                pane = self.panes.get(prefer) if prefer else None
+                if pane is None:
+                    hits = self.targets(session_id)
+                    pane = hits[0] if hits else None
+            if pane is None and self.open_panes():
+                pane = self.open_panes()[0]
+            if pane is None:
+                return dict(NO_PANE)
+            pane.label = (str(label).strip()[:80] or None) if label is not None else pane.label
+            return {"ok": True, "pane": pane.info(time.monotonic())}
+
+    def panes_op(self, body: dict) -> dict:
+        """List / prune / label pane records. ``{prune:true}`` drops stale closed ones."""
+        if body.get("prune"):
+            out = self.prune()
+        else:
+            with self.cond:
+                self._prune_locked()  # auto-prune on every list
+                out = {"ok": True, "panes": [p.info(time.monotonic()) for p in
+                                            sorted(self.panes.values(), key=lambda p: p.last_poll, reverse=True)],
+                       "bindings": dict(self.session_binding)}
+        label = body.get("label")
+        if label is not None or body.get("pane_id"):
+            labeled = self.set_label(body.get("pane_id"), label, body.get("session_id"))
+            out["label"] = labeled
+            if not labeled.get("ok"):
+                out["ok"] = False
+                out["error"] = labeled.get("error")
+                out["message"] = labeled.get("message")
+        return out
 
     def targets(self, session_id: str | None = None, pane_id: str | None = None, fanout: bool = False) -> list[Pane]:
         live = self.open_panes()
@@ -152,9 +229,16 @@ class Relay:
         if pane_id:
             return [p for p in live if p.id == pane_id][:1]
         if session_id:
-            bound = [p for p in live if str(session_id) in p.sessions]
+            sid = str(session_id)
+            bound = [p for p in live if sid in p.sessions]
             if bound:
                 return bound[:1]
+            # Stable binding: prefer the pane id last registered for this session, if still open.
+            prefer = self.session_binding.get(sid)
+            if prefer:
+                hit = [p for p in live if p.id == prefer]
+                if hit:
+                    return hit[:1]
         return live[:1]
 
     def submit(self, name: str, args: dict, wait: float = RESULT_WAIT_S, session_id: str | None = None,
@@ -305,8 +389,10 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, {"paneOpen": relay.pane_open(), "panes": relay.list()})
             if url.path == "/next":
                 sessions = [s for s in ",".join(q.get("sessions", [])).split(",") if s]
+                label = (q.get("label") or [None])[0]
                 return self._send(200, {"command": relay.next(pane_id=(q.get("pane") or [None])[0], sessions=sessions,
-                                                              fresh=(q.get("fresh") or ["0"])[0] == "1")})
+                                                              fresh=(q.get("fresh") or ["0"])[0] == "1",
+                                                              label=label)})
             self._send(404, {"error": "not found"})
 
         def do_POST(self):
@@ -324,6 +410,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.scene_op(body))
             if self.path == "/tour":
                 return self._send(200, relay.tour_op(body))
+            if self.path == "/panes":
+                return self._send(200, relay.panes_op(body))
             if self.path == "/result":
                 relay.result(body.get("id", 0), body.get("payload") or {})
                 return self._send(200, {"ok": True})

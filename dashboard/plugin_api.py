@@ -82,11 +82,13 @@ async def tool(body: dict):
 
 
 @router.get("/live/next")
-async def live_next(pane: str = "", sessions: str = ""):
+async def live_next(pane: str = "", sessions: str = "", fresh: str = "0", label: str = ""):
     import asyncio
     import urllib.parse
     from gev import live
-    q = urllib.parse.urlencode({k: v for k, v in {"pane": pane[:80], "sessions": sessions[:1000]}.items() if v})
+    q = urllib.parse.urlencode({k: v for k, v in {
+        "pane": pane[:80], "sessions": sessions[:1000], "fresh": fresh[:1], "label": label[:80]
+    }.items() if v and not (k == "fresh" and v == "0")})
     return await asyncio.to_thread(live.call, "/next" + (f"?{q}" if q else ""), bridge.ensure_token(), None,
                                    live.POLL_WAIT_S + 10)
 
@@ -96,6 +98,13 @@ async def live_panes():
     import asyncio
     from gev import live
     return await asyncio.to_thread(live.call, "/status", bridge.ensure_token(), None, 5)
+
+
+@router.post("/live/panes")
+async def live_panes_op(body: dict):
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/panes", bridge.ensure_token(), body or {}, 10)
 
 
 @router.get("/home")

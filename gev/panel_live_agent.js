@@ -54,7 +54,27 @@
     } catch {}
     let annotations = null
     try { const a = g.annotations; annotations = a?.list?.()?.length ?? a?.items?.length ?? a?.size ?? null } catch {}
-    return { ok: true, action: 'hermes_scene_info', ready: Boolean(g.viewer), mapStack: stack, annotations, camera: pose() }
+    // Compact feedProvenance for the doctor (overall + per-layer feedState only; no payloads).
+    let feedProvenance = null
+    try {
+      const snap = g.layerSnapshot?.getAll?.() || g.dataLayers?.getAll?.() || g.layers?.getAll?.() || null
+      const layers = Array.isArray(snap) ? snap.map((x) => ({
+        id: x.id || x.layerId, name: x.name || x.label || x.id,
+        feedState: x.feedState || x.state || (x.enabled === false ? 'off' : null),
+        source: x.source || x.provider || undefined
+      })).filter((x) => x.id || x.name) : []
+      if (layers.length) {
+        const rank = { unavailable: 0, loading: 1, degraded: 2, stale: 3, fallback: 4, partial: 5, nominal: 6, off: 7 }
+        const active = layers.filter((l) => l.feedState && l.feedState !== 'off')
+        let overall = null, best = 99
+        for (const l of active) {
+          const r = rank[l.feedState] ?? 50
+          if (r < best) { best = r; overall = l.feedState }
+        }
+        feedProvenance = { overall: overall || (layers.length ? 'off' : null), layers }
+      }
+    } catch {}
+    return { ok: true, action: 'hermes_scene_info', ready: Boolean(g.viewer), mapStack: stack, annotations, camera: pose(), feedProvenance }
   }
   // Exact framing: orbit the look-at point to an explicit pitch/heading/range (no eased nudge).
   const frame = (args) => {
