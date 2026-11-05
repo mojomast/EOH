@@ -190,6 +190,7 @@ Run **`/gev doctor`** (or ask Hermes to run `godseye_doctor`) first. It checks e
 | Brief says "place lookup was unavailable" | Upstream's geocoder is down. The brief retried with built-in coordinates or with the globe's own lookup. Pass `lat`/`lon` to skip the lookup. |
 | `relay_unavailable` | Restart the Hermes dashboard/gateway so the plugin backend starts the relay. |
 | "Open full app" goes to localhost | Set `GODSEYE_PUBLIC_URL` and allow the name in `GEV_ALLOWED_HOSTS`. |
+| "Error constructing CesiumWidget … WebGL … initialization failed" | The browser ran out of WebGL contexts (fixed in v0.2). Close the browser tab and reopen it (a reload alone may not free the GPU contexts), then reopen the pane. A context lost later shows a *Click to reload the globe* card. |
 | Plugin changes not showing | Rescan plugins, toggle the pane, hard-refresh. |
 
 ## Limitations

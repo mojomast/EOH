@@ -425,3 +425,21 @@ def test_panel_agent_handles_caption_and_pane_identity():
     assert "hermes_caption" in js and "hermes-gev-caption" in js
     plugin = (ROOT / "desktop/plugin.js").read_text()
     assert "<script" not in plugin and "pane: paneId" in plugin and "'/home'" in plugin
+
+
+def test_pane_survives_layout_changes_and_releases_webgl():
+    plugin = (ROOT / "desktop/plugin.js").read_text()
+    assert "lifecycleKeepAlive: true" in plugin  # host never remounted/moved on resize
+    assert "key: src.length" not in plugin and "key: `${fullUi ? 'f' : 'g'}-${nonce}`" in plugin
+    assert "panelCache" in plugin and "disposeFrame(frame())" in plugin
+    assert "Click to reload the globe" in plugin and "hermes-gev:gl-lost" in plugin
+    agent = (ROOT / "gev/panel_live_agent.js").read_text()
+    for needle in ("pagehide", "WEBGL_lose_context", "webglcontextlost", "e.preventDefault()",
+                   "cesium-widget-errorPanel", "hermes-gev:dispose", "viewer.destroy()"):
+        assert needle in agent
+
+
+def test_panel_scripts_do_not_react_to_resize():
+    from gev import panel_inject
+    out = panel_inject.prepare("<head></head>")
+    assert "addEventListener('resize'" not in out and 'addEventListener("resize"' not in out

@@ -70,6 +70,33 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
   }
 }
 
+// Release the frame's WebGL context now instead of at GC (see gev/panel_live_agent.js).
+export function disposeFrame(win) {
+  try { win?.postMessage({ type: 'hermes-gev:dispose' }, '*') } catch {}
+}
+
+// GL-health messages from the frame: 'lost' | 'failed' | 'restored', else null.
+export function glEvent(event, win) {
+  if (!win || event.source !== win) return null
+  const t = event.data?.type
+  return t === 'hermes-gev:gl-lost' ? 'lost' : t === 'hermes-gev:gl-failed' ? 'failed' : t === 'hermes-gev:gl-restored' ? 'restored' : null
+}
+
+// Panel documents survive pane remounts, so a remount never refetches or rebuilds the data: URL.
+const panelCache = new Map()
+export function loadPanel(ctx, fullUi) {
+  const key = fullUi ? 'full' : 'globe'
+  if (!panelCache.has(key)) {
+    const p = ctx.rest(`/panel?fullUi=${fullUi}`).then((r) => {
+      if (!r?.html) throw new Error('panel unavailable')
+      return toDataUrl(r.html)
+    })
+    p.catch(() => panelCache.delete(key))
+    panelCache.set(key, p)
+  }
+  return panelCache.get(key)
+}
+
 export function toDataUrl(html) {
   const bytes = new TextEncoder().encode(html)
   let bin = ''
@@ -136,6 +163,8 @@ function GlobePane({ ctx }) {
   const [hud, setHud] = useState('')
   const [fullUi, setFullUi] = useState(true)
   const [homeView, setHomeView] = useState(undefined)
+  const [gl, setGl] = useState(null)
+  const [nonce, setNonce] = useState(0)
   const ref = useRef(null)
   const paneIdRef = useRef(null)
   if (!paneIdRef.current) paneIdRef.current = newPaneId()
@@ -152,19 +181,26 @@ function GlobePane({ ctx }) {
   }, [])
 
   useEffect(() => {
-    ctx.rest(`/panel?fullUi=${fullUi}`)
-      .then((r) => (r?.html ? setSrc(toDataUrl(r.html)) : setErr('panel unavailable')))
-      .catch((e) => setErr(String(e)))
+    let live = true
+    loadPanel(ctx, fullUi).then((u) => live && setSrc(u)).catch((e) => live && setErr(String(e?.message || e)))
+    return () => { live = false }
   }, [fullUi])
 
   useEffect(() => {
     if (!src || homeView === undefined) return
-    const frame = () => ref.current?.contentWindow
+    let lastWin = null  // refs are cleared before cleanup runs; keep the window to dispose it
+    const frame = () => { const w = ref.current?.contentWindow; if (w) lastWin = w; return w || lastWin }
     const onMessage = createPanelHost({ ctx, frame, initialView: homeView || undefined, status: () => statusRef.current })
     const live = createLiveRelay({ ctx, frame, paneId: paneIdRef.current })
-    const off = ctx.addEventListener(window, 'message', (e) => live.onMessage(e) || onMessage(e))
-    return () => { live.stop(); off?.() }
-  }, [src, homeView])
+    const onGl = (e) => {
+      const kind = glEvent(e, frame())
+      if (kind) setGl(kind === 'restored' ? null : kind)
+      return Boolean(kind)
+    }
+    const off = ctx.addEventListener(window, 'message', (e) => onGl(e) || live.onMessage(e) || onMessage(e))
+    return () => { live.stop(); off?.(); disposeFrame(frame()) }
+  }, [src, homeView, nonce])
+  const reloadGraphics = () => { disposeFrame(ref.current?.contentWindow); setGl(null); setNonce((n) => n + 1) }
 
   const base = status?.frameUrl || status?.apiBase || 'http://localhost:4173'
   const askHud = async () => {
@@ -185,8 +221,17 @@ function GlobePane({ ctx }) {
           jsx('span', { className: 'truncate', children: hud || err })
         ]
       }),
-      src
-        ? jsx(SandboxedFrame, { key: src.length + (fullUi ? 'f' : 'g'), ref, src, title: "God's Eye View", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
+      gl
+        ? jsxs('div', {
+          className: 'flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm', style: { minHeight: 520 },
+          children: [
+            jsx('div', { children: gl === 'failed' ? 'The browser could not start 3D graphics (too many WebGL contexts in use).' : 'Graphics reset: the browser dropped the 3D context.' }),
+            jsx(Button, { size: 'sm', onClick: reloadGraphics, children: 'Click to reload the globe' }),
+            jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: 'If it fails again, close other 3D/map tabs or reopen this browser tab.' })
+          ]
+        })
+        : src && homeView !== undefined
+        ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "God's Eye View", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
         : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading God\u2019s Eye View…' })
     ]
   })
@@ -201,7 +246,9 @@ export default {
       id: 'globe',
       area: 'panes',
       title: "God's Eye View",
-      data: { placement: 'right', width: '900px' },
+      // Keep-alive: the pane host is never remounted or moved when the layout changes (e.g. the
+      // window crosses the narrow breakpoint), so the frame and its WebGL context survive resizes.
+      data: { placement: 'right', width: '900px', lifecycleKeepAlive: true },
       render: () => jsx(GlobePane, { ctx })
     })
   }

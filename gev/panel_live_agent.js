@@ -23,8 +23,32 @@
     return { ok: true, action: 'hermes_caption', text: el.textContent }
   }
   const safe = (v) => { try { return JSON.parse(JSON.stringify(v ?? null)) } catch { return String(v) } }
+  // WebGL lifecycle. Browsers cap live WebGL contexts (~16) and free a removed frame's context
+  // only on GC, so a pane that remounts leaks contexts until Cesium can no longer create one.
+  // Release ours explicitly when the frame goes away, and report loss instead of dying silently.
+  const tell = (type, detail) => { try { window.parent.postMessage({ type, detail }, '*') } catch {} }
+  let disposed = false
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    const viewer = window.__godsEyeView?.viewer
+    try { viewer?.scene?.context?._gl?.getExtension('WEBGL_lose_context')?.loseContext() } catch {}
+    try { if (viewer && !viewer.isDestroyed?.()) viewer.destroy() } catch {}
+  }
+  addEventListener('pagehide', dispose)
+  addEventListener('webglcontextlost', (e) => { if (!disposed) { e.preventDefault(); tell('hermes-gev:gl-lost') } }, true)
+  addEventListener('webglcontextrestored', () => tell('hermes-gev:gl-restored'), true)
+  // Cesium's "Error constructing CesiumWidget" dialog: hide it and let the pane offer a clean reload.
+  new MutationObserver(() => {
+    const panel = document.querySelector('.cesium-widget-errorPanel')
+    if (panel && panel.style.display !== 'none') {
+      tell('hermes-gev:gl-failed', String(panel.innerText || '').slice(0, 200))
+      panel.style.display = 'none'
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true })
   addEventListener('message', async (event) => {
     const m = event.data
+    if (event.source === window.parent && m?.type === 'hermes-gev:dispose') return dispose()
     if (event.source !== window.parent || !m || m.type !== 'hermes-gev:run') return
     let payload
     try {

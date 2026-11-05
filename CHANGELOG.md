@@ -12,6 +12,9 @@
 - `godseye_share_link`: upstream share-codec `/share/<code>` link on `GODSEYE_PUBLIC_URL`, with a camera-hash fallback.
 - In-frame caption line (`hermes_caption`) over the globe.
 
+### Fixed
+- Resizing the window could crash the globe, ending in "Error constructing CesiumWidget: The browser supports WebGL, but initialization failed". The cause was the pane being remounted when the layout changed. Each remount started a new Cesium viewer while the old frame's WebGL context was freed only at GC, so contexts leaked until the browser refused new ones. v0.1.0 had the same problem. The pane is now `lifecycleKeepAlive`, the panel document is cached across remounts, and the frame releases its context on `pagehide`/dispose (`WEBGL_lose_context` + `viewer.destroy()`). Context loss and Cesium's error dialog now show a "click to reload the globe" card instead of a dead dialog.
+
 ### Changed
 - The live relay no longer hands a command to whichever pane polls first.
 - Version 0.2.0. Every new Hermes API is optional: older builds skip the command, skill or state and still register the tools.
