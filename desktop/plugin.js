@@ -44,8 +44,12 @@ export const PANEL_WORKER_SHIM = `<script>(() => {
   window.Worker = Worker
 })()</script>`
 
-export function preparePanelHtml(html) {
-  const head = PANEL_BASE_TAG + PANEL_WORKER_SHIM
+// Opt-in on God's Eye View's side (GEV_EMBED_FULL_UI): show the app's own controls, HUD and
+// panels instead of the clean embedded globe.
+const FULL_UI_TAG = '<script>window.GEV_EMBED_FULL_UI = true</script>'
+
+export function preparePanelHtml(html, { fullUi = true } = {}) {
+  const head = PANEL_BASE_TAG + (fullUi ? FULL_UI_TAG : '') + PANEL_WORKER_SHIM
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + head) : head + html
 }
 
@@ -113,14 +117,20 @@ function GlobePane({ ctx }) {
   const [src, setSrc] = useState(null)
   const [err, setErr] = useState('')
   const [hud, setHud] = useState('')
+  const [fullUi, setFullUi] = useState(true)
+  const [html, setHtml] = useState(null)
   const ref = useRef(null)
   const statusRef = useRef(null)
   statusRef.current = status
 
   useEffect(() => {
     ctx.rest('/status').then(setStatus).catch(() => setStatus({ appUp: false }))
-    ctx.rest('/panel').then((r) => (r?.html ? setSrc(toDataUrl(preparePanelHtml(r.html))) : setErr('panel unavailable'))).catch((e) => setErr(String(e)))
+    ctx.rest('/panel').then((r) => (r?.html ? setHtml(r.html) : setErr('panel unavailable'))).catch((e) => setErr(String(e)))
   }, [])
+
+  useEffect(() => {
+    if (html) setSrc(toDataUrl(preparePanelHtml(html, { fullUi })))
+  }, [html, fullUi])
 
   useEffect(() => {
     if (!src) return
@@ -142,12 +152,13 @@ function GlobePane({ ctx }) {
         children: [
           jsx('span', { children: status?.appUp ? 'live' : `app not running (${base})` }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: askHud, children: 'HUD (Hermes)' }),
+          jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => setFullUi((v) => !v), children: fullUi ? 'Globe only' : 'Full UI' }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => ctx.os.openExternal(base + '/'), children: 'Open full app' }),
           jsx('span', { className: 'truncate', children: hud || err })
         ]
       }),
       src
-        ? jsx(SandboxedFrame, { ref, src, title: "God's Eye View", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
+        ? jsx(SandboxedFrame, { key: src.length + (fullUi ? 'f' : 'g'), ref, src, title: "God's Eye View", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
         : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading God\u2019s Eye View…' })
     ]
   })
@@ -162,7 +173,7 @@ export default {
       id: 'globe',
       area: 'panes',
       title: "God's Eye View",
-      data: { placement: 'right', width: '560px' },
+      data: { placement: 'right', width: '900px' },
       render: () => jsx(GlobePane, { ctx })
     })
   }
