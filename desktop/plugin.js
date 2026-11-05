@@ -1,14 +1,102 @@
-// God's Eye View pane for Hermes Desktop. Plain ESM, no build step.
+// God's Eye View pane for Hermes Desktop and the Webapp. Plain ESM, no build step.
+//
+// The pane is an MCP Apps host for God's Eye View's own globe panel (the same panel Claude and
+// ChatGPT show). The panel runs inside the SDK's SandboxedFrame (opaque origin, scripts only) and
+// loads the whole app through JSON-RPC postMessage -> tools/call panel_request, which this pane
+// forwards to the plugin backend (ctx.rest) -> the God's Eye View MCP server. No framing headers,
+// CORS, or allow-same-origin are needed, so Hermes' guest-content sandbox stays as designed.
 import { SandboxedFrame, Button } from '@hermes/plugin-sdk'
 import { jsx, jsxs } from 'react/jsx-runtime'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+const PROTOCOL = '2026-01-26'
+
+// A data: document has no hierarchical base URL, so the panel could not resolve the app's
+// relative paths. Give it the app address its runtime already treats as the app's own.
+export function preparePanelHtml(html) {
+  const base = '<base href="https://app.gods-eye-view.invalid/">'
+  return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + base) : base + html
+}
+
+export function toDataUrl(html) {
+  const bytes = new TextEncoder().encode(html)
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return 'data:text/html;base64,' + btoa(bin)
+}
+
+const DEFAULT_VIEW = { camera: { lat: 20, lon: 0, altitude_m: 15000000 }, style: 'normal', layers: ['flights'] }
+
+// Links from the panel name the app at the MCP server's API base (often a loopback or raw IP);
+// open them at the browser-reachable public URL instead (GODSEYE_PUBLIC_URL via /status).
+export function publicLink(url, status) {
+  const from = status?.apiBase, to = status?.frameUrl
+  if (!url || !from || !to || from === to) return url
+  return url.startsWith(from) ? to + url.slice(from.length) : url
+}
+
+export function createPanelHost({ ctx, frame, initialView, status = () => null }) {
+  const post = (msg) => frame()?.postMessage({ jsonrpc: '2.0', ...msg }, '*')
+  const reply = (id, result) => post({ id, result })
+  const fail = (id, message) => post({ id, error: { code: -32000, message } })
+  const callTool = (name, args) => ctx.rest('/tool', { method: 'POST', body: { name, arguments: args } })
+
+  async function sendInitialView() {
+    const result = await callTool('show_in_gods_eye_view', initialView || DEFAULT_VIEW)
+    post({ method: 'ui/notifications/tool-result', params: result })
+  }
+
+  return async function onMessage(event) {
+    const win = frame()
+    if (!win || event.source !== win) return
+    const msg = event.data
+    if (!msg || msg.jsonrpc !== '2.0' || !msg.method) return
+    const { id, method, params } = msg
+    try {
+      if (method === 'ui/initialize')
+        return reply(id, {
+          protocolVersion: params?.protocolVersion || PROTOCOL,
+          hostInfo: { name: 'hermes', version: '1' },
+          hostCapabilities: { openLinks: {}, serverTools: {} },
+          hostContext: { displayMode: 'inline', availableDisplayModes: ['inline'], theme: 'dark' }
+        })
+      if (method === 'ui/notifications/initialized') return void sendInitialView()
+      if (method === 'tools/call') {
+        if (params?.name !== 'panel_request') return fail(id, 'tool not available to the panel')
+        return reply(id, await callTool('panel_request', params.arguments || {}))
+      }
+      if (method === 'ui/open-link') {
+        await ctx.os.openExternal(publicLink(String(params?.url || ''), status()))
+        return reply(id, {})
+      }
+      if (method === 'ui/request-display-mode') return reply(id, { mode: 'inline' })
+      if (id !== undefined) return reply(id, {})
+    } catch (error) {
+      if (id !== undefined) fail(id, String(error?.message || error))
+    }
+  }
+}
 
 function GlobePane({ ctx }) {
   const [status, setStatus] = useState(null)
+  const [src, setSrc] = useState(null)
+  const [err, setErr] = useState('')
   const [hud, setHud] = useState('')
+  const ref = useRef(null)
+  const statusRef = useRef(null)
+  statusRef.current = status
+
   useEffect(() => {
     ctx.rest('/status').then(setStatus).catch(() => setStatus({ appUp: false }))
+    ctx.rest('/panel').then((r) => (r?.html ? setSrc(toDataUrl(preparePanelHtml(r.html))) : setErr('panel unavailable'))).catch((e) => setErr(String(e)))
   }, [])
+
+  useEffect(() => {
+    if (!src) return
+    const onMessage = createPanelHost({ ctx, frame: () => ref.current?.contentWindow, status: () => statusRef.current })
+    return ctx.addEventListener(window, 'message', onMessage)
+  }, [src])
+
   const base = status?.frameUrl || status?.apiBase || 'http://localhost:4173'
   const askHud = async () => {
     setHud('…')
@@ -21,15 +109,15 @@ function GlobePane({ ctx }) {
       jsxs('div', {
         className: 'flex items-center gap-2 p-2 text-xs text-(--ui-text-tertiary)',
         children: [
-          jsx('span', { children: status?.appUp ? `live · ${base}` : `app not running at ${base} (npm run dev)` }),
+          jsx('span', { children: status?.appUp ? 'live' : `app not running (${base})` }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: askHud, children: 'HUD (Hermes)' }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => ctx.os.openExternal(base + '/'), children: 'Open full app' }),
-          jsx('span', { className: 'truncate', children: hud })
+          jsx('span', { className: 'truncate', children: hud || err })
         ]
       }),
-      status?.appUp
-        ? jsx(SandboxedFrame, { src: base + '/', title: "God's Eye View", className: 'flex-1 w-full border-0' })
-        : jsx('div', { className: 'p-3 text-sm', children: 'Start God\u2019s Eye View with `npm run dev`, then reopen this pane.' })
+      src
+        ? jsx(SandboxedFrame, { ref, src, title: "God's Eye View", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
+        : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading God\u2019s Eye View…' })
     ]
   })
 }
