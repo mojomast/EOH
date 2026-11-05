@@ -144,7 +144,10 @@ EXTRA_TOOLS = {
         "🛰️"),
     "godseye_doctor": (
         "Health check for God's Eye View in Hermes: Node 24, upstream checkout, app on :4173, upstream "
-        "patches, live relay, connected panes and last poll age, each with fix text. Read-only.",
+        "patches, live relay, connected panes, per-provider key presence (CESIUM_ION_TOKEN, "
+        "GOOGLE_MAPS_API_KEY, MAPILLARY_CLIENT_TOKEN, AISSTREAM_API_KEY, FIRMS_MAP_KEY) in the env file "
+        "and panel bundle (values never printed), active map stack, layer feed states from "
+        "feedProvenance, and annotation count. Every failed check includes fix text. Read-only.",
         {"type": "object", "properties": {}}, "🩺"),
     "godseye_share_link": (
         "A God's Eye View share link for the current live view (camera, style, layers), on the user's "
@@ -198,7 +201,7 @@ EXTRA_TOOLS = {
             "dwellMs": {"type": "integer", "minimum": 0, "maximum": 600000, "default": 20000},
             "connect": {"type": ["string", "null"], "enum": ["route", None], "default": None,
                         "description": "route = pin every stop and draw a route through them first."},
-            "preview": {"type": ["string", "null"], "description": "Reserved (preview-pane pairing); ignored for now."}},
+            "preview": {"type": ["string", "null"], "description": "Reserved. Use godseye_preview_swap to own a single desktop preview tab (desktop_preview is a Hermes core tool with no native swap)."}},
          "required": ["stops"]}, "🧭"),
     "godseye_live_tour_status": (
         "Status of a tour job: state, index, current stop, remaining, errors.",
@@ -207,9 +210,24 @@ EXTRA_TOOLS = {
         "Cancel a running tour (the given jobId, else the latest) and stop camera motion.",
         {"type": "object", "properties": {"jobId": {"type": "string"}}}, "⏹️"),
     "godseye_live_panes": (
-        "List open God's Eye View panes (id, bound chat sessions, seconds since last poll, busy). Tells "
-        "'no pane open' apart from 'pane busy'.",
-        {"type": "object", "properties": {}}, "🪟"),
+        "List God's Eye View panes (id, optional label, bound chat sessions, last-poll age, busy). "
+        "Stale closed records are pruned automatically; pass prune=true to force a prune now. "
+        "Pass label (and optional pane_id) to name the pane bound to this chat. One pane per "
+        "session by default; pane ids stay stable across remounts.",
+        {"type": "object", "properties": {
+            "prune": {"type": "boolean", "description": "Drop stale closed pane records now."},
+            "label": {"type": "string", "description": "Optional label for this chat's pane (shown in the list)."},
+            "pane_id": {"type": "string", "description": "Pane id to label; default = this session's bound pane."}}}, "🪟"),
+    "godseye_preview_swap": (
+        "Open a URL in the Hermes desktop preview pane, closing the previous URL this plugin opened "
+        "(single-tab swap). desktop_preview is a Hermes core tool and cannot gain a native swap action; "
+        "this helper tracks the last URL and closes it first. When the desktop emitter is unavailable it "
+        "returns desktop_preview_steps for the agent to run.",
+        {"type": "object", "properties": {
+            "url": {"type": "string", "description": "URL or file path to show."},
+            "label": {"type": "string", "description": "Optional preview tab label."},
+            "action": {"type": "string", "enum": ["swap", "close"], "default": "swap",
+                       "description": "swap = close previous + open url; close = dismiss the tracked tab only."}}}, "🖼️"),
 }
 
 
@@ -225,7 +243,14 @@ def extra_handler(name: str):
             elif name == "godseye_share_link":
                 out = composer.share_link(session_id=sid)
             elif name == "godseye_live_panes":
-                out = composer.relay_status()
+                out = composer.panes_op(prune=bool(args.get("prune")), label=args.get("label"),
+                                       pane_id=args.get("pane_id"), session_id=sid)
+            elif name == "godseye_preview_swap":
+                from . import preview as preview_mod
+                if (args.get("action") or "swap") == "close":
+                    out = preview_mod.close_tracked()
+                else:
+                    out = preview_mod.swap(str(args.get("url") or ""), label=str(args.get("label") or ""))
             elif name == "godseye_live_list_annotations":
                 out = composer.scene_op("list", sid)
             elif name == "godseye_live_delete_annotation":

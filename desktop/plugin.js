@@ -33,12 +33,30 @@ export function newPaneId() {
   return 'pane-' + (c?.randomUUID ? c.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10))
 }
 
+// One stable pane id per chat session (survives remounts). Falls back to a fresh id with no session.
+const PANE_BIND_PREFIX = 'hermes-gev:pane-id:'
+export function stablePaneId(sessions = paneSessions(), store = globalThis.sessionStorage) {
+  const primary = (sessions || []).find((s) => typeof s === 'string' && s) || null
+  if (!primary || !store) return newPaneId()
+  const key = PANE_BIND_PREFIX + primary
+  try {
+    const existing = store.getItem(key)
+    if (existing) return existing
+    const id = newPaneId()
+    store.setItem(key, id)
+    return id
+  } catch {
+    return newPaneId()
+  }
+}
+
 // Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
 // frame, and post the results back. Each pane polls with its own id and session ids.
 // Returns { onMessage, stop }.
-export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null }) {
+export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null, label = null }) {
   let stopped = false
   let fresh = true  // first poll of a new frame: the relay restores this session's scene
+  let paneLabel = typeof label === 'function' ? label() : label
   const pending = new Map()
   // Commands go to the frame only once its app is up: a message posted earlier would land in the
   // iframe's initial about:blank document and be lost (seen as a stuck "pane busy").
@@ -51,8 +69,11 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
     if (fresh) q.set('fresh', '1')
     const ids = sessions()
     if (ids.length) q.set('sessions', ids.join(','))
+    const lbl = typeof label === 'function' ? label() : paneLabel
+    if (lbl) q.set('label', String(lbl).slice(0, 80))
     return '/live/next?' + q
   }
+  const setLabel = (next) => { paneLabel = next ? String(next).slice(0, 80) : null }
   async function loop() {
     await Promise.race([frameReady, new Promise((r) => setTimeout(r, 180000))])
     while (!stopped) {
@@ -75,6 +96,8 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
   loop()
   return {
     paneId,
+    setLabel,
+    getLabel: () => paneLabel,
     onMessage(event) {
       const win = frame()
       if (!win || event.source !== win) return false
@@ -186,12 +209,26 @@ function GlobePane({ ctx }) {
   const [epoch, setEpoch] = useState(0)
   const ref = useRef(null)
   const paneIdRef = useRef(null)
-  if (!paneIdRef.current) paneIdRef.current = newPaneId()
+  if (!paneIdRef.current) paneIdRef.current = stablePaneId(paneSessions())
+  const labelRef = useRef(null)
   const statusRef = useRef(null)
   statusRef.current = status
 
   useEffect(() => {
-    ctx.rest('/status').then((st) => { setStatus(st); if (st?.patched && !st.patched.fullUi) setFullUi(false) }).catch(() => setStatus({ appUp: false }))
+    let live = true
+    const pull = () => ctx.rest('/status').then(async (st) => {
+      if (!live) return
+      let panes = null
+      try { panes = (await ctx.rest('/live/panes'))?.panes } catch {}
+      const next = { ...st, ...(panes ? { panes } : {}) }
+      const mine = (panes || []).find((p) => p.id === paneIdRef.current)
+      if (mine?.label) labelRef.current = mine.label
+      setStatus(next)
+      if (st?.patched && !st.patched.fullUi) setFullUi(false)
+    }).catch(() => live && setStatus({ appUp: false }))
+    pull()
+    const t = setInterval(pull, 15000)
+    return () => { live = false; clearInterval(t) }
   }, [])
 
   // Cold start opens at the saved home view (/gev home set), else the default globe.
@@ -212,7 +249,7 @@ function GlobePane({ ctx }) {
     const onMessage = createPanelHost({ ctx, frame, initialView: homeView || undefined, status: () => statusRef.current })
     // godseye_live_reload_pane / godseye_rebuild_panel: fetch a fresh panel, rebuild the frame.
     const onReload = () => { disposeFrame(frame()); clearPanelCache(); setSrc(null); setEpoch((n) => n + 1); setNonce((n) => n + 1) }
-    const live = createLiveRelay({ ctx, frame, paneId: paneIdRef.current, onReload })
+    const live = createLiveRelay({ ctx, frame, paneId: paneIdRef.current, onReload, label: () => labelRef.current })
     const onGl = (e) => {
       const kind = glEvent(e, frame())
       if (kind) setGl(kind === 'restored' ? null : kind)
@@ -236,6 +273,8 @@ function GlobePane({ ctx }) {
         className: 'flex items-center gap-2 p-2 text-xs text-(--ui-text-tertiary)',
         children: [
           jsx('span', { children: status?.appUp ? 'live' : `app not running (${base})` }),
+          jsx('span', { className: 'truncate', title: paneIdRef.current,
+            children: (status?.panes || []).find((p) => p.id === paneIdRef.current)?.label || paneIdRef.current }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: askHud, children: 'HUD (Hermes)' }),
           status?.patched?.fullUi === false ? jsx('span', { title: 'Full UI needs patches/0002 on your God\'s Eye View checkout', children: 'globe only' }) : jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => setFullUi((v) => !v), children: fullUi ? 'Globe only' : 'Full UI' }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => ctx.os.openExternal(base + '/'), children: 'Open full app' }),
@@ -269,6 +308,7 @@ export default {
       title: "God's Eye View",
       // Keep-alive: the pane host is never remounted or moved when the layout changes (e.g. the
       // window crosses the narrow breakpoint), so the frame and its WebGL context survive resizes.
+      // Pane ids are stable per chat session (see stablePaneId); labels show in the chrome + godseye_live_panes.
       data: { placement: 'right', width: '900px', lifecycleKeepAlive: true },
       render: () => jsx(GlobePane, { ctx })
     })

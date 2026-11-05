@@ -14,6 +14,10 @@
 - Scene persistence: annotations (stored with resolved coordinates, so a restore never re-geocodes), camera (look-at target, range, pitch and heading) and caption are saved per session in `plugin-data/godseye/scenes.json`. A reopened pane restores them automatically. New tools: `godseye_live_list_annotations`, `godseye_live_delete_annotation`, `godseye_live_restore_scene`, `godseye_live_reload_pane`.
 - Guided tours: `godseye_live_run_tour` (street/rooftop/district framing with exact pitch, optional orbit, dwell, optional route between stops) runs server-side as one job, with `godseye_live_tour_status` and `godseye_live_stop_tour`. A tour always ends with the camera stopped.
 - Doctor panel checks: `PANEL_MISSING`, `PANEL_STALE`, `KEY_MISSING`, `ION_SCOPES` (local JWT decode, values never shown), plus the active map stack and the scene annotation count. `godseye_rebuild_panel` rebuilds `dist/panel` from `~/.config/gods-eye-view.env` and reloads open panes. `set_map_stack` failures include remediation text.
+- Doctor now reports per-provider key presence (`CESIUM_ION_TOKEN`, `GOOGLE_MAPS_API_KEY`, `MAPILLARY_CLIENT_TOKEN` in env+bundle; `AISSTREAM_API_KEY`, `FIRMS_MAP_KEY` in env), the active map stack, layer feed states from `feedProvenance` (nominal/fallback/unavailable), and the current scene's annotation count. Key values are never printed.
+- Pane bookkeeping: stable pane id per chat session, one pane per session by default, auto-prune of stale closed records plus `godseye_live_panes {prune:true}`, optional pane `label` (shown in the list and pane chrome).
+- `godseye_preview_swap`: tracks the last desktop preview URL this plugin opened and closes it before opening the next. `desktop_preview` remains a Hermes core tool (no native swap action); when the desktop emitter is unavailable the tool returns `desktop_preview_steps` for the agent.
+- Brief captions carry a data source and a count scope (`queried extent` / `in view`), never "worldwide".
 - View state now returns pitch, heading, look-at target and range (pane-side shim).
 
 ### Fixed

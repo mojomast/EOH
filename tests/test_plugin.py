@@ -324,7 +324,7 @@ def test_brief_and_show_flies_layers_annotates_caption():
     marks = live.calls[3][1]["annotations"]
     assert [m["label"] for m in marks] == ["ANA2", "JAL1"]  # nearest first, top 2
     assert out["brief"].startswith("Situation") and out["shown"]["globe_open"] and out["shown"]["annotated"] == 2
-    assert out["shown"]["caption"].startswith("Tokyo: 40 aircraft")
+    assert out["shown"]["caption"].startswith("Tokyo: 40 aircraft") and "queried extent" in out["shown"]["caption"]
 
 
 def test_brief_and_show_without_pane_and_military_pick():

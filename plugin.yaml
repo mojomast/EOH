@@ -50,6 +50,7 @@ provides_tools:
   - godseye_share_link
   - godseye_home
   - godseye_live_panes
+  - godseye_preview_swap
   - godseye_live_list_annotations
   - godseye_live_delete_annotation
   - godseye_live_restore_scene

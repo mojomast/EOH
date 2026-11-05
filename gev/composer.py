@@ -91,8 +91,32 @@ def hits_from(data: dict, top_n: int = 5) -> list[dict]:
     return rows[:max(0, int(top_n))]
 
 
-def caption_for(label: str, data: dict) -> str:
-    bits = []
+# Section key -> short public data-source label for caption lines (never "worldwide").
+SECTION_SOURCES = {
+    "aircraft": "OpenSky/adsb.lol", "military_aircraft": "OpenSky/adsb.lol",
+    "vessels": "AISStream", "ships": "AISStream",
+    "fires": "NASA FIRMS", "earthquakes": "USGS", "cyclones": "NOAA",
+    "weather": "Open-Meteo", "satellites": "CelesTrak",
+}
+
+
+def caption_scope(data: dict | None = None, scope: str | None = None) -> str:
+    """Count scope for captions: 'in view' (live camera) or 'queried extent' (brief area). Never 'worldwide'."""
+    if scope in ("in view", "queried extent"):
+        return scope
+    if isinstance(data, dict) and (data.get("count_scope") or data.get("countScope")):
+        raw = str(data.get("count_scope") or data.get("countScope")).lower()
+        if "view" in raw:
+            return "in view"
+        if "world" in raw:
+            return "queried extent"  # never claim whole-world coverage
+        if "extent" in raw or "quer" in raw or "area" in raw or "radius" in raw:
+            return "queried extent"
+    return "queried extent"
+
+
+def caption_for(label: str, data: dict, scope: str | None = None) -> str:
+    bits, sources = [], []
     for key, section in (data.get("sections") or {}).items():
         d = (section or {}).get("data") or {}
         if isinstance(d.get("total"), int):
@@ -101,8 +125,18 @@ def caption_for(label: str, data: dict) -> str:
             w = d["weather"]
             temp = f" {round(w['temperature_c'])}°C" if isinstance(w.get("temperature_c"), (int, float)) else ""
             bits.append(f"{w['conditions']}{temp}")
-    text = f"{label}: " + " · ".join(bits) if bits else label
-    return text[:120]
+        src = d.get("source") or (section or {}).get("source") or SECTION_SOURCES.get(key)
+        if src and src not in sources:
+            sources.append(str(src)[:40])
+    body = " · ".join(bits) if bits else ""
+    text = f"{label}: {body}" if body else label
+    sc = caption_scope(data, scope)
+    # Never say worldwide; always name the count scope when we reported totals.
+    if bits:
+        text = f"{text} ({sc})"
+    if sources:
+        text = f"{text} · {', '.join(sources[:3])}"
+    return text[:160]
 
 
 def _coords(place: str):
@@ -326,9 +360,14 @@ def doctor() -> dict:
         "Open the God's Eye View pane in Hermes Desktop or the Webapp and keep it visible.")
     for c in panel_checks(started=service_started_at()):
         checks.append({k: v for k, v in c.items() if k != "fix" or not c["ok"]})
+    # Server-side provider keys (never baked into the panel; presence only, values never returned).
+    for c in provider_key_checks():
+        checks.append({k: v for k, v in c.items() if k != "fix" or not c["ok"]})
     if panes:
         info = pane_scene_info()
-        r = info if info.get("action") == "hermes_scene_info" else (info.get("result") or {})
+        r = info if info.get("action") == "hermes_scene_info" else (info.get("result") or info)
+        if not isinstance(r, dict):
+            r = {}
         ms = r.get("mapStack") or {}
         if ms:
             photoreal = next((x for x in ms.get("stacks", []) if x["id"] == "photoreal"), None)
@@ -344,9 +383,28 @@ def doctor() -> dict:
                 ("The token is in the bundle but ion/Google refused it: check it is valid and can read asset 2275207 "
                  "(Google Photorealistic 3D Tiles) at https://ion.cesium.com/tokens, then godseye_rebuild_panel.")
                 if baked else MAP_STACK_FIX)
-        sc = scene_op("list")
+        else:
+            add("map stack", True, "pane open; map stack not reported yet (open a view or retry)")
+        # Layer feed states from the live view's feedProvenance (nominal/fallback/unavailable/…).
+        for c in feed_state_checks(r):
+            checks.append(c)
+        try:
+            sc = scene_op("list")
+        except Exception:
+            sc = {}
         if sc.get("ok"):
-            add("scene", True, f"{len(sc['annotations'])} stored annotations; restored automatically on pane (re)open")
+            n = len(sc.get("annotations") or [])
+            add("annotations", True, f"{n} stored in the current scene; restored automatically on pane (re)open")
+        pane_ann = r.get("annotations")
+        if isinstance(pane_ann, int):
+            add("pane annotations", True, f"{pane_ann} drawn in the open pane")
+    else:
+        try:
+            sc = scene_op("list")
+        except Exception:
+            sc = {}
+        if sc.get("ok"):
+            add("annotations", True, f"{len(sc.get('annotations') or [])} stored in the default scene (no pane open)")
     add("public URL", True, "GODSEYE_PUBLIC_URL set" if config.public_url() != config.api_base()
         else "using the API base for links (set GODSEYE_PUBLIC_URL for links other devices can open)")
     return {"ok": all(c["ok"] for c in checks), "checks": checks, "panes": st.get("panes", [])}
@@ -458,7 +516,16 @@ CLIENT_KEYS = {  # baked into dist/panel at build time (build/vite.js define)
     "GOOGLE_MAPS_API_KEY": "Google basemaps, Places labels for the HUD",
     "MAPILLARY_CLIENT_TOKEN": "Mapillary street-level imagery",
 }
+# Server-only keys: checked for presence in the env file / process env; never baked, never printed.
+SERVER_KEYS = {
+    "AISSTREAM_API_KEY": "AISStream live vessels",
+    "FIRMS_MAP_KEY": "NASA FIRMS active fires (also accepted as FIRMS_API_KEY)",
+}
+SERVER_KEY_ALIASES = {"FIRMS_MAP_KEY": ("FIRMS_API_KEY", "FIRMS_KEY", "NASA_FIRMS_KEY")}
 SAFE_ION_SCOPES = {"assets:read", "assets:list"}
+FEED_OK = {"nominal", "partial", "off", None}
+FEED_WARN = {"fallback", "degraded", "stale", "loading"}
+FEED_BAD = {"unavailable"}
 
 
 def relay_post(path: str, body: dict, timeout: float = 600) -> dict:
@@ -535,6 +602,81 @@ def service_started_at(unit: str = "gods-eye-view.service") -> float | None:
         return time.mktime(stamp.timetuple())
     except Exception:
         return None
+
+
+def _env_has(file_env: dict, key: str) -> tuple[bool, str]:
+    """Return (present, where-label). Values are never returned."""
+    import os
+    aliases = SERVER_KEY_ALIASES.get(key, ())
+    for k in (key, *aliases):
+        if file_env.get(k):
+            return True, str(env_file())
+        if os.environ.get(k):
+            return True, "process env"
+    return False, str(env_file())
+
+
+def provider_key_checks(envf: Path | None = None) -> list[dict]:
+    """Presence of server-side provider keys in the env file / process env. Never prints values."""
+    envf = envf or env_file()
+    file_env = read_env(envf)
+    out = []
+    for key, what in SERVER_KEYS.items():
+        ok, where = _env_has(file_env, key)
+        out.append({"check": f"key {key}", "ok": ok, **({} if ok else {"code": "KEY_MISSING"}),
+                    "detail": (f"set in {where} ({what})" if ok else f"not set in {where} ({what})"),
+                    "fix": f"Add {key}=... to {where} (chmod 600) and restart the God's Eye View app/service."})
+    return out
+
+
+def feed_state_checks(scene_or_view: dict | None) -> list[dict]:
+    """Summarise layer feed states from feedProvenance on the open pane (nominal/fallback/unavailable)."""
+    out = []
+    src = scene_or_view or {}
+    fp = src.get("feedProvenance") or (src.get("result") or {}).get("feedProvenance") or {}
+    # Prefer feedProvenance already on the scene_info payload; avoid a second live round-trip here.
+    if not fp:
+        out.append({"check": "layer feeds", "ok": True,
+                    "detail": "no feedProvenance on the open pane yet (enable a layer or wait for a refresh)"})
+        return out
+    overall = fp.get("overall")
+    layers = fp.get("layers") or []
+    by_state: dict[str, list[str]] = {}
+    for layer in layers:
+        if not isinstance(layer, dict):
+            continue
+        st = layer.get("feedState") or layer.get("state") or "unknown"
+        name = str(layer.get("name") or layer.get("id") or "?")[:40]
+        by_state.setdefault(str(st), []).append(name)
+    parts = [f"{st}: {', '.join(names[:6])}" for st, names in sorted(by_state.items())]
+    detail = f"overall {overall or 'unknown'}" + ("; " + "; ".join(parts) if parts else "")
+    bad = overall in FEED_BAD or any(s in FEED_BAD for s in by_state)
+    warn = overall in FEED_WARN or any(s in FEED_WARN for s in by_state)
+    ok = not bad
+    out.append({"check": "layer feeds", "ok": ok,
+                **({"code": "FEED_UNAVAILABLE"} if bad else {"code": "FEED_DEGRADED"} if warn else {}),
+                "detail": detail,
+                **({"fix": "Check the provider key for the unavailable layer (godseye_doctor key checks) and the app's DATA_SOURCES.md."}
+                   if not ok else {})})
+    return out
+
+
+def panes_op(prune: bool = False, label: str | None = None, pane_id: str | None = None,
+             session_id: str | None = None) -> dict:
+    body = {}
+    if prune:
+        body["prune"] = True
+    if label is not None:
+        body["label"] = label
+    if pane_id:
+        body["pane_id"] = pane_id
+    if session_id:
+        body["session_id"] = str(session_id)
+    if not body:
+        st = relay_status()
+        return {"ok": True, "paneOpen": st.get("paneOpen"), "panes": st.get("panes") or [],
+                **({} if "error" not in st else {"error": st.get("error"), "message": st.get("message")})}
+    return relay_post("/panes", body, 10)
 
 
 def panel_checks(root: Path | None = None, envf: Path | None = None, started: float | None = None) -> list[dict]:
