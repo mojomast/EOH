@@ -374,6 +374,7 @@
   const rebindOverlays = () => {
     try { window.__hermesPins?.detach?.() } catch {}
     try { window.__hermesContext?.detach?.() } catch {}
+    try { window.__hermesTimeline?.detach?.() } catch {}
     cardHook = null
     try { ensureCardLayer() } catch {}
   }
@@ -398,6 +399,7 @@
         else if (name === 'hermes_pin_drawer') window.__hermesPins?.command?.(args)
         else if (name === 'hermes_draw') window.__hermesContext?.command?.('hermes_draw', args)
         else if (name === 'hermes_caption') caption(args.text)
+        else if (name === 'hermes_timeline') window.__hermesTimeline?.command?.(args)
         else if (name === 'set_layer_visibility' && typeof run === 'function') await run(name, args)
       } catch {}
     }
@@ -549,6 +551,11 @@
       if (m.name === 'hermes_context' || m.name === 'hermes_draw' || m.name === 'hermes_compare') {
         await ready()
         payload = window.__hermesContext ? window.__hermesContext.command(m.name, m.args || {}) : { ok: false, error: 'context layer not loaded' }
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
+      if (m.name === 'hermes_timeline') {
+        await ready()
+        payload = window.__hermesTimeline ? window.__hermesTimeline.command(m.args || {}) : { ok: false, error: 'timeline not loaded' }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame' || m.name === 'hermes_capture') {

@@ -48,7 +48,7 @@ LARGE_EXTRA = {
     # Context / measure / research. Small numeric answers (one distance leg, a contour
     # summary) stay intact; geometry, catalogs and notes shrink.
     "godseye_live_context", "godseye_what_is_here", "godseye_measure",
-    "godseye_isochrone", "godseye_live_draw", "godseye_live_compare",
+    "godseye_isochrone", "godseye_live_draw", "godseye_live_compare", "godseye_timeline",
     "godseye_research_pins",
     "godseye_investigation_list", "godseye_investigation_load", "godseye_investigation_report",
     "godseye_live_filter_pins",

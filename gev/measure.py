@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import threading
+import time
 import urllib.parse
 
 from . import poi
@@ -356,15 +358,30 @@ def _reverse_ring(lat: float, lon: float, r: float) -> list[dict]:
 
 
 # ---- historical imagery (Esri Wayback) -------------------------------------------------------
-def wayback_releases() -> list[dict]:
-    """[{release, date 'YYYY-MM-DD', title}] newest first; [] when the config is unreachable."""
+# One catalog for the whole world. Cache it and do not refetch inside the gap.
+# Tile images are for the pane to display; this function only reads the JSON catalog.
+WAYBACK_TTL_S = 6 * 3600
+WAYBACK_MIN_GAP_S = 2.0
+_wb_lock = threading.Lock()
+_wb_cache: dict = {"at": 0.0, "rows": None}
+_wb_last = [0.0]
+
+
+def reset_wayback_cache() -> None:
+    with _wb_lock:
+        _wb_cache["at"] = 0.0
+        _wb_cache["rows"] = None
+        _wb_last[0] = 0.0
+
+
+def _fetch_wayback() -> list[dict]:
     try:
         status, body = _http(WAYBACK_CONFIG, timeout=15)
         cfg = json.loads(body or "{}") if status == 200 else {}
     except Exception:
         return []
     out = []
-    for rid, v in cfg.items():
+    for rid, v in (cfg.items() if isinstance(cfg, dict) else []):
         title = str((v or {}).get("itemTitle") or "")
         date = title.split("Wayback")[-1].strip(" ()") if "Wayback" in title else ""
         try:
@@ -372,6 +389,33 @@ def wayback_releases() -> list[dict]:
         except ValueError:
             continue
     return sorted(out, key=lambda r: r["date"], reverse=True)
+
+
+def wayback_releases() -> list[dict]:
+    """[{release, date 'YYYY-MM-DD', title}] newest first; [] when the config is unreachable.
+
+    A successful catalog is cached for six hours. A failed fetch is not cached, but another
+    attempt inside two seconds returns the previous catalog, or [] when there is none.
+    """
+    now = time.time()
+    with _wb_lock:
+        cached = _wb_cache["rows"]
+        fresh = cached is not None and now - _wb_cache["at"] < WAYBACK_TTL_S
+    if fresh:
+        return [dict(r) for r in cached]
+    with _wb_lock:
+        since = time.monotonic() - _wb_last[0]
+        if _wb_last[0] and since < WAYBACK_MIN_GAP_S:
+            return [dict(r) for r in cached] if cached else []
+        _wb_last[0] = time.monotonic()
+    rows = _fetch_wayback()
+    with _wb_lock:
+        if rows:
+            _wb_cache["rows"] = rows
+            _wb_cache["at"] = time.time()
+            return [dict(r) for r in rows]
+        cached = _wb_cache["rows"]
+    return [dict(r) for r in cached] if cached else []
 
 
 def pick_release(releases: list[dict], when: str) -> dict | None:

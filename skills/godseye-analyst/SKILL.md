@@ -102,6 +102,7 @@ Pins and drawings on the open pane.
 | `isochrone` | `op=isochrone`. Minutes of reach. `minutes: [15]`, `mode: "walk"`. If `approximate` is true, say so. If `routing_unavailable`, say so. Do not draw a straight-line circle. |
 | `fly_route` | Dolly along a route already drawn. This is not a camera fly. |
 | `compare` | `op=compare`. Imagery swipe. `left` / `right`: `current`, `osm`, or `wayback:YYYY[-MM[-DD]]`. `action: "list_dates"` lists Wayback releases. `action: "stop"` ends it. Map stacks cannot be split. |
+| `timeline` | Time slider. Argument `timeline` is `set`, `play`, `step`, `stop`, `state`, or `list_dates` (not a second `op`). `mode`: `wayback` (Esri Wayback releases over the current view, `transition` `swipe` or `fade`) or `events` (USGS quakes and NASA FIRMS fires, plus stored watch alerts, as pins that appear when the playhead reaches them). `from` / `to` / `date` are `YYYY-MM-DD`. Events default to the last 7 days. `area` is `[south, west, north, east]` or omit it to use the open view. `feeds`: `earthquakes` and/or `fires`. `by` on `step` is `1` or `-1`. `state` reads the date and what is visible. Wayback tiles are for viewing only. Do not sample photorealistic 3D tiles. The slider is saved with the scene and with investigations. |
 
 ## godseye_track
 
@@ -199,6 +200,12 @@ Read the `EOH pane=` line. `godseye_query` `{op:"context"}`. Answer from `focus`
 
 **"How many flights are in view?"**
 `godseye_query` `{op:"analyst", layers:["flights"], scope:{kind:"view"}}`.
+
+**"Show me how this area changed from 2016 to 2024."**
+`godseye_nav` `{op:"timeline", timeline:"set", mode:"wayback", from:"2016-01-01", to:"2024-12-31", transition:"swipe"}`, then `{op:"timeline", timeline:"play"}` or `{op:"timeline", timeline:"step", by:1}`. `{op:"timeline", timeline:"state"}` reads the release on screen. `{op:"timeline", timeline:"list_dates", from:"2016-01-01", to:"2024-12-31"}` lists the releases first. Imagery is for viewing only.
+
+**"Replay fires here over the last 7 days."**
+`godseye_nav` `{op:"timeline", timeline:"set", mode:"events", feeds:["fires"]}`, then `{op:"timeline", timeline:"play"}`. Omit `from` and `to` for the last 7 days, and omit `area` to use the open view. Pins show when the playhead reaches them. Open one with `godseye_annotate` `{op:"drawer", id:"..."}`. NASA FIRMS covers the last 10 days; older fires come from stored watch alerts.
 
 **"Save this as my home view" / "go home" / "send me a link."**
 `godseye_view` `{op:"home", action:"set"}`, `{op:"home", action:"go"}`, `{op:"share"}`.

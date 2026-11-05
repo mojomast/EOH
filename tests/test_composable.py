@@ -100,8 +100,8 @@ def test_catalog_matches_plugin_yaml_and_handler_family():
     legacy = {t.legacy for t in router.CATALOG}
     assert provided == COMPOSABLE
     assert legacy.isdisjoint(provided)
-    assert "timeline" not in router.phase_a_ops("godseye_nav")
-    assert "timeline" in router.RESERVED_OPS["godseye_nav"]
+    assert "timeline" in router.phase_a_ops("godseye_nav")
+    assert "timeline" not in router.RESERVED_OPS.get("godseye_nav", ())
     assert router.BY_LEGACY["godseye_live_get_current_view_state"].op == "state"
     assert router.BY_LEGACY["godseye_investigation_export"].composable == "godseye_scene"
     assert len(legacy) == len(router.CATALOG)
@@ -151,7 +151,10 @@ def test_phase_a_names_are_not_registered():
         schema = tool["schema"]
         assert schema["parameters"]["required"] == ["op"]
         assert schema["parameters"]["properties"]["op"]["enum"] == router.phase_a_ops(name)
-        assert "timeline" not in schema["parameters"]["properties"]["op"]["enum"]
+        if name == "godseye_nav":
+            assert "timeline" in schema["parameters"]["properties"]["op"]["enum"]
+            assert schema["parameters"]["properties"]["timeline"]["enum"] == [
+                "set", "play", "step", "stop", "state", "list_dates"]
     feeds = ctx.tools["godseye_feeds"]["schema"]["description"]
     assert "CCTV" in feeds and "ALPR" in feeds and "not a way to identify a person" in feeds
 
@@ -251,6 +254,7 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_nav", "isochrone"): {"minutes": [10], "mode": "walk"},
         ("godseye_nav", "fly_route"): {},
         ("godseye_nav", "compare"): {"left": "wayback:2014", "right": "current"},
+        ("godseye_nav", "timeline"): {"timeline": "state"},
         ("godseye_track", "track"): {"query": "JAL1"},
         ("godseye_track", "stop"): {},
         ("godseye_track", "select_nearest"): {"layerId": "flights"},
@@ -283,6 +287,8 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         legacy_args = dict(args)
         if target.op == "measure":
             legacy_args["op"] = legacy_args.pop("measure")
+        elif target.op == "timeline":
+            legacy_args["op"] = legacy_args.pop("timeline")
         seen.clear()
         ctx.tools[target.composable]["handler"]({"op": target.op, **args}, session_id="s")
         router.dispatch_legacy(target.legacy, legacy_args, session_id="s")
@@ -300,6 +306,8 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         assert "here" not in forwarded
         if target.op == "measure":
             assert forwarded["op"] == "distance" and "measure" not in forwarded
+        elif target.op == "timeline":
+            assert forwarded["op"] == "state" and "timeline" not in forwarded
         else:
             assert "op" not in forwarded
         if target.composable == "godseye_view" and target.op == "fly":
@@ -399,9 +407,7 @@ def test_unknown_op_does_not_call_a_handler(monkeypatch):
     assert out["error"] == "unknown_op" and "fly" in out["fix"]
     missing = json.loads(ctx.tools["godseye_query"]["handler"]({}))
     assert missing["error"] == "unknown_op"
-    reserved = json.loads(ctx.tools["godseye_nav"]["handler"]({"op": "timeline"}))
-    assert reserved["error"] == "unknown_op" and "reserved" in reserved["message"]
-    assert "timeline" not in ctx.tools["godseye_nav"]["schema"]["parameters"]["properties"]["op"]["enum"]
+    assert "timeline" in ctx.tools["godseye_nav"]["schema"]["parameters"]["properties"]["op"]["enum"]
 
 
 def test_golden_set_matches_schemas_and_the_router(monkeypatch):
@@ -424,6 +430,9 @@ def test_golden_set_matches_schemas_and_the_router(monkeypatch):
         if expect["op"] == "measure":
             assert forwarded.get("op") == expect["arguments"]["measure"]
             assert "measure" not in forwarded
+        elif expect["op"] == "timeline":
+            assert forwarded.get("op") == expect["arguments"]["timeline"]
+            assert "timeline" not in forwarded
         else:
             assert "op" not in forwarded
     covered = {(task["expect"]["tool"], task["expect"]["op"]) for task in data["tasks"]}
@@ -470,7 +479,7 @@ def test_measure_schemas_shrinks_the_catalog():
     import measure_schemas
     report = measure_schemas.measure()
     assert report["after"]["tools"] == 11
-    assert report["baseline"]["tools"] == 82
+    assert report["baseline"]["tools"] == 83
     assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert report["after"]["bytes"] < report["baseline"]["bytes"]
     assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]

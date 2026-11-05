@@ -87,6 +87,14 @@ TABLE: dict[str, dict[str, str]] = {
         "message": "Esri World Imagery Wayback config is unreachable.",
         "fix": "Retry godseye_nav op=compare action=list_dates once. If it still fails, compare left=osm or left=current instead of a wayback date.",
     },
+    "no_dates": {
+        "message": "No Esri Wayback release falls in that window.",
+        "fix": "Call godseye_nav op=timeline with timeline=list_dates and set from and to inside the returned dates.",
+    },
+    "no_timeline": {
+        "message": "No time slider is saved.",
+        "fix": "Call godseye_nav op=timeline with timeline=set and mode=wayback or mode=events, then play or step.",
+    },
     "no_focus": {
         "message": "There is no focus point on the pane.",
         "fix": "Pass lat and lon, or ask the user to click a pin or the spot, then retry. godseye_query op=context shows the current focus.",
@@ -214,7 +222,7 @@ def classify(out: dict, tool: str | None = None) -> str:
     if hinted in ("OVERPASS_NOT_CONFIGURED", "AREA_TOO_LARGE", "KEY_MISSING", "PANEL_STALE",
                   "PANEL_MISSING", "ION_SCOPES", "no_pane", "pane_busy", "relay_unavailable", "timeout",
                   "CONTEXT_LOST",
-                  "routing_unavailable", "wayback_unavailable", "no_focus", "no_drawing", "pin_not_found",
+                  "routing_unavailable", "wayback_unavailable", "no_dates", "no_timeline", "no_focus", "no_drawing", "pin_not_found",
                   "unsupported_side", "confirm_required", "CONFIRM_REQUIRED", "not_found", "NOT_FOUND",
                   "no_pins", "geocoder_unavailable", "osm_unavailable", "no_match", "bad_points",
                   "bad_args", "bad_mode", "bad_focus", "BAD_AREA", "BAD_FEEDS"):

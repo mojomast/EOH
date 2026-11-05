@@ -1481,6 +1481,53 @@
       }
     },
     {
+      "id": "timeline-2016-2024",
+      "task": "show me how this area changed from 2016 to 2024",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "timeline",
+        "arguments": {
+          "op": "timeline",
+          "timeline": "set",
+          "mode": "wayback",
+          "from": "2016-01-01",
+          "to": "2024-12-31",
+          "transition": "swipe"
+        },
+        "shape": {
+          "required": ["op", "timeline", "mode", "from", "to"],
+          "fields": {
+            "timeline": {"enum": ["set"]},
+            "mode": {"enum": ["wayback"]},
+            "from": {"type": "string", "contains": "2016"},
+            "to": {"type": "string", "contains": "2024"}
+          }
+        }
+      }
+    },
+    {
+      "id": "timeline-replay-fires",
+      "task": "replay fires here over the last 7 days",
+      "expect": {
+        "tool": "godseye_nav",
+        "op": "timeline",
+        "arguments": {
+          "op": "timeline",
+          "timeline": "set",
+          "mode": "events",
+          "feeds": ["fires"]
+        },
+        "shape": {
+          "required": ["op", "timeline", "mode", "feeds"],
+          "fields": {
+            "timeline": {"enum": ["set"]},
+            "mode": {"enum": ["events"]},
+            "feeds": {"type": "array", "contains_item": "fires"}
+          }
+        }
+      }
+    },
+    {
       "id": "track-jal",
       "task": "follow flight JAL1",
       "expect": {

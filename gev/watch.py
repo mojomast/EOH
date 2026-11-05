@@ -165,9 +165,15 @@ def _mag(m) -> str:
 
 def feed_earthquakes(area: dict, cond: dict) -> dict:
     s, w, n, e = area["bbox"]
+    start = cond.get("start") or cond.get("starttime")
+    end = cond.get("end") or cond.get("endtime")
+    if not start:
+        start = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 86400 * float(cond.get("lookback_days", 1))))
     q = {"format": "geojson", "minlatitude": s, "minlongitude": w, "maxlatitude": n, "maxlongitude": e,
          "minmagnitude": float(cond.get("min_magnitude", 2.5)), "orderby": "time", "limit": 200,
-         "starttime": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 86400 * float(cond.get("lookback_days", 1))))}
+         "starttime": str(start)[:19]}
+    if end:
+        q["endtime"] = str(end)[:19]
     code, body = _get("https://earthquake.usgs.gov/fdsnws/event/1/query?" + urllib.parse.urlencode(q))
     if code != 200:
         return {"status": "ERROR", "items": [], "error": f"USGS HTTP {code}"}
@@ -193,7 +199,12 @@ def feed_fires(area: dict, cond: dict) -> dict:
                          "Get a free key at https://firms.modaps.eosdis.nasa.gov/api/map_key/"}
     s, w, n, e = area["bbox"]
     src = str(cond.get("source") or "VIIRS_SNPP_NRT")
-    url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{urllib.parse.quote(key)}/{src}/{w},{s},{e},{n}/1"
+    try:
+        days = int(cond.get("days") or 1)
+    except (TypeError, ValueError):
+        days = 1
+    days = max(1, min(10, days))
+    url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{urllib.parse.quote(key)}/{src}/{w},{s},{e},{n}/{days}"
     try:
         code, body = _get(url)
     except Exception as exc:  # never echo the URL (it contains the key)
@@ -472,6 +483,16 @@ class WatchStore:
         now = self.clock()
         with self.lock:
             return [w["id"] for w in self.data["watches"].values() if w.get("active") and (w.get("next_run") or 0) <= now]
+
+    def history(self, session_id: str | None = None) -> list[dict]:
+        """Stored alerts, including ones already delivered. Does not mark them delivered."""
+        with self.lock:
+            out = []
+            for alert in self.data.get("alerts") or []:
+                if session_id and alert.get("session_id") and str(alert["session_id"]) != str(session_id):
+                    continue
+                out.append(json.loads(json.dumps(alert)))
+            return out
 
     def drain_alerts(self, session_id: str | None = None) -> list[dict]:
         """Undelivered alerts for this chat (plus alerts of watches made outside a chat); marks them delivered."""
