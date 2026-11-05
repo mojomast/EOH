@@ -151,9 +151,11 @@ def supports_runtime(root: Path | None, bundle_text: str = "") -> bool:
     return False
 
 
-def revision(overlay: dict | None, perf: str | None) -> str:
+def revision(overlay: dict | None, perf: str | None, extra: dict | None = None) -> str:
     """Cache key for a prepared panel. A hash, so the value is not recoverable from it."""
     payload = {"config": overlay or {}, "perf": perf}
+    if extra:
+        payload["extra"] = extra
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
 

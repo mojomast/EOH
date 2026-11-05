@@ -134,6 +134,16 @@
     refreshView(true)
   }
   const clear = () => { for (const id of [...pins.keys()]) remove(id); close({ silent: true }) }
+  // Drop the data source bound to a destroyed viewer so the next add() uses the new one.
+  const detach = () => {
+    try { handler?.destroy?.() } catch {}
+    handler = null
+    try { if (typeof offChange === 'function') offChange() } catch {}
+    offChange = null
+    if (timer) { clearInterval(timer); timer = null }
+    ds = null
+    lastBucket = null
+  }
 
   // ---- drawer content: sanitize everything ------------------------------------------------
   const httpUrl = (u) => { try { const x = new URL(String(u || '')); return (x.protocol === 'https:' || x.protocol === 'http:') ? x.href : null } catch { return null } }
@@ -494,7 +504,7 @@
     if (args.action === 'expand') return { action: 'hermes_pin_filter', ...expandCluster(String(args.cluster_id || '')) }
     return setFilters(args)
   }
-  window.__hermesPins = { add, remove, clear, open, close, command, renderMarkdown, heightFor, syncWithBoard,
+  window.__hermesPins = { add, remove, clear, detach, open, close, command, renderMarkdown, heightFor, syncWithBoard,
     setFilters, filterCommand, filterState, expandCluster, refreshView,
     state: () => ({ open: openId, filters: { ...filters }, clusters: [...clusters.values()].map((c) => ({ id: c.id, count: c.ids.length })),
       pins: [...pins.values()].map((p) => ({ ...pinInfo(p), h: p.h, visible: p.visible !== false, clustered: Boolean(p.clustered) })) }) }

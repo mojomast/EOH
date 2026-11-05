@@ -235,6 +235,7 @@ All settings are optional environment variables, for example in `~/.hermes/.env`
 | `GODSEYE_BIND` / `GODSEYE_NODE_DIR` | `127.0.0.1` / `~/.local/node24` | `install-service.sh` only |
 | `GODSEYE_TURN_STATE` | `1` | `0` / `off` disables the one-line map state injected each turn via Hermes `pre_llm_call`. Area-watch alerts still use that hook. Hosts without it skip both. |
 | `GODSEYE_PERF` | `embed` | `default` / `0` / `off` leaves the viewer's normal frame budget. `embed` adds `?perf=embed` on the panel URL and posts `perf:'embed'`. |
+| `GODSEYE_GL_RECOVER` | `1` | `0` / `off` / `false` leaves a lost WebGL context on the click-to-reload card. On by default: the pane destroys the viewer, creates a new one in the same container, and restores the saved scene. The same switch is `glRecover` in `plugin-data/godseye/config.json` (env wins). After 3 losses in 20 seconds, recovery stops and the card is shown. `godseye_doctor` reports the switch. |
 
 If the app is reached by a non-localhost name, add that name to God's Eye View's `GEV_ALLOWED_HOSTS`.
 
@@ -252,7 +253,7 @@ If the app is reached by a non-localhost name, add that name to God's Eye View's
 - **Background threads** run in the Hermes dashboard/gateway process: the loopback HUD bridge (`127.0.0.1:18791`) and the live relay (`127.0.0.1:18792`).
 - **Network:** the plugin talks to your God's Eye View app (`GODSEYE_API_BASE`) and loopback, and, only when a place/measure tool is used, to the keyless public OSM services (Nominatim, Overpass mirrors, Valhalla, OSRM at routing.openstreetmap.de) and Esri World Imagery Wayback (config + tiles, fetched by the pane). The app itself fetches public data from the providers listed in its DATA_SOURCES.md.
 - **Files:** the plugin writes only `~/.hermes/plugin-data/godseye/hud-bridge.env` (0600: loopback URL plus a random token). It reads its own files and your God's Eye View checkout (to detect patches). It reads no `.env`, auth or credential stores, and holds no API keys.
-- **Pane:** the panel document gets four small additions from the backend (`gev/panel_inject.py`): a `<base>`, the full-UI flag, a Cesium worker shim, the pin layer + drawer, the context/draw/measure/compare layer, and the live agent. These run **only inside the sandboxed frame**, never in the Hermes renderer.
+- **Pane:** the panel document gets a few small additions from the backend (`gev/panel_inject.py`): a `<base>`, the full-UI flag, the WebGL recovery switch, a Cesium worker shim, the pin layer + drawer, the context/draw/measure/compare layer, the WebGL recovery helper, and the live agent. These run **only inside the sandboxed frame**, never in the Hermes renderer. A lost WebGL context recreates the viewer in that same frame and restores the saved scene. It does not rebuild the pane.
 - No telemetry and no self-update.
 
 ## Responsible use
@@ -275,7 +276,7 @@ Run **`/gev doctor`** (or ask Hermes to run `godseye_doctor`) first. It checks e
 | Brief says "place lookup was unavailable" | Upstream's geocoder is down. The brief retried with built-in coordinates or with the globe's own lookup. Pass `lat`/`lon` to skip the lookup. |
 | `relay_unavailable` | Restart the Hermes dashboard/gateway so the plugin backend starts the relay. |
 | "Open full app" goes to localhost | Set `GODSEYE_PUBLIC_URL` and allow the name in `GEV_ALLOWED_HOSTS`. |
-| "Error constructing CesiumWidget … WebGL … initialization failed" | The browser ran out of WebGL contexts (fixed in v0.2). Close the browser tab and reopen it (a reload alone may not free the GPU contexts), then reopen the pane. A context lost later shows a *Click to reload the globe* card. |
+| "Error constructing CesiumWidget … WebGL … initialization failed" | The browser ran out of WebGL contexts (fixed in v0.2). Close the browser tab and reopen it (a reload alone may not free the GPU contexts), then reopen the pane. A context lost later is recreated in the same pane and the saved scene is restored. If that fails, or `GODSEYE_GL_RECOVER=0`, a *Click to reload the globe* card is shown. |
 | Plugin changes not showing | Rescan plugins, toggle the pane, hard-refresh. |
 
 ## Limitations
@@ -288,7 +289,9 @@ Run **`/gev doctor`** (or ask Hermes to run `godseye_doctor`) first. It checks e
 ## Development
 
 ```sh
-python3 -m pytest -q tests                      # unit tests; public network is blocked (cassettes under tests/fixtures/cassettes)
+python3 -m pytest -q tests                      # unit tests, plus the WebGL harness (needs Node and Chrome); public network is blocked
+node --test gev/gl_recover.test.mjs            # recovery policy without a browser
+node scripts/gl_recover_harness.mjs            # headless Chrome on 127.0.0.1:4233; SwiftShader is fine
 GODSEYE_E2E=1 python3 -m pytest -q tests        # opt-in live call against npm run dev; not for CI
 ```
 

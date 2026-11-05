@@ -43,6 +43,13 @@
   // ---- scene state -------------------------------------------------------------------------
   const shapes = new Map()  // id -> { id, kind, points, label, measure, by, ents }
   let ds = null, handler = null, seq = 0, mode = null, draft = [], draftEnts = [], lastClick = null, bar = null
+  const detach = () => {
+    try { handler?.destroy?.() } catch {}
+    handler = null
+    ds = null
+    for (const s of shapes.values()) s.ents = []
+    draftEnts = []
+  }
   const ensure = () => {
     const Ce = C(), v = g().viewer
     if (!Ce || !v) return false
@@ -136,6 +143,7 @@
     const cam = v.camera, c = v.canvas
     const deg = (r) => Math.round(r * 1800 / Math.PI) / 10
     const out = { headingDeg: deg(cam.heading), pitchDeg: deg(cam.pitch) }
+    if (typeof cam.roll === 'number') out.rollDeg = deg(cam.roll)
     try { const pc = cam.positionCartographic; out.position = { lat: r6(pc.latitude * 180 / Math.PI), lon: r6(pc.longitude * 180 / Math.PI), heightM: Math.round(pc.height) } } catch {}
     try {
       const hit = cam.pickEllipsoid({ x: c.clientWidth / 2, y: c.clientHeight / 2 }, v.scene.globe.ellipsoid)
@@ -309,6 +317,6 @@
     }
     return add(args.kind || 'line', args.points, { id: args.id, label: args.label, color: args.color, labelAt: args.labelAt, by: 'hermes' })
   }
-  window.__hermesContext = { command, context, compare, add, remove, start, finish, cancel, onClick, askPrompt,
+  window.__hermesContext = { command, context, compare, add, remove, detach, start, finish, cancel, onClick, askPrompt,
     _geo: { hav, pathLen, area, fmtD, fmtA }, _stop: () => clearInterval(boot) }
 })()
