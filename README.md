@@ -287,9 +287,11 @@ Run **`/gev doctor`** (or ask Hermes to run `godseye_doctor`) first. It checks e
 ## Development
 
 ```sh
-python3 -m pytest -q tests                      # unit tests (130 + 1 e2e; JS tests need Node)
-GODSEYE_E2E=1 python3 -m pytest -q tests        # plus a live call against npm run dev
+python3 -m pytest -q tests                      # unit tests; public network is blocked (cassettes under tests/fixtures/cassettes)
+GODSEYE_E2E=1 python3 -m pytest -q tests        # opt-in live call against npm run dev; not for CI
 ```
+
+Contract tests for measure, isochrone, find_places, area-watch checks and investigation export replay those cassettes (OSRM, Valhalla, Overpass, Nominatim, USGS, FIRMS, OpenSky). The files are hand-written and contain no keys.
 
 ## Credits and license
 

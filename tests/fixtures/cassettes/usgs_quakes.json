@@ -1,0 +1,31 @@
+{
+  "_comment": "Hand-written USGS FDSN event fixture. The event id is fictional. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "earthquake.usgs.gov",
+        "path_contains": "/fdsnws/event/1/query"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "id": "usdemo0001",
+              "properties": {
+                "mag": 3.4,
+                "place": "10 km NE of Montreal, Canada",
+                "time": 1762300800000,
+                "url": "https://earthquake.usgs.gov/earthquakes/eventpage/usdemo0001"
+              },
+              "geometry": {"type": "Point", "coordinates": [-73.5, 45.55, 10.0]}
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

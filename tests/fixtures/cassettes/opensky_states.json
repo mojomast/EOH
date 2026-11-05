@@ -1,0 +1,21 @@
+{
+  "_comment": "Hand-written OpenSky state vectors for one flight. No credentials.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "opensky-network.org",
+        "path_contains": "/api/states/all"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "time": 1762300800,
+          "states": [
+            ["a1b2c3", "ACA123  ", "Canada", 1762300800, 1762300800, -73.6, 45.5, 8000.0, false, 220.0, 90.0, 0.0, null, 8200.0, "1234", false, 0]
+          ]
+        }
+      }
+    }
+  ]
+}
