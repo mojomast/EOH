@@ -146,7 +146,8 @@ def aggregate(report: dict, probe: dict, bridge: dict, life: dict, urls: dict) -
     signals = report.get("signals") if isinstance(report.get("signals"), dict) else {}
     app_check = _check(checks, "app reachable")
     http = probe.get("http") if isinstance(probe.get("http"), int) else None
-    if app_check.get("ok") and http == 200:
+    # The doctor row, or /health, decides up or down. A version/commit probe does not.
+    if app_check.get("ok"):
         app_state = "up"
     elif app_check and not app_check.get("ok"):
         app_state = "down"
@@ -435,8 +436,9 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def fetch_url(url: str, timeout: float = 3) -> tuple[int | None, bytes, str]:
-    request = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+def fetch_url(url: str, timeout: float = 3, accept: str | None = "application/json") -> tuple[int | None, bytes, str]:
+    headers = {"Accept": accept} if accept else {}
+    request = urllib.request.Request(url, method="GET", headers=headers)
     opener = urllib.request.build_opener(_NoRedirect)
     try:
         with opener.open(request, timeout=timeout) as resp:
@@ -500,15 +502,71 @@ def checkout_rev(root: Path | None) -> tuple[str | None, str | None]:
     return version, commit
 
 
+def _split_fetch(got) -> tuple[int | None, bytes, str]:
+    if isinstance(got, tuple):
+        code = got[0] if got and isinstance(got[0], int) else None
+        raw = got[1] if len(got) > 1 and isinstance(got[1], (bytes, bytearray)) else b""
+        ctype = got[2] if len(got) > 2 and isinstance(got[2], str) else ""
+        return code, raw, ctype
+    return (got if isinstance(got, int) else None), b"", ""
+
+
+def app_http_status(url: str, timeout: float = 2, fetch=None) -> int | None:
+    """200 when `/health` or a plain `/` answers. No JSON Accept header.
+
+    God's Eye View returns 404 for `/` when the request asks for JSON. That
+    response is not a reason to call the app down. The doctor uses the same
+    plain `/` check.
+    """
+    root = str(url or "").rstrip("/")
+    getter = fetch or (lambda target: fetch_url(target, timeout=timeout, accept=None))
+    last = None
+    for path in ("/health", "/"):
+        try:
+            code, _raw, _ctype = _split_fetch(getter(root + path))
+        except Exception:
+            continue
+        if code == 200:
+            return 200
+        if isinstance(code, int):
+            last = code
+    return last
+
+
 def probe_app(url: str | None = None, checkout: Path | None = None, fetch=None) -> dict:
-    """HTTP status plus a version or commit when the app or the checkout exposes one."""
-    base = (url or config.api_base()).rstrip("/") + "/"
-    fetch = fetch or fetch_url
-    code, raw, ctype = fetch(base)
-    version, commit = _version_fields(_json_meta(raw, ctype))
+    """Reachability from `/health` or plain `/`, plus a best-effort version.
+
+    The version request may send `Accept: application/json`. Its status never
+    becomes the up/down signal.
+    """
+    root = (url or config.api_base()).rstrip("/")
+
+    def getter(target: str, accept: str | None = None):
+        if fetch is not None:
+            return fetch(target)
+        return fetch_url(target, accept=accept)
+
+    health = _split_fetch(getter(root + "/health", accept=None))
+    plain = (None, b"", "")
+    if health[0] != 200:
+        plain = _split_fetch(getter(root + "/", accept=None))
+    http = 200 if health[0] == 200 or plain[0] == 200 else (health[0] if health[0] is not None else plain[0])
+    version, commit = None, None
+    for raw, ctype in ((health[1], health[2]), (plain[1], plain[2])):
+        found_version, found_commit = _version_fields(_json_meta(raw, ctype))
+        version = version or found_version
+        commit = commit or found_commit
+    if not version or not commit:
+        try:
+            _ignored, raw, ctype = _split_fetch(getter(root + "/", accept="application/json"))
+        except Exception:
+            raw, ctype = b"", ""
+        found_version, found_commit = _version_fields(_json_meta(raw, ctype))
+        version = version or found_version
+        commit = commit or found_commit
     local_version, local_commit = checkout_rev(checkout if checkout is not None else config.checkout())
     return {
-        "http": code if isinstance(code, int) else None,
+        "http": http if isinstance(http, int) else None,
         "version": version or local_version,
         "commit": commit or local_commit,
         "versionSource": "app" if version else ("checkout" if local_version else None),
@@ -731,7 +789,7 @@ def _stop_owned(listeners: list[dict], node: str, checkout: str, port: int, url:
                      "Call godseye_admin op=status and retry op=app_stop.")
     sleep = kw.get("sleep") or time.sleep
     clock = kw.get("monotonic") or time.monotonic
-    opener = kw.get("opener") or (lambda target: fetch_url(target, timeout=2)[0])
+    opener = kw.get("opener") or (lambda target: app_http_status(target, timeout=2))
     waited = wait_http(url, want_up=False, timeout=float(kw.get("stop_timeout") or 8),
                        opener=opener, sleep=sleep, monotonic=clock)
     if waited.get("ok"):
@@ -766,7 +824,7 @@ def _start_process(node: str, checkout: str, port: int, url: str, bind: str, kw)
     pid = getattr(proc, "pid", None)
     sleep = kw.get("sleep") or time.sleep
     clock = kw.get("monotonic") or time.monotonic
-    opener = kw.get("opener") or (lambda target: fetch_url(target, timeout=2)[0])
+    opener = kw.get("opener") or (lambda target: app_http_status(target, timeout=2))
 
     def alive() -> bool:
         poll = getattr(proc, "poll", None)
@@ -811,7 +869,7 @@ def _dispatch(action: str, **kw) -> dict:
     runner = kw.get("systemd_runner") or default_systemctl
     show = _show_unit(runner)
     listeners = _listeners(port, kw)
-    opener = kw.get("opener") or (lambda target: fetch_url(target, timeout=2)[0])
+    opener = kw.get("opener") or (lambda target: app_http_status(target, timeout=2))
     try:
         http = opener(url)
     except Exception:

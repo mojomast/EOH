@@ -1,0 +1,23 @@
+{
+  "_comment": "Hand-written Mapillary image search. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "graph.mapillary.com",
+        "path_contains": "/images"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "img-1",
+              "computed_geometry": {"type": "Point", "coordinates": [-73.567, 45.501]}
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

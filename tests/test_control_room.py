@@ -108,6 +108,71 @@ def test_status_aggregates_sections_and_names_missing_keys_only():
     assert "[redacted]" in feeds["fires"]["detail"]
 
 
+def test_json_root_404_does_not_decide_app_state(tmp_path):
+    """God's Eye View returns 404 for `/` when Accept is application/json.
+
+    `/health` and a plain `/` both return 200. That is the up/down signal.
+    The version lookup is best-effort.
+    """
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import threading
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            accept = self.headers.get("Accept") or ""
+            if self.path == "/" and "application/json" in accept:
+                self.send_response(404)
+                self.end_headers()
+                return
+            if self.path in ("/", "/health"):
+                body = b"ok"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return None
+
+    (tmp_path / "package.json").write_text('{"version":"9.9.9"}\n')
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        probed = control_room.probe_app(url=f"http://127.0.0.1:{port}", checkout=tmp_path)
+        assert control_room.app_http_status(f"http://127.0.0.1:{port}") == 200
+    finally:
+        server.shutdown()
+        thread.join(2)
+    assert probed["http"] == 200
+    assert probed["version"] == "9.9.9" and probed["versionSource"] == "checkout"
+    assert probed["commitSource"] != "app"
+
+    def health_only(url):
+        if url.endswith("/health"):
+            return 404, b"", ""
+        if url.endswith("/"):
+            return 200, b"ok", "text/html"
+        return 404, b"", ""
+
+    plain = control_room.probe_app(url="http://app.test", checkout=tmp_path, fetch=health_only)
+    assert plain["http"] == 200 and plain["version"] == "9.9.9"
+
+    report = _doctor()
+    body = control_room.aggregate(
+        report, {"http": 404, "version": None, "commit": None},
+        {"state": "up", "port": 1},
+        {"supported": True, "platform": "linux", "mode": "process"},
+        {"apiBase": "http://127.0.0.1:4173/"},
+    )
+    assert body["app"]["state"] == "up" and body["app"]["http"] == 404
+
+
 def test_status_app_down_and_feed_summary_when_provenance_is_absent():
     report = _doctor()
     report["checks"][0] = {"check": "app reachable", "ok": False, "detail": "connection refused"}

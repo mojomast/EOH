@@ -1,0 +1,20 @@
+{
+  "_comment": "Hand-written Street View metadata fixture. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "maps.googleapis.com",
+        "path_contains": "/streetview/metadata"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "status": "OK",
+          "pano_id": "pano-1",
+          "location": {"lat": 45.501, "lng": -73.567}
+        }
+      }
+    }
+  ]
+}

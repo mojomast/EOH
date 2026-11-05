@@ -1,0 +1,16 @@
+{
+  "_comment": "Hand-written Street View miss. No keys or tokens.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "maps.googleapis.com",
+        "path_contains": "/streetview/metadata"
+      },
+      "response": {
+        "status": 200,
+        "json": {"status": "ZERO_RESULTS"}
+      }
+    }
+  ]
+}

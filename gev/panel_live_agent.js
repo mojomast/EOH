@@ -606,6 +606,13 @@
         payload = window.__hermesTimeline ? window.__hermesTimeline.command(m.args || {}) : { ok: false, error: 'timeline not loaded' }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
+      // Street hops and route chunks yield the main thread. They must not sit under the 45s abort.
+      if (m.name === 'hermes_street_hop' || m.name === 'hermes_fly_chunk' || m.name === 'hermes_route_light' || m.name === 'fly_route') {
+        payload = window.__hermesRoute
+          ? await window.__hermesRoute.command(m.name, m.args || {})
+          : { ok: false, error: 'route helper not loaded' }
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
       if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame' || m.name === 'hermes_capture') {
         payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : m.name === 'hermes_capture' ? capture() : sceneInfo()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')

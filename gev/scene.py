@@ -77,7 +77,8 @@ class SceneStore:
 
     @staticmethod
     def _has(scene: dict) -> bool:
-        return bool(scene.get("annotations") or scene.get("camera") or scene.get("shapes") or scene.get("timeline"))
+        return bool(scene.get("annotations") or scene.get("camera") or scene.get("shapes")
+                    or scene.get("timeline") or scene.get("motion"))
 
     @staticmethod
     def _drawer(sc: dict, args: dict, result: dict) -> bool:
@@ -160,6 +161,34 @@ class SceneStore:
                 merged["playing"] = False
         sc["timeline"] = merged
         return True
+
+    def note_motion(self, key: str | None, motion: dict | None) -> None:
+        """Remember a street walk or dolly so a reloaded pane can say it was interrupted."""
+        with self.lock:
+            sc = self.scene(key)
+            if motion is None:
+                sc.pop("motion", None)
+            elif isinstance(motion, dict):
+                sc["motion"] = {k: v for k, v in motion.items() if v is not None}
+            else:
+                return
+            sc["updated"] = time.time()
+            self._save()
+
+    def interrupt_motion(self, key: str | None) -> dict | None:
+        """A fresh pane means a running walk or dolly did not finish. Report it once per reconnect."""
+        with self.lock:
+            sc = self.scenes.get(str(key or DEFAULT_KEY))
+            if not sc or not isinstance(sc.get("motion"), dict):
+                return None
+            motion = dict(sc["motion"])
+            if motion.get("state") not in ("running", "paused", "interrupted"):
+                return None
+            motion["state"] = "interrupted"
+            sc["motion"] = motion
+            sc["updated"] = time.time()
+            self._save()
+            return motion
 
     def note_filters(self, key: str | None, filters: dict | None) -> None:
         """The user toggled a filter chip in the pane (reported by the pane)."""
@@ -307,12 +336,16 @@ class SceneStore:
         with self.lock:
             sc = self.scene(key)
             from .timeline import public_timeline
-            return {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
-                    "filters": sc.get("filters"), "timeline": public_timeline(sc.get("timeline")),
-                    "annotations": [{"id": a["id"], "type": a["spec"].get("type", "pin"),
-                                     "label": a["spec"].get("label") or a["spec"].get("target"),
-                                     "latitude": a["spec"].get("latitude"), "longitude": a["spec"].get("longitude")}
-                                    for a in sc["annotations"]]}
+            out = {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
+                   "filters": sc.get("filters"), "timeline": public_timeline(sc.get("timeline")),
+                   "annotations": [{"id": a["id"], "type": a["spec"].get("type", "pin"),
+                                    "label": a["spec"].get("label") or a["spec"].get("target"),
+                                    "latitude": a["spec"].get("latitude"), "longitude": a["spec"].get("longitude")}
+                                   for a in sc["annotations"]]}
+            if isinstance(sc.get("motion"), dict):
+                motion = sc["motion"]
+                out["motion"] = {k: motion.get(k) for k in ("kind", "state", "label", "index", "total") if k in motion}
+            return out
 
     def delete(self, key: str | None, ann_id: str) -> bool:
         with self.lock:
@@ -362,10 +395,13 @@ class SceneStore:
     def dump(self, key: str | None) -> dict:
         with self.lock:
             sc = self.scene(key)
-            return {"scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "caption": sc.get("caption"),
-                    "drawer": sc.get("drawer"), "timeline": sc.get("timeline"), "updated": sc.get("updated"),
-                    "annotations": [{"id": a["id"], "paneId": a.get("paneId"), "spec": dict(a.get("spec") or {})}
-                                    for a in sc.get("annotations") or []]}
+            out = {"scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "caption": sc.get("caption"),
+                   "drawer": sc.get("drawer"), "timeline": sc.get("timeline"), "updated": sc.get("updated"),
+                   "annotations": [{"id": a["id"], "paneId": a.get("paneId"), "spec": dict(a.get("spec") or {})}
+                                   for a in sc.get("annotations") or []]}
+            if isinstance(sc.get("motion"), dict):
+                out["motion"] = dict(sc["motion"])
+            return out
 
     def load_into(self, key: str | None, data: dict) -> dict:
         """Replace the session scene with a saved investigation / dump."""
@@ -391,6 +427,7 @@ class SceneStore:
                 sc["timeline"] = clean_state(timeline)
             else:
                 sc["timeline"] = None
+            sc["motion"] = data.get("motion") if isinstance(data.get("motion"), dict) else None
             sc["updated"] = time.time()
             self._save()
             return {"ok": True, "scene": key or DEFAULT_KEY, "annotations": len(sc["annotations"])}

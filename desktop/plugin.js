@@ -121,6 +121,16 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
   const frameReady = new Promise((r) => { markReady = r })
   const pinger = setInterval(() => { try { frame()?.postMessage({ type: 'hermes-gev:ping' }, '*') } catch {} }, 2000)
   frameReady.then(() => clearInterval(pinger))
+  const PANE_COMMAND_MS = 150000
+  let inflightName = ''
+  // One command at a time. A second long-poll would start a second command.
+  // This timer posts /live/heartbeat so the stale clock does not depend on that loop.
+  const heart = setInterval(() => {
+    if (stopped) return
+    const body = { pane: paneId, busy: Boolean(inflightName) }
+    if (inflightName) body.name = inflightName
+    ctx.rest('/live/heartbeat', { method: 'POST', body }).catch(() => {})
+  }, 5000)
   const nextPath = () => {
     const q = new URLSearchParams({ pane: paneId })
     if (fresh) q.set('fresh', '1')
@@ -140,12 +150,15 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
       if (cmd.name === 'hermes_reload') {  // pane-level: re-fetch /panel and rebuild the frame
         await ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId, payload: { ok: true, action: 'hermes_reload', pane: paneId } } }).catch(() => {})
         stopped = true
+        inflightName = ''
         onReload?.()
         break
       }
       const done = new Promise((resolve) => pending.set(cmd.id, resolve))
+      inflightName = String(cmd.name || '')
       frame()?.postMessage({ type: 'hermes-gev:run', id: cmd.id, name: cmd.name, args: cmd.args }, '*')
-      const payload = await Promise.race([done, new Promise((r) => setTimeout(() => r({ ok: false, error: 'pane timeout' }), 150000))])
+      const payload = await Promise.race([done, new Promise((r) => setTimeout(() => r({ ok: false, error: 'pane timeout' }), PANE_COMMAND_MS))])
+      inflightName = ''
       pending.delete(cmd.id)
       ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId, payload } }).catch(() => {})
     }
@@ -203,7 +216,7 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
       pending.get(event.data.id)?.(event.data.payload)
       return true
     },
-    stop() { stopped = true; clearInterval(pinger) }
+    stop() { stopped = true; clearInterval(pinger); clearInterval(heart) }
   }
 }
 

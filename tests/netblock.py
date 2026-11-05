@@ -27,6 +27,9 @@ REQUIRED = (
     "firms_csv",
     "opensky_states",
     "wayback_config",
+    "streetview_metadata",
+    "streetview_zero",
+    "mapillary_images",
 )
 
 _active: contextvars.ContextVar[frozenset] = contextvars.ContextVar("godseye_cassettes", default=frozenset())

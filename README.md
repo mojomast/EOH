@@ -73,6 +73,20 @@ The toolbar at the bottom left draws a box (two clicks), an area, or a line. Dis
 
 <sub>Wayback playhead on <b>2020-04-08</b>, three Esri releases in the window. Play, step, and the range sit on the EOH pane.</sub>
 
+### Street View walk
+
+`godseye_nav` `op=street_walk` moves the embedded Street Level viewer along a route. The sub-action is an argument named `walk`: `start`, `pause`, `resume`, `step`, `stop`, or `state`.
+
+Draw a route first (or pass `points`, `waypoints`, or `stops`), then:
+
+`godseye_nav` `{op:"street_walk", walk:"start", label:"drawn route"}`
+
+That samples the line about every 75 m (`stepM`, clamped to 20–250), looks up the nearest Google Street View panorama (Mapillary when Street View misses and `MAPILLARY_CLIENT_TOKEN` is set), aims the heading along the direction of travel, and dwells (`dwellS`, default 4 seconds) before the next point. `walk=state` reports the index. `walk=pause`, `walk=step`, and `walk=resume` control it. The globe stays on a coarse tile setting for the walk.
+
+`op=fly_route` still dollies the 3D camera. A dense line is thinned and sent in chunks of about 300 points. `lighten` defaults to true: Street Level turns off and the globe coarsens until the dolly ends, then both are restored. Pass `lighten:false` to keep them.
+
+If the pane reloads mid-walk, the saved scene comes back and the next turn hears that the walk was interrupted. `walk=resume` continues it.
+
 ### Also on the globe
 
 - **Pins.** Annotation pins, place pins, brief hits, and tour stops are ground-clamped markers. The tip is the point, a dot sits on the ground under it, and the height is sampled again as the camera's level of detail changes. Click a pin, or call `godseye_annotate` `op=drawer`, for a drawer of title, `description_md` (markdown; raw HTML is shown as text), images, and http(s) links. The open drawer is saved with the scene.
@@ -220,9 +234,9 @@ For watch alerts that should start a turn immediately, set Hermes `plugins.entri
 
 ### Control room
 
-The desktop pane has a collapsible Control room (`GET /control`, `POST /control/app`). `godseye_admin` `op=status` reads the same payload. It shows the God's Eye View app (HTTP status, version or commit when the app exposes one), the loopback relay and HUD bridge, connected panes and last heartbeat, WebGL (ok or lost, context-loss count, recover on or off, `recreateViewer` present or absent), and each public feed's last fetch (ok, error, or age). Missing `AISSTREAM_API_KEY` and `FIRMS_MAP_KEY` are listed by name. Values are not returned. The room reuses the doctor checks.
+The desktop pane has a collapsible Control room (`GET /control`, `POST /control/app`). `godseye_admin` `op=status` reads the same payload. It shows the God's Eye View app (HTTP status, version or commit when the app exposes one), the loopback relay and HUD bridge, connected panes and last heartbeat, WebGL (ok or lost, context-loss count, recover on or off, `recreateViewer` present or absent), and each public feed's last fetch (ok, error, or age). App up or down follows `/health`, or a plain `/` when that is what the doctor sees. A version or commit lookup is best-effort and does not change that state. Missing `AISSTREAM_API_KEY` and `FIRMS_MAP_KEY` are listed by name. Values are not returned. The room reuses the doctor checks.
 
-`op=app_start`, `op=app_stop`, and `op=app_restart` change the app only when called. On Linux, a loaded `gods-eye-view.service` user unit (`scripts/install-service.sh`) is started with `systemctl --user`. Otherwise the plugin launches Node on the checkout's `vite.js`. A stop signals that process only when the Node executable, the checkout path, and the listen port all match. A port owned by anything else is refused, and nothing is killed. Ready means HTTP 200 on `GODSEYE_API_BASE`, not an open socket. macOS and Windows show status and report lifecycle as unsupported. The plugin does not install the systemd unit.
+`op=app_start`, `op=app_stop`, and `op=app_restart` change the app only when called. On Linux, a loaded `gods-eye-view.service` user unit (`scripts/install-service.sh`) is started with `systemctl --user`. Otherwise the plugin launches Node on the checkout's `vite.js`. A stop signals that process only when the Node executable, the checkout path, and the listen port all match. A port owned by anything else is refused, and nothing is killed. Ready means HTTP 200 from `/health` or a plain `/` on `GODSEYE_API_BASE`, not an open socket. macOS and Windows show status and report lifecycle as unsupported. The plugin does not install the systemd unit.
 
 The drawer follows the control-room idea in [cygnostik/Hermes-Plugin-Gods-Eye-View](https://github.com/cygnostik/Hermes-Plugin-Gods-Eye-View) (`desktop/plugin.js` and `dashboard/plugin_api.py`, MIT). This plugin does not copy that project's engine, key bridge, or update flow.
 
@@ -248,7 +262,7 @@ Framing presets on `godseye_view` `op=fly`: `street` is about 150 m at pitch −
 
 `plugin.yaml` registers **11** tools, all in the `godseye` toolset. Each takes a required `op`. The map is [`docs/COMPOSABLE-TOOLS.md`](docs/COMPOSABLE-TOOLS.md).
 
-The 11 registered schemas are **6670** `o200k_base` tokens (**27017** bytes, **6519** `cl100k_base`). That is **+34** `o200k_base` tokens, **+138** bytes, and **+34** `cl100k_base` tokens against the previous eleven-tool catalog (**6636** / **26879** / **6485**), from the control-room ops on `godseye_admin`. The same eleven tools on `feat/v0.2` at `9c922d0`, before `op=timeline`, were **6504** `o200k_base` tokens (**26374** bytes, **6358** `cl100k_base`). The catalog on `feat/v0.2` at `90097b3`, before the composable cut, was **82** tools and **26574** `o200k_base` tokens (**112644** bytes, **26199** `cl100k_base`). Figures are tiktoken 0.14.0 on compact JSON (`name`, `description`, `parameters`), in registration order. `evals/measure_schemas.py` reprints the current catalog. Its same-tree baseline, which registers the phase B names again and keeps only `godseye_view` and `godseye_query`, is **87** tools and **27774** `o200k_base` tokens (**117763** bytes, **27389** `cl100k_base`). The four control-room names are phase B, so this reconstruction registers them; the previous baseline was **83** tools and **27337** `o200k_base` tokens. The slider's absorbed name is registered in that baseline, and `godseye_view` / `godseye_query` include `show`, `state`, `terrain`, and `features`.
+The 11 registered schemas are **6782** `o200k_base` tokens (**27434** bytes, **6627** `cl100k_base`). That is **+112** `o200k_base` tokens, **+417** bytes, and **+108** `cl100k_base` tokens against the control-room catalog (**6670** / **27017** / **6519**), from `op=street_walk` and `lighten` on `fly_route`. The control-room ops on `godseye_admin` were **+34** `o200k_base` tokens against the previous eleven-tool catalog (**6636** / **26879** / **6485**). The same eleven tools on `feat/v0.2` at `9c922d0`, before `op=timeline`, were **6504** `o200k_base` tokens (**26374** bytes, **6358** `cl100k_base`). The catalog on `feat/v0.2` at `90097b3`, before the composable cut, was **82** tools and **26574** `o200k_base` tokens (**112644** bytes, **26199** `cl100k_base`). Figures are tiktoken 0.14.0 on compact JSON (`name`, `description`, `parameters`), in registration order. `evals/measure_schemas.py` reprints the current catalog. Its same-tree baseline, which registers the phase B names again and keeps only `godseye_view` and `godseye_query`, is **88** tools and **28104** `o200k_base` tokens (**119111** bytes, **27710** `cl100k_base`). The four control-room names and `street_walk` are phase B, so this reconstruction registers them; the control-room baseline was **87** tools and **27774** `o200k_base` tokens (**117763** bytes, **27389** `cl100k_base`). The slider's absorbed name is registered in that baseline, and `godseye_view` / `godseye_query` include `show`, `state`, `terrain`, and `features`.
 
 The names those ops replaced are not registered. `gev/router.py` `dispatch_legacy` still runs a saved call that uses one of them. Scenes, tours, `/gev`, the relay, and the pane keep bare action names such as `fly_to_location`. They do not use the retired Hermes names. `godseye_nav` `op=timeline` is the time slider. Its sub-action is the argument `timeline`.
 
@@ -311,7 +325,7 @@ Every name in `plugin.yaml`, once.
 - `godseye_layers` — One layer, the layers menu, a side panel, context mode, visual style, sonar, detection, the map stack, bloom and sharpen.
 - `godseye_feeds` — Earthquakes, fires, launches, aircraft, ships, satellite passes, public cameras, ALPR, traffic, weather, imagery, cables, infrastructure, flood, cyclones, fire perimeters, military sites, and internet radio. CCTV and ALPR are mapped public cameras.
 - `godseye_annotate` — Pins (pass `intent` and `description_md`), clear, draw, list, delete, filter, one pin drawer, and research.
-- `godseye_nav` — `measure` (`distance`, `area`, or `route`), `isochrone`, `fly_route`, `compare`, `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`).
+- `godseye_nav` — `measure` (`distance`, `area`, or `route`), `isochrone`, `fly_route`, `street_walk` (`start`, `pause`, `resume`, `step`, `stop`, `state`), `compare`, `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`).
 - `godseye_track` — Follow a public aircraft, ship, or satellite, stop, select the nearest, frame overhead traffic, or open the cockpit.
 - `godseye_scene` — Save, list, load, delete (needs `confirm=true`), report, export (GeoJSON, KML, or `format=pack`), restore, tour, and cinematic playback.
 - `godseye_watch` — Create, list (`check` runs one now), pause, or delete (needs `confirm=true`). Feeds: earthquakes, fires, flights, ships, places.
@@ -405,6 +419,7 @@ Start with `/gev doctor`. The fix under each failed check is the one to follow.
 | What you see | What it means |
 | --- | --- |
 | `no_pane` | Open the Eye Of Hermes pane in Hermes Desktop or the Webapp and keep it visible, then retry the same call. Data tools still work. |
+| `pane_lost` | The pane was open and then stopped. Reopen it and keep it visible. The saved scene restores. If a street walk or dolly was running, it was interrupted; resume the walk with `godseye_nav` `op=street_walk` `walk=resume`. |
 | `pane_busy` | The pane is still on an earlier command. Wait a few seconds and retry that same call once. |
 | `relay_unavailable` | Restart the Hermes dashboard or gateway with the plugin enabled, so the relay starts. |
 | `timeout` | Retry once. If it happens again, run `godseye_view` `op=panes` and `godseye_admin` `op=doctor` before changing arguments. |

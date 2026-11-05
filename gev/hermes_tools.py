@@ -62,6 +62,8 @@ SYSTEM_PROMPT = (
     "Tools: godseye_view, godseye_query, godseye_layers, godseye_feeds, godseye_annotate, godseye_nav, "
     "godseye_track, godseye_scene, godseye_watch, godseye_capture, godseye_admin. Each takes op. "
     "godseye_nav op=timeline is the time slider (argument timeline: set, play, step, stop, state, list_dates). "
+    "godseye_nav op=street_walk walks a saved route in Street View (argument walk: start, pause, resume, step, stop, state). "
+    "pane_lost means the pane stopped: ask the user to reopen it. "
     "Trust the EOH map line (pane, camera, layers, pins, drawer) and [EOH watch alert] lines. "
     "Call godseye_view op=state only when that line is missing; detail=full for the raw camera. "
     "Large tools default to detail=concise; pass detail=full for full objects or images. "
@@ -127,6 +129,8 @@ def extend_live_schema(name: str, schema: dict) -> dict:
     props = schema.setdefault("properties", {})
     if name == "fly_to_location":
         props["framing"] = FRAMING_PROP
+    if name == "fly_route":
+        props["lighten"] = {"type": "boolean"}
     if name == "annotate_map":
         props["flyTo"] = {"anyOf": [{"type": "boolean"}, {"type": "string", "enum": ["all"]}],
                           "description": "true frames the first mark; 'all' frames every mark drawn in this call."}
@@ -172,7 +176,11 @@ def make_live_handler(name: str):
             from . import enrich
             intent = args.get("intent") or args.get("context")
             args["annotations"] = enrich.enrich_annotations(args.get("annotations") or [], intent=intent, mode="light")
-        out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
+        if name == "fly_route":
+            from . import flyroute
+            out = flyroute.run(args, session_id=kw.get("session_id"), fanout=fanout)
+        else:
+            out = composer.live_call(name, args, session_id=kw.get("session_id"), fanout=fanout)
         if name == "set_map_stack":
             out = composer.remediate_map_stack(out)
         if name in ("osm_query", "resolve_area"):
@@ -527,6 +535,22 @@ EXTRA_TOOLS = {
             "left": {"type": "string", "default": "wayback:2014", "description": "Left side (before)."},
             "right": {"type": "string", "default": "current", "description": "Right side (after)."},
             "position": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5}}}, "🪞"),
+    "godseye_street_walk": (
+        "Walk a saved route in the embedded Street Level viewer. walk=start samples the route and opens the nearest "
+        "Google Street View panorama at each point (Mapillary if Street View misses). The heading follows the direction "
+        "of travel. walk is start, pause, resume, step, stop, or state. Pass label of a drawn route, or points, "
+        "waypoints, or stops. stepM is the sample spacing in metres. dwellS is how long to stay at each panorama.",
+        {"type": "object", "properties": {
+            "op": {"type": "string", "enum": ["start", "pause", "resume", "step", "stop", "state"], "default": "state"},
+            "label": {"type": "string", "maxLength": 80},
+            "points": {"type": "array", "maxItems": 2000, "items": {"type": "object", "properties": {
+                "lat": {"type": "number"}, "lon": {"type": "number"}}, "required": ["lat", "lon"]}},
+            "waypoints": {"type": "array", "maxItems": 2000, "items": {"type": "object"}},
+            "stops": {"type": "array", "maxItems": 2000, "items": {"type": "object"}},
+            "stepM": {"type": "number", "minimum": 20, "maximum": 250},
+            "dwellS": {"type": "number", "minimum": 0, "maximum": 30},
+            "provider": {"type": "string", "enum": ["google", "mapillary"]},
+        }}, "🚶"),
     "godseye_timeline": (
         "Time slider on the EOH pane. op=set arms it. mode=wayback scrubs Esri World Imagery Wayback "
         "release dates over the current view (transition swipe or fade). mode=events shows USGS quakes and "
@@ -673,6 +697,9 @@ def extra_handler(name: str):
                     out = preview_mod.close_tracked()
                 else:
                     out = preview_mod.swap(str(args.get("url") or ""), label=str(args.get("label") or ""))
+            elif name == "godseye_street_walk":
+                from . import streetwalk
+                out = streetwalk.run(args, session_id=sid)
             elif name == "godseye_timeline":
                 from . import timeline as timeline_mod
                 out = timeline_mod.run(args, session_id=sid)

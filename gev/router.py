@@ -173,7 +173,9 @@ CATALOG: tuple[Target, ...] = (
        "argument measure is distance, area, or route so it does not collide with op"),
     _t("godseye_isochrone", "godseye_nav", "isochrone", "extra", "B", "minutes of reach"),
     _t("godseye_live_fly_route", "godseye_nav", "fly_route", "live", "B",
-       "dolly along an existing route; not a camera fly"),
+       "dolly along an existing route; dense lines are thinned and chunked; not a camera fly"),
+    _t("godseye_street_walk", "godseye_nav", "street_walk", "extra", "B",
+       "argument walk is start, pause, resume, step, stop, or state"),
     _t("godseye_live_compare", "godseye_nav", "compare", "extra", "B", "Wayback or imagery swipe"),
     _t("godseye_timeline", "godseye_nav", "timeline", "extra", "B",
        "argument timeline is set, play, step, stop, state, or list_dates"),
@@ -505,12 +507,15 @@ def _prepare_generic(spec: Target, args: dict):
     ``godseye_nav`` ``op=measure`` takes the old inner ``op`` as ``measure``
     and puts it back before the handler sees it. ``op=timeline`` does the same
     with the argument ``timeline`` (set, play, step, stop, state, list_dates).
+    ``op=street_walk`` does the same with the argument ``walk``.
     """
     args = dict(args)
     if spec.composable == "godseye_nav" and spec.op == "measure" and "measure" in args:
         args["op"] = args.pop("measure")
     if spec.composable == "godseye_nav" and spec.op == "timeline" and "timeline" in args:
         args["op"] = args.pop("timeline")
+    if spec.composable == "godseye_nav" and spec.op == "street_walk" and "walk" in args:
+        args["op"] = args.pop("walk")
     if "style" in args and args["style"] is not None:
         mapped = canonical_style(args["style"])
         if not mapped:
@@ -905,6 +910,8 @@ def _public_key(spec: Target, key: str) -> str | None:
         return "measure"
     if spec.composable == "godseye_nav" and spec.op == "timeline" and key == "op":
         return "timeline"
+    if spec.composable == "godseye_nav" and spec.op == "street_walk" and key == "op":
+        return "walk"
     if key == "op":
         return None
     return key
@@ -1089,8 +1096,9 @@ _LEADS = {
     ),
     "godseye_annotate": "Pins, drawings, filters, and pin drawers on the open pane. One op per call.",
     "godseye_nav": (
-        "Measure, isochrone, fly a drawn route, compare imagery, or scrub the time slider. "
-        "op=timeline takes argument timeline: set, play, step, stop, state, or list_dates. One op per call."
+        "Measure, isochrone, fly a drawn route, walk it in Street View, compare imagery, or scrub time. "
+        "op=timeline argument timeline: set, play, step, stop, state, list_dates. "
+        "op=street_walk argument walk: start, pause, resume, step, stop, state. One op per call."
     ),
     "godseye_track": "Follow an entity, frame overhead traffic, or open the cockpit. One op per call.",
     "godseye_scene": "Save, load, export, restore, tour, or play back a scene. One op per call.",

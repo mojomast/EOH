@@ -15,6 +15,14 @@ TABLE: dict[str, dict[str, str]] = {
         "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp.",
         "fix": "Ask the user to open the Eye Of Hermes (EOH) pane and keep it visible, then retry this same call. Data tools (godseye_* without live_) work with no pane.",
     },
+    "pane_lost": {
+        "message": "The Eye Of Hermes (EOH) pane stopped responding.",
+        "fix": "Ask the user to reopen the Eye Of Hermes (EOH) pane and keep it visible. The saved scene restores on its own. If a route walk or dolly was running, it was interrupted; offer to resume it.",
+    },
+    "MOTION_INTERRUPTED": {
+        "message": "A route walk or dolly was interrupted when the Eye Of Hermes pane reloaded.",
+        "fix": "Ask the user to keep the pane open. Offer to resume a street walk with godseye_nav op=street_walk walk=resume, or start the dolly again with godseye_nav op=fly_route.",
+    },
     "pane_busy": {
         "message": "The Eye Of Hermes (EOH) pane is open but still busy with an earlier command.",
         "fix": "Wait a few seconds and retry this same call once. Do not send a different live command first, and do not open a second pane.",
@@ -220,8 +228,8 @@ def classify(out: dict, tool: str | None = None) -> str:
         if hinted:
             break
     if hinted in ("OVERPASS_NOT_CONFIGURED", "AREA_TOO_LARGE", "KEY_MISSING", "PANEL_STALE",
-                  "PANEL_MISSING", "ION_SCOPES", "no_pane", "pane_busy", "relay_unavailable", "timeout",
-                  "CONTEXT_LOST",
+                  "PANEL_MISSING", "ION_SCOPES", "no_pane", "pane_lost", "pane_busy", "relay_unavailable", "timeout",
+                  "CONTEXT_LOST", "MOTION_INTERRUPTED",
                   "routing_unavailable", "wayback_unavailable", "no_dates", "no_timeline", "no_focus", "no_drawing", "pin_not_found",
                   "unsupported_side", "confirm_required", "CONFIRM_REQUIRED", "not_found", "NOT_FOUND",
                   "no_pins", "geocoder_unavailable", "osm_unavailable", "no_match", "bad_points",
