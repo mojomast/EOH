@@ -50,16 +50,30 @@ export function stablePaneId(sessions = paneSessions(), store = globalThis.sessi
   }
 }
 
-// Fork messages for mojomast/gods-eye-view. The plugin posts them; the app applies them only
-// when it implements the hook (setHostVisible / applyHostConfig) or listens for these types.
-// TODO(fork F1): {type:'gev:visible', visible:false} should pause rendering while the pane is hidden.
-// TODO(fork F2): {type:'gev:init', config} carries runtime keys. config is null until a server-side
-// route can read the env file; never put key values in this file.
+// Fork embed protocol (mojomast/gods-eye-view docs/EMBEDDING.md).
+// Visibility: {type:'gev:visibility', visible}. Reply: {type:'gev:visibility-applied', visible}.
+// Config: {type:'gev:config', googleMapsApiKey, cesiumIonToken, photonUrl, mapillaryToken, perf}
+// plus an optional nested config object. Reply: {type:'gev:config-applied', ok, perf}.
+// Post config before the viewer exists (?waitForConfig=1 / GEV_WAIT_FOR_CONFIG). Key values
+// are never written into this file; the backend supplies configMessage.
 export function forkVisibilityMessage(visible) {
-  return { type: 'gev:visible', visible: !!visible }
+  return { type: 'gev:visibility', visible: !!visible }
 }
-export function forkInitMessage(config) {
-  return { type: 'gev:init', config: config && typeof config === 'object' ? config : null }
+const CONFIG_FIELDS = ['googleMapsApiKey', 'cesiumIonToken', 'photonUrl', 'mapillaryToken', 'perf']
+export function forkConfigMessage(config, perf) {
+  const src = config && typeof config === 'object' ? config : {}
+  const nested = src.config && typeof src.config === 'object' && !Array.isArray(src.config) ? src.config : null
+  const flat = { ...(nested || {}), ...src }
+  const msg = { type: 'gev:config' }
+  for (const key of CONFIG_FIELDS) {
+    if (typeof flat[key] === 'string' && flat[key]) msg[key] = flat[key]
+  }
+  const mode = perf || flat.perf
+  if (mode === 'embed' || mode === 'default') msg.perf = mode
+  const body = {}
+  for (const key of CONFIG_FIELDS) if (typeof msg[key] === 'string') body[key] = msg[key]
+  if (Object.keys(body).length) msg.config = body
+  return msg
 }
 export function postForkMessage(frame, message) {
   try { (frame?.() || frame)?.postMessage(message, '*') } catch {}
@@ -95,13 +109,12 @@ export function watchPaneVisibility(el, onChange) {
 // Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
 // frame, and post the results back. Each pane polls with its own id and session ids.
 // Returns { onMessage, stop }.
-export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null, label = null }) {
+export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null, label = null, onConfigApplied = null }) {
   let stopped = false
   let fresh = true  // first poll of a new frame: the relay restores this session's scene
   let paneLabel = typeof label === 'function' ? label() : label
   const pending = new Map()
   let lastState = ''
-  frameReady.then(() => { postForkMessage(frame, forkInitMessage(null)) })
   // Commands go to the frame only once its app is up: a message posted earlier would land in the
   // iframe's initial about:blank document and be lost (seen as a stuck "pane busy").
   let markReady
@@ -145,6 +158,8 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
     onMessage(event) {
       const win = frame()
       if (!win || event.source !== win) return false
+      if (event.data?.type === 'gev:config-applied') { onConfigApplied?.(event.data); return true }
+      if (event.data?.type === 'gev:visibility-applied') return true
       if (event.data?.type === 'hermes-gev:ready') { markReady(); return true }
       if (event.data?.type === 'hermes-gev:state') {  // cached map line; not a tool call
         const snap = event.data.detail
@@ -209,16 +224,36 @@ export function glEvent(event, win) {
 const panelCache = new Map()
 export function clearPanelCache() { panelCache.clear() }
 export function loadPanel(ctx, fullUi) {
-  const key = fullUi ? 'full' : 'globe'
-  if (!panelCache.has(key)) {
-    const p = ctx.rest(`/panel?fullUi=${fullUi}`).then((r) => {
-      if (!r?.html) throw new Error('panel unavailable')
-      return toDataUrl(r.html)
-    })
-    p.catch(() => panelCache.delete(key))
-    panelCache.set(key, p)
-  }
-  return panelCache.get(key)
+  // configOnly is cheap and rewrites dist/panel/config.json. The document is cached per
+  // configRev, so a key change fetches a new panel and a remount of the same keys does not.
+  const q = `fullUi=${fullUi ? 'true' : 'false'}`
+  return ctx.rest(`/panel?${q}&configOnly=1`).then(async (meta) => {
+    const rev = meta?.configRev || '0'
+    const key = (fullUi ? 'full:' : 'globe:') + rev
+    if (!panelCache.has(key)) {
+      const p = ctx.rest(`/panel?${q}`).then((r) => {
+        if (!r?.html) throw new Error('panel unavailable')
+        return { src: toDataUrl(r.html), configMessage: r.configMessage || meta?.configMessage || forkConfigMessage(null, 'embed'), configRev: r.configRev || rev }
+      })
+      p.catch(() => panelCache.delete(key))
+      panelCache.set(key, p)
+    }
+    const doc = await panelCache.get(key)
+    return { ...doc, configMessage: meta?.configMessage || doc.configMessage }
+  })
+}
+
+// Repost gev:config until the app acknowledges it or the wait window ends.
+// The pane is a data document, so this has to land after embed-boot.js installs its queue.
+export function startEmbedConfig(frame, message) {
+  if (!message) return () => {}
+  let stopped = false
+  const send = () => { if (!stopped) postForkMessage(frame, message) }
+  send()
+  const timer = setInterval(send, 100)
+  const killer = setTimeout(finish, 2500)
+  function finish() { stopped = true; clearInterval(timer); clearTimeout(killer) }
+  return finish
 }
 
 export function toDataUrl(html) {
@@ -289,6 +324,7 @@ export function createPanelHost({ ctx, frame, initialView, status = () => null }
 function GlobePane({ ctx }) {
   const [status, setStatus] = useState(null)
   const [src, setSrc] = useState(null)
+  const configMessageRef = useRef(null)
   const [err, setErr] = useState('')
   const [hud, setHud] = useState('')
   const [fullUi, setFullUi] = useState(true)
@@ -327,7 +363,11 @@ function GlobePane({ ctx }) {
 
   useEffect(() => {
     let live = true
-    loadPanel(ctx, fullUi).then((u) => live && setSrc(u)).catch((e) => live && setErr(String(e?.message || e)))
+    loadPanel(ctx, fullUi).then((u) => {
+      if (!live) return
+      configMessageRef.current = u?.configMessage || null
+      setSrc(u?.src || null)
+    }).catch((e) => live && setErr(String(e?.message || e)))
     return () => { live = false }
   }, [fullUi, epoch])
 
@@ -338,7 +378,11 @@ function GlobePane({ ctx }) {
     const onMessage = createPanelHost({ ctx, frame, initialView: homeView || undefined, status: () => statusRef.current })
     // godseye_live_reload_pane / godseye_rebuild_panel: fetch a fresh panel, rebuild the frame.
     const onReload = () => { disposeFrame(frame()); clearPanelCache(); setSrc(null); setEpoch((n) => n + 1); setNonce((n) => n + 1) }
-    const live = createLiveRelay({ ctx, frame, paneId: paneIdRef.current, onReload, label: () => labelRef.current })
+    let stopCfg = () => {}
+    const live = createLiveRelay({
+      ctx, frame, paneId: paneIdRef.current, onReload, label: () => labelRef.current,
+      onConfigApplied: () => stopCfg(),
+    })
     const onGl = (e) => {
       const kind = glEvent(e, frame())
       if (kind) setGl(kind === 'restored' ? null : kind)
@@ -346,7 +390,8 @@ function GlobePane({ ctx }) {
     }
     const off = ctx.addEventListener(window, 'message', (e) => onGl(e) || live.onMessage(e) || onMessage(e))
     const stopVis = watchPaneVisibility(ref.current, (visible) => postForkMessage(frame, forkVisibilityMessage(visible)))
-    return () => { stopVis(); live.stop(); off?.(); disposeFrame(frame()) }
+    stopCfg = startEmbedConfig(frame, configMessageRef.current)
+    return () => { stopCfg(); stopVis(); live.stop(); off?.(); disposeFrame(frame()) }
   }, [src, homeView, nonce])
   const reloadGraphics = () => { disposeFrame(ref.current?.contentWindow); setGl(null); setNonce((n) => n + 1) }
 

@@ -30,6 +30,8 @@ of tools:
    `godseye_military_awareness`), then optionally show it live. Orient from the `EOH pane=...`
    line already in the turn (connected or busy, camera, layers, pins, drawer). Call
    `godseye_live_get_current_view_state` only when that line is missing or you need `detail=full`.
+   A hidden pane is paused with `{type:'gev:visibility'}`. Client keys are in `dist/panel/config.json`
+   (rewritten when the pane is served). `?perf=embed` is the default viewer profile. Do not print key values.
 3. **Check results are capped.** Read `total` and `truncated` before saying "there is nothing".
 4. **Sections can be unavailable** (e.g. fires need a FIRMS key). Say so instead of guessing.
 

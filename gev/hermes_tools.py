@@ -305,7 +305,8 @@ EXTRA_TOOLS = {
         {"type": "object", "properties": {"fanout": FANOUT_PROP}}, "🔄"),
     "godseye_rebuild_panel": (
         "Rebuild God's Eye View's dist/panel bundle (npm run build:panel with ~/.config/gods-eye-view.env exported, "
-        "Node 24) so client keys such as CESIUM_ION_TOKEN are baked in, then reload every open pane. Takes ~20-60 s.",
+        "Node 24) and reload every open pane. A current build reads dist/panel/config.json, rewritten when the pane "
+        "is served, so a CESIUM_ION_TOKEN change does not need this. Older builds still bake the key. Takes ~20-60 s.",
         {"type": "object", "properties": {}}, "🛠️"),
     "godseye_live_run_tour": (
         "Run a guided tour on the live globe in the background and return a jobId at once. Each stop: caption, "

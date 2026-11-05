@@ -333,17 +333,21 @@ def test_fork_hooks_are_wired_and_do_not_embed_keys():
     agent = (ROOT / "gev/panel_live_agent.js").read_text()
     plugin = (ROOT / "desktop/plugin.js").read_text()
     api = (ROOT / "dashboard/plugin_api.py").read_text()
-    for needle in ("gev:visible", "gev:init", "setHostVisible", "applyHostConfig",
-                   "TODO(fork F1)", "TODO(fork F2)", "mapSnapshot", "hermes-gev:state"):
+    boot = (ROOT / "gev/panel_inject.py").read_text()
+    for needle in ("gev:visibility", "gev:visibility-applied", "gev:config", "gev:config-applied",
+                   "setHostVisible", "applyHostConfig", "mapSnapshot", "hermes-gev:state"):
         assert needle in agent
-    for needle in ("forkVisibilityMessage", "forkInitMessage", "watchPaneVisibility",
-                   "TODO(fork F1)", "TODO(fork F2)", "/live/state"):
+    assert "'gev:visible'" not in agent and "'gev:init'" not in agent
+    for needle in ("forkVisibilityMessage", "forkConfigMessage", "watchPaneVisibility",
+                   "IntersectionObserver", "visibilityState", "startEmbedConfig",
+                   "configOnly=1", "/live/state"):
         assert needle in plugin
+    assert "'gev:init'" not in plugin and "forkInitMessage" not in plugin
     assert '"/live/state"' in api or "/live/state" in api
-    blob = agent + plugin
-    assert "AIza" not in plugin
-    assert "cesiumIonToken" in agent  # the field name in the TODO, not a value
-    assert "config: null" in plugin or "forkInitMessage(null)" in plugin
+    assert "config.json" in api and "configOnly" in api
+    assert "waitForConfig=1" in boot and "perf=" in boot and "GEV_RUNTIME_CONFIG" in boot
+    assert "AIza" not in plugin and "eyJ" not in plugin
+    assert "cesiumIonToken" in plugin  # field name, not a value
 
 
 def test_mapstate_http(monkeypatch):

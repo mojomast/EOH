@@ -33,11 +33,11 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "KEY_MISSING": {
         "message": "A provider key is missing from the env file or the panel bundle.",
-        "fix": "Add the named key to ~/.config/gods-eye-view.env (mode 0600). Never print the value. Then call godseye_rebuild_panel and retry. godseye_doctor lists KEY_MISSING and PANEL_STALE.",
+        "fix": "Add the named key to ~/.config/gods-eye-view.env (mode 0600). Never print the value. Client keys are written to dist/panel/config.json when the pane is served, so a current God's Eye View build does not need a rebuild. Older builds still need godseye_rebuild_panel. godseye_doctor lists KEY_MISSING and PANEL_STALE.",
     },
     "PANEL_STALE": {
         "message": "The panel bundle is older than the env file, so client keys are not baked in.",
-        "fix": "Call godseye_rebuild_panel (it rebuilds dist/panel with the env file and reloads open panes), then retry.",
+        "fix": "On a current God's Eye View build, open the Eye Of Hermes pane so dist/panel/config.json is rewritten from the env file (no rebuild). On an older build, call godseye_rebuild_panel and reload the pane.",
     },
     "PANEL_MISSING": {
         "message": "dist/panel is not built.",

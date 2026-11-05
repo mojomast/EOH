@@ -762,10 +762,15 @@ def panes_op(prune: bool = False, label: str | None = None, pane_id: str | None 
 
 def panel_checks(root: Path | None = None, envf: Path | None = None, started: float | None = None) -> list[dict]:
     """PANEL_STALE / KEY_MISSING / ION_SCOPES findings. Values are compared, never returned."""
+    from . import runtime_config
     root = root or config.checkout()
     envf = envf or env_file()
     out = []
     fix_build = "Run godseye_rebuild_panel (or: set -a; . %s; set +a; cd %s && PATH=~/.local/node24/bin:$PATH npm run build:panel), then godseye_live_reload_pane." % (envf, root or "~/gods-eye-view")
+    fix_runtime = ("Open the Eye Of Hermes pane (or run godseye_rebuild_panel). A current God's Eye View build "
+                   "reads dist/panel/config.json, which is rewritten from the env file when the pane is served, "
+                   "so a key change does not need a rebuild. chmod 600. Never print the value. Older builds still "
+                   "need the rebuild.")
     bundle = panel_bundle(root)
     if root is None:
         return out
@@ -775,28 +780,56 @@ def panel_checks(root: Path | None = None, envf: Path | None = None, started: fl
     text = bundle.read_text(errors="ignore")
     file_env = read_env(envf)
     repo_env = read_env(root / ".env")
+    runtime = runtime_config.supports_runtime(root, text)
+    cfg_path = root / "dist" / "panel" / "config.json"
+    cfg = runtime_config.read_config(cfg_path) if cfg_path.is_file() else {}
+    if not cfg:
+        pub = root / "public" / "config.json"
+        if pub.is_file():
+            cfg = runtime_config.read_config(pub)
+            cfg_path = pub
     bmt = bundle.stat().st_mtime
     stale = []
-    if envf.is_file() and envf.stat().st_mtime > bmt:
-        stale.append(f"{envf} is newer than the panel bundle")
-    if started and started > bmt and envf.is_file() and envf.stat().st_mtime > bmt:
-        stale.append("the app service restarted with that env after the bundle was built")
+    if runtime:
+        drifted = False
+        for key, _what in CLIENT_KEYS.items():
+            val = file_env.get(key) or repo_env.get(key) or ""
+            field = {"CESIUM_ION_TOKEN": "cesiumIonToken", "GOOGLE_MAPS_API_KEY": "googleMapsApiKey",
+                     "MAPILLARY_CLIENT_TOKEN": "mapillaryToken"}[key]
+            if val and cfg.get(field) != val and val not in text:
+                drifted = True
+        if drifted:
+            stale.append("dist/panel/config.json does not match the env file")
+    else:
+        if envf.is_file() and envf.stat().st_mtime > bmt:
+            stale.append(f"{envf} is newer than the panel bundle")
+        if started and started > bmt and envf.is_file() and envf.stat().st_mtime > bmt:
+            stale.append("the app service restarted with that env after the bundle was built")
+    fix_fresh = fix_runtime if runtime else fix_build
     out.append({"check": "panel freshness", "ok": not stale, **({"code": "PANEL_STALE"} if stale else {}),
-                "detail": "; ".join(stale) or f"bundle built after {envf.name if envf.is_file() else 'env'} changed",
-                "fix": fix_build})
+                "detail": "; ".join(stale) or (
+                    "runtime config matches the env file" if runtime
+                    else f"bundle built after {envf.name if envf.is_file() else 'env'} changed"),
+                "fix": fix_fresh})
     for key, what in CLIENT_KEYS.items():
         val = file_env.get(key) or repo_env.get(key) or ""
         where = envf if key in file_env else (root / ".env" if key in repo_env else envf)
+        field = {"CESIUM_ION_TOKEN": "cesiumIonToken", "GOOGLE_MAPS_API_KEY": "googleMapsApiKey",
+                 "MAPILLARY_CLIENT_TOKEN": "mapillaryToken"}[key]
         if not val:
             ok = key != "CESIUM_ION_TOKEN"  # the one the photoreal stack hard-requires
             out.append({"check": f"key {key}", "ok": ok, **({} if ok else {"code": "KEY_MISSING"}),
                         "detail": f"not set in {where} ({what})",
-                        "fix": f"Add {key}=... to {where} (chmod 600), then run godseye_rebuild_panel."})
+                        "fix": f"Add {key}=... to {where} (chmod 600). Never print the value. "
+                               + (fix_runtime if runtime else "Then run godseye_rebuild_panel.")})
             continue
+        in_cfg = cfg.get(field) == val
         baked = val in text
-        out.append({"check": f"key {key}", "ok": baked, **({} if baked else {"code": "KEY_MISSING"}),
-                    "detail": f"set in {where}; {'present in' if baked else 'NOT present in'} dist/panel bundle",
-                    "fix": f"{key} is baked into dist/panel at build time. " + fix_build})
+        ok = (in_cfg or baked) if runtime else baked
+        where_found = "dist/panel/config.json" if in_cfg else "the panel bundle"
+        out.append({"check": f"key {key}", "ok": ok, **({} if ok else {"code": "KEY_MISSING"}),
+                    "detail": f"set in {where}; {'present in ' + where_found if ok else 'not in config.json or the panel bundle'} ({what})",
+                    "fix": fix_runtime if runtime else f"{key} is baked into dist/panel at build time. " + fix_build})
         if key == "CESIUM_ION_TOKEN":
             scopes = ion_scopes(val)
             extra = sorted(set(scopes or []) - SAFE_ION_SCOPES)
@@ -834,6 +867,15 @@ def rebuild_panel(session_id: str | None = None, runner=None, reload=True) -> di
             if len(v) >= 8:
                 tail = tail.replace(v, "***")
         return {"ok": False, "error": "build:panel failed", "log": tail[-1500:]}
+    try:
+        from . import runtime_config
+        file_env = {**read_env(root / ".env"), **read_env(env_file())}
+        for key in ("GOOGLE_MAPS_API_KEY", "CESIUM_ION_TOKEN", "MAPILLARY_CLIENT_TOKEN", "PHOTON_URL"):
+            if env.get(key):
+                file_env[key] = env[key]
+        runtime_config.write_files(root, file_env)
+    except Exception:
+        pass
     out = {"ok": True, "builtS": round(time.time() - t0, 1),
            "checks": [{k: c[k] for k in ("check", "ok", "code", "detail") if k in c} for c in panel_checks(root)]}
     if reload:
@@ -841,9 +883,10 @@ def rebuild_panel(session_id: str | None = None, runner=None, reload=True) -> di
     return out
 
 
-MAP_STACK_FIX = ("Client keys are compiled into the pane's dist/panel bundle. Put CESIUM_ION_TOKEN in "
-                 "~/.config/gods-eye-view.env (or GODSEYE_ENV_FILE), then call godseye_rebuild_panel: it rebuilds "
-                 "the panel with that env and reloads the open pane. godseye_doctor shows KEY_MISSING/PANEL_STALE.")
+MAP_STACK_FIX = ("Put CESIUM_ION_TOKEN in ~/.config/gods-eye-view.env (or GODSEYE_ENV_FILE). "
+                 "A current God's Eye View build reads dist/panel/config.json, rewritten from that file when the "
+                 "pane is served, so a key change does not need a rebuild. Older builds compile the key into the "
+                 "bundle: call godseye_rebuild_panel. godseye_doctor shows KEY_MISSING/PANEL_STALE. Never print the key.")
 
 
 def remediate_map_stack(out: dict) -> dict:

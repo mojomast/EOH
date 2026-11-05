@@ -315,26 +315,22 @@
     if (pinsRead) { out.pins = pins; out.drawer = drawer }
     return out
   }
-  // Fork protocol (mojomast/gods-eye-view, prepared here, not fully implemented).
-  // TODO(fork F1): the fork pauses the render loop on {type:'gev:visible', visible:false}
-  // even when the pane is embedded inline. Until that build ships, feature-detect setHostVisible.
-  // TODO(fork F2): runtime keys via /config.json or {type:'gev:init', config:{cesiumIonToken,
-  // googleMapsApiKey, photonUrl}}. This script never contains key values. applyHostConfig is the
-  // call site once the fork advertises it; a null config means "keep the build-time fallback".
-  const applyHostVisible = (visible) => {
-    const fn = window.__godsEyeView?.setHostVisible
-    window.__hermesHost = window.__hermesHost || {}
-    window.__hermesHost.visible = !!visible
-    if (typeof fn !== 'function') return { applied: false, pending: 'gev:visible' }
-    try { fn(!!visible); return { applied: true } } catch (e) { return { applied: false, error: String(e?.message || e).slice(0, 160) } }
+  // Fork embed protocol. New builds handle gev:visibility and gev:config and reply
+  // with gev:visibility-applied / gev:config-applied. An inline panel replies to its
+  // own window, so those replies are forwarded to the parent. Older builds expose
+  // setHostVisible / applyHostConfig; call them when present. This file has no key values.
+  const legacyCall = (name, arg) => {
+    const fn = window.__godsEyeView?.[name]
+    if (typeof fn !== 'function') return false
+    try { fn(arg); return true } catch { return false }
   }
-  const applyHostConfig = (config) => {
-    window.__hermesHost = window.__hermesHost || {}
-    if (!config || typeof config !== 'object') return { applied: false, pending: 'gev:init' }
-    const fn = window.__godsEyeView?.applyHostConfig
-    if (typeof fn !== 'function') return { applied: false, pending: 'gev:init' }
-    try { fn(config); window.__hermesHost.configApplied = true; return { applied: true } }
-    catch (e) { return { applied: false, error: String(e?.message || e).slice(0, 160) } }
+  const forwardReply = (msg) => {
+    const out = { type: msg.type }
+    if (typeof msg.visible === 'boolean') out.visible = msg.visible
+    if (typeof msg.ok === 'boolean') out.ok = msg.ok
+    if (msg.perf === 'embed' || msg.perf === 'custom' || msg.perf === null) out.perf = msg.perf
+    if (msg.error === 'already-applied') out.error = msg.error
+    try { window.parent.postMessage(out, '*') } catch {}
   }
   let disposed = false
   const dispose = () => {
@@ -361,8 +357,23 @@
   addEventListener('message', async (event) => {
     const m = event.data
     if (event.source === window.parent && m?.type === 'hermes-gev:dispose') return dispose()
-    if (event.source === window.parent && m?.type === 'gev:visible') return void applyHostVisible(m.visible)
-    if (event.source === window.parent && m?.type === 'gev:init') return void applyHostConfig(m.config)
+    if (event.source === window && (m?.type === 'gev:visibility-applied' || m?.type === 'gev:config-applied')) {
+      return void forwardReply(m)
+    }
+    if (event.source === window.parent && m?.type === 'gev:visibility') {
+      legacyCall('setHostVisible', !!m.visible)
+      return
+    }
+    if (event.source === window.parent && m?.type === 'gev:config') {
+      const nested = m.config && typeof m.config === 'object' ? m.config : {}
+      const cfg = {}
+      for (const key of ['googleMapsApiKey', 'cesiumIonToken', 'photonUrl', 'mapillaryToken', 'perf']) {
+        if (typeof nested[key] === 'string') cfg[key] = nested[key]
+        if (typeof m[key] === 'string') cfg[key] = m[key]
+      }
+      if (Object.keys(cfg).length) legacyCall('applyHostConfig', cfg)
+      return
+    }
     if (event.source === window.parent && m?.type === 'hermes-gev:ping') {
       if (!isReady) return
       tell('hermes-gev:ready')
