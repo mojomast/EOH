@@ -7,6 +7,8 @@ The pane still opens the picture: this module only names the panorama.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import json
 import math
 import os
@@ -40,12 +42,74 @@ def _get(url: str, headers: dict | None = None, timeout: float = 8) -> tuple[int
         return 0, ""
 
 
+def _gev_env_paths() -> list[Path]:
+    """Env files that may hold street-level keys (never log their contents)."""
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for var in ("GEV_ENV_FILE", "GODSEYE_ENV_FILE"):
+        raw = (os.environ.get(var) or "").strip()
+        if not raw:
+            continue
+        path = Path(raw).expanduser()
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            paths.append(path)
+    default = Path.home() / ".config" / "gods-eye-view.env"
+    key = str(default)
+    if key not in seen:
+        paths.append(default)
+    return paths
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    """Parse KEY=VALUE lines. Never logs values."""
+    out: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, raw = line.split("=", 1)
+        name = name.strip().removeprefix("export ").strip()
+        if not name:
+            continue
+        value = raw.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        out[name] = value
+    return out
+
+
+def _secret_from_env_files(names: tuple[str, ...]) -> str:
+    """First non-empty value for any of *names* in GEV env files. Values never logged."""
+    for path in _gev_env_paths():
+        data = _read_env_file(path)
+        for name in names:
+            value = (data.get(name) or "").strip()
+            if value:
+                return value
+    return ""
+
+
 def _google_key() -> str:
-    return os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+    return (
+        os.environ.get("GOOGLE_MAPS_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or _secret_from_env_files(("GOOGLE_MAPS_API_KEY", "GOOGLE_API_KEY"))
+        or ""
+    )
 
 
 def _mapillary_token() -> str:
-    return os.environ.get("MAPILLARY_CLIENT_TOKEN") or ""
+    return (
+        os.environ.get("MAPILLARY_CLIENT_TOKEN")
+        or _secret_from_env_files(("MAPILLARY_CLIENT_TOKEN",))
+        or ""
+    )
 
 
 def _bbox(lat: float, lon: float, radius_m: float) -> tuple[float, float, float, float]:

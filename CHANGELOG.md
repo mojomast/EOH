@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4 — 2026-11-06
+
+### Fixed
+- Street-level keys: `gev/streetlevel.py` falls back to `~/.config/gods-eye-view.env` (or `GEV_ENV_FILE` / `GODSEYE_ENV_FILE`) when `GOOGLE_MAPS_API_KEY` / `GOOGLE_API_KEY` / `MAPILLARY_CLIENT_TOKEN` are unset in the process. Values are never copied into results, errors, or logs.
+- `godseye_capture` `op=pane` (and `hermes_capture`): read the Cesium canvas inside a `scene.postRender` callback after `requestRender`, so the WebGL drawing buffer is still intact without requiring `preserveDrawingBuffer` or recreating the viewer.
+- `godseye_query` `op=osm`: when the pane returns `OVERPASS_NOT_CONFIGURED`, fall back to the same public Overpass mirrors `find_places` uses (polite timeouts / circuit breaker), using the current view bbox when available.
+
+Still exactly 11 composable tools.
+
 ## 0.2.3 — 2026-11-06
 
 ### Fixed

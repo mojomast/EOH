@@ -158,35 +158,71 @@
   }
 
 
-  // PNG of the whole pane: the globe canvas plus the HTML drawer painted beside it.
-  const paneShot = () => {
-    const canvas = window.__godsEyeView?.viewer?.scene?.canvas
-    if (!canvas) return { ok: false, action: 'hermes_pane_shot', error: 'no canvas' }
-    const drawer = document.querySelector('#hermes-gev-drawer.open, .hermes-drawer.open')
-    try {
-      const shot = document.createElement('canvas')
-      const width = canvas.width || canvas.clientWidth || 1
-      const height = canvas.height || canvas.clientHeight || 1
-      const extra = drawer ? Math.min(360, Math.round(width * 0.34)) : 0
-      shot.width = width + extra
-      shot.height = height
-      const ctx = shot.getContext('2d')
-      if (!ctx) return { ok: false, action: 'hermes_pane_shot', error: 'no 2d context' }
-      ctx.drawImage(canvas, 0, 0, width, height)
-      if (drawer) {
-        ctx.fillStyle = '#02140f'
-        ctx.fillRect(width, 0, extra, height)
-        ctx.fillStyle = '#e8fff6'
-        ctx.font = '14px ui-monospace, Menlo, monospace'
-        const text = String(drawer.innerText || '').slice(0, 800)
-        text.split(/\n/).slice(0, 24).forEach((line, index) => ctx.fillText(line.slice(0, 48), width + 12, 28 + index * 18))
+  // Capture the Cesium canvas after the next scene.postRender so the drawing
+  // buffer is still intact (default WebGL clears it; preserveDrawingBuffer is off).
+  const afterPostRender = (build) => new Promise((resolve) => {
+    const v = window.__godsEyeView?.viewer
+    const scene = v && v.scene
+    if (!scene || typeof scene.postRender?.addEventListener !== 'function') {
+      try { resolve(build(scene?.canvas || null)) } catch (e) {
+        resolve({ ok: false, error: String(e && e.message || e) })
       }
-      const dataUrl = shot.toDataURL('image/png')
-      if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_pane_shot', error: 'empty capture' }
-      return { ok: true, action: 'hermes_pane_shot', mime: 'image/png', dataUrl, width: shot.width, height: shot.height, includesDrawer: Boolean(drawer) }
-    } catch (e) {
-      return { ok: false, action: 'hermes_pane_shot', error: String(e && e.message || e), note: 'Canvas may be tainted by cross-origin imagery.' }
+      return
     }
+    let done = false
+    let remove = () => {}
+    const finish = (result) => {
+      if (done) return
+      done = true
+      try { remove() } catch {}
+      resolve(result)
+    }
+    try {
+      remove = scene.postRender.addEventListener(() => {
+        try { finish(build(scene.canvas)) } catch (e) {
+          finish({ ok: false, error: String(e && e.message || e) })
+        }
+      })
+    } catch (e) {
+      try { finish(build(scene.canvas)) } catch (e2) {
+        finish({ ok: false, error: String(e2 && e2.message || e2) })
+      }
+      return
+    }
+    try { scene.requestRender?.() } catch {}
+    setTimeout(() => finish({ ok: false, error: 'capture timeout waiting for postRender' }), 2000)
+  })
+
+  // PNG of the whole pane: the globe canvas plus the HTML drawer painted beside it.
+  const paneShot = async () => {
+    const drawer = document.querySelector('#hermes-gev-drawer.open, .hermes-drawer.open')
+    return afterPostRender((canvas) => {
+      if (!canvas) return { ok: false, action: 'hermes_pane_shot', error: 'no canvas' }
+      try {
+        const shot = document.createElement('canvas')
+        const width = canvas.width || canvas.clientWidth || 1
+        const height = canvas.height || canvas.clientHeight || 1
+        const extra = drawer ? Math.min(360, Math.round(width * 0.34)) : 0
+        shot.width = width + extra
+        shot.height = height
+        const ctx = shot.getContext('2d')
+        if (!ctx) return { ok: false, action: 'hermes_pane_shot', error: 'no 2d context' }
+        ctx.drawImage(canvas, 0, 0, width, height)
+        if (drawer) {
+          ctx.fillStyle = '#02140f'
+          ctx.fillRect(width, 0, extra, height)
+          ctx.fillStyle = '#e8fff6'
+          ctx.font = '14px ui-monospace, Menlo, monospace'
+          const text = String(drawer.innerText || '').slice(0, 800)
+          text.split(/\n/).slice(0, 24).forEach((line, index) => ctx.fillText(line.slice(0, 48), width + 12, 28 + index * 18))
+        }
+        const dataUrl = shot.toDataURL('image/png')
+        if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_pane_shot', error: 'empty capture' }
+        return { ok: true, action: 'hermes_pane_shot', mime: 'image/png', dataUrl, width: shot.width, height: shot.height, includesDrawer: Boolean(drawer), capturedAt: 'postRender' }
+      } catch (e) {
+        return { ok: false, action: 'hermes_pane_shot', error: String(e && e.message || e), note: 'Canvas may be tainted by cross-origin imagery.' }
+      }
+    })
   }
   window.__hermesPaneShot = paneShot
   const invalidateProviders = () => {
@@ -202,18 +238,19 @@
     return { ok: true, action: 'hermes_invalidate_providers', cleared, note: 'reload the pane' }
   }
   // PNG data URL of the Cesium canvas (may fail when tiles taint the WebGL canvas).
-  const capture = () => {
-    const canvas = window.__godsEyeView?.viewer?.scene?.canvas
-    if (!canvas) return { ok: false, action: 'hermes_capture', error: 'no canvas', note: 'viewer not ready' }
-    try {
-      const dataUrl = canvas.toDataURL('image/png')
-      if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_capture', error: 'empty capture' }
-      return { ok: true, action: 'hermes_capture', mime: 'image/png', dataUrl,
-        width: canvas.width, height: canvas.height }
-    } catch (e) {
-      return { ok: false, action: 'hermes_capture', error: String(e && e.message || e),
-        note: 'Canvas may be tainted by cross-origin imagery; screenshot unavailable.' }
-    }
+  const capture = async () => {
+    return afterPostRender((canvas) => {
+      if (!canvas) return { ok: false, action: 'hermes_capture', error: 'no canvas', note: 'viewer not ready' }
+      try {
+        const dataUrl = canvas.toDataURL('image/png')
+        if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_capture', error: 'empty capture' }
+        return { ok: true, action: 'hermes_capture', mime: 'image/png', dataUrl,
+          width: canvas.width, height: canvas.height, capturedAt: 'postRender' }
+      } catch (e) {
+        return { ok: false, action: 'hermes_capture', error: String(e && e.message || e),
+          note: 'Canvas may be tainted by cross-origin imagery; screenshot unavailable.' }
+      }
+    })
   }
 
   // ---- framing presets (fly_to_location framing) ----------------------------------------
@@ -655,7 +692,7 @@
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_pane_shot') {
-        payload = paneShot()
+        payload = await Promise.resolve(paneShot())
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_invalidate_providers') {
@@ -699,7 +736,10 @@
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_caption' || m.name === 'hermes_scene_info' || m.name === 'hermes_frame' || m.name === 'hermes_capture') {
-        payload = m.name === 'hermes_caption' ? caption(m.args?.text) : m.name === 'hermes_frame' ? frame(m.args) : m.name === 'hermes_capture' ? capture() : sceneInfo()
+        payload = m.name === 'hermes_caption' ? caption(m.args?.text)
+          : m.name === 'hermes_frame' ? frame(m.args)
+          : m.name === 'hermes_capture' ? await Promise.resolve(capture())
+          : sceneInfo()
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       const run = await ready()

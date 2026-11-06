@@ -374,12 +374,20 @@ for (let i = 0; i < 6; i++) crowded.push({ id: 'p' + i, lat: 45.5, lon: -73.5 + 
 const packed = window.__hermesPins.labelOffsets(crowded)
 if (packed.p4.show !== false) throw new Error('the fifth overlapping label should hide')
 eval(fs.readFileSync(root + '/gev/panel_live_agent.js', 'utf8'))
-const canvas = { width: 20, height: 10 }
-global.__godsEyeView.viewer = { scene: { canvas } }
+const canvas = { width: 20, height: 10, toDataURL() { return 'data:image/png;base64,' + 'A'.repeat(40) } }
+const listeners = []
+global.__godsEyeView.viewer = {
+  scene: {
+    canvas,
+    postRender: { addEventListener(fn) { listeners.push(fn); return () => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1) } } },
+    requestRender() { for (const fn of [...listeners]) fn() },
+  },
+}
 global.__godsEyeView.annotations = { list: () => [{ id: 'p1', type: 'pin', label: '29 Av', lat: 45.5, lon: -73.5 }] }
-const shot = window.__hermesPaneShot()
-if (!shot.ok || shot.mime !== 'image/png' || !shot.includesDrawer) throw new Error('pane shot missing drawer')
 ;(async () => {
+  const shot = await window.__hermesPaneShot()
+  if (!shot.ok || shot.mime !== 'image/png' || !shot.includesDrawer) throw new Error('pane shot missing drawer')
+  if (shot.capturedAt !== 'postRender') throw new Error('expected postRender capture')
   await global.handler({ source: window.parent, data: { type: 'hermes-gev:run', id: '1', name: 'hermes_scene_info' } })
   const info = messages.find((msg) => msg.id === '1')
   const marks = info && info.payload && info.payload.marks
