@@ -1,6 +1,6 @@
-# Eye Of Hermes — HyperFrames promo scaffold
+# Eye Of Hermes — HyperFrames promo
 
-An editable **89-second, 1920×1080, 30 fps** production scaffold. It has 13 timed scenes, designed graphics, a typed draft prompt, a live-control architecture diagram, and clearly marked missing-media cards. Media slots are filled from the capture handoff (`footage/`, `vo/`, `shots/`, `captions.json` — gitignored binaries stay local). The stats scene shows verified **11 registered tools** (release `6f8fa8a` / v0.2.5) plus qualitative PUBLIC DATA / LIVE CONTROL cards; invented test/commit counts are not shown.
+An editable **~108-second, 1920×1080, 30 fps** promo. It has 13 timed scenes, designed graphics, a typed draft prompt, a live-control architecture diagram, and clearly marked missing-media cards. Media slots are filled from the capture handoff (`footage/`, `vo/`, `shots/`, `captions.json` — gitignored binaries stay local). The stats scene shows verified **11 registered tools** (release `6f8fa8a` / v0.2.5) plus qualitative PUBLIC DATA / LIVE CONTROL cards; invented test/commit counts are not shown.
 
 ## Preview and render
 
@@ -41,7 +41,7 @@ captions.json              # optional, global, absolute film time
 
 Use the precise names in the manifest. Put recordings, stills, and voice tracks under `footage/`, `shots/`, and `vo/`. When both video and still exist, the video wins; if neither exists, the footage and still paths remain visible in the designed slot card. **Record footage as the God's Eye View map pane only** (crop out Hermes chat); target 1920×1080 or the native pane aspect. Scenes 02–10 show a **mock Hermes terminal** beside that footage — the terminal is generated chrome, not a screen capture. Assets use `object-fit: contain`, so preserve provider credits and match the pane framing. Trim every video and VO track to its scene duration, with picture and narration aligned to the start of the beat. A short clip cannot fill the remainder of its slot automatically. Voice tracks are mixed at unity gain; source footage is muted. The source files, `captions.json`, `.build/`, `node_modules/`, and `out/` are gitignored.
 
-Captions are **not** filled from the draft: create `captions.json` after the actual narration is recorded and transcribed. The file is an object with a `captions` array, or the array itself. Start/end are absolute seconds from the beginning of the film; cues must be ordered, non-overlapping, nonempty, and within 0–89 seconds. See [`captions.example.json`](captions.example.json); it is illustrative and is not rendered until renamed. Cues are burned into the bottom caption band. With no file, `SLOT: captions.json` remains visible.
+Captions are **not** filled from the draft: create `captions.json` after the actual narration is recorded and transcribed. The file is an object with a `captions` array, or the array itself. Start/end are absolute seconds from the beginning of the film; cues must be ordered, non-overlapping, nonempty, and within 0–107.75 seconds. See [`captions.example.json`](captions.example.json); it is illustrative and is not rendered until renamed. Cues are burned into the bottom caption band. With no file, `SLOT: captions.json` remains visible.
 
 ## Editing components
 
@@ -54,9 +54,9 @@ The timeline is explicit in `index.html`; `scripts/build.mjs` turns its scene se
 * **Map callouts:** `.callout-ring` and `.callout-arrow`; adjust their CSS position to match the real footage. They are decorative and do not imply a real map location.
 * **Captions:** `.caption-track` and generated `.caption-cue` elements. Change typography and placement in `style.css`, not in the recorded transcript.
 * **Transitions:** diagonal `.transition-slice`, split `.transition-shutter`, and circular `.transition-iris` are driven by the root GSAP timeline. Their timing and the segmented chapter-progress rail are derived from the generated scene hosts, so they follow the section timing in `index.html`.
-* **Counters:** on a `.counter`, replace both `data-count="{{PLACEHOLDER}}"` and its displayed text with a verified non-negative integer. The scene timeline will animate it; unfilled values never animate into invented numbers.
+* **Counters:** on a `.counter`, stats use verified `data-count="11"` (v0.2.5 / SHA `6f8fa8a`). Do not invent other counts.
 
-When retiming, update the section's `data-start`/`data-duration` and the manifest. Ensure scenes are contiguous, caption/VO timings still match, the root `data-duration` matches the total, and the scene-local animation fits each beat. The current caption validator caps cues at 89 seconds; update that cap if the film length changes.
+When retiming, update the section's `data-start`/`data-duration` and the manifest. Ensure scenes are contiguous, caption/VO timings still match, the root `data-duration` matches the total, and the scene-local animation fits each beat. The current caption validator caps cues at 107.75 seconds; update that cap if the film length changes.
 
 ## Motion direction
 
@@ -75,4 +75,4 @@ Adjust entrance distances, stagger, and eases in `scene-motion.js`; adjust cut s
 
 ## Verification
 
-`npm run lint` should report zero errors. The scaffold was rendered and checked at 89 seconds, 1920×1080, and 30 fps. A temporary test pattern, still, tone, and caption were used locally to exercise the media and audio paths and were removed afterward. Before recording, review the [license notes](LICENSES.md), provider attribution, and the actual state of live feeds.
+`npm run lint` should report zero errors. The scaffold was rendered and checked at 107.75 seconds, 1920×1080, and 30 fps. A temporary test pattern, still, tone, and caption were used locally to exercise the media and audio paths and were removed afterward. Before recording, review the [license notes](LICENSES.md), provider attribution, and the actual state of live feeds.

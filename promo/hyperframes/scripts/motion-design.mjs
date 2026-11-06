@@ -33,7 +33,7 @@ export function mockHermesChat({ label = '01', prompt, reply = '', actionAt = ''
   const replyBubble = reply
     ? `<div class="chat-bubble chat-reply" data-chat-reply="1"><span class="chat-role">HERMES</span><span class="chat-text chat-reply-text"></span><span class="cursor reply-cursor">▌</span></div>`
     : '';
-  return `<div class="chat-pane"${actionAttr}><div class="pane-label">HERMES CHAT <span>${label}</span></div><div class="chat-status">LIVE PROMPT · MOCK</div><div class="chat-bubble chat-user" data-chat='${dataChat}'><span class="chat-role">YOU</span><span class="chat-text"></span><span class="cursor">▌</span></div>${replyBubble}<div class="chat-hint">Mock terminal · footage is GEV map pane only</div></div>`;
+  return `<div class="chat-pane"${actionAttr}><div class="pane-label">HERMES CHAT <span>${label}</span></div><div class="chat-status">LIVE SESSION</div><div class="chat-bubble chat-user" data-chat='${dataChat}'><span class="chat-role">YOU</span><span class="chat-text"></span><span class="cursor">▌</span></div>${replyBubble}<div class="chat-hint">Eye Of Hermes · GEV map pane</div></div>`;
 }
 
 export function decorateScene(body, number) {

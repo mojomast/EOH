@@ -2,153 +2,128 @@
   "captions": [
     {
       "start": 0.0,
-      "end": 0.64,
+      "end": 2.397,
       "text": "Meet Eye of Hermes."
     },
     {
-      "start": 1.32,
-      "end": 1.76,
+      "start": 2.397,
+      "end": 3.784,
       "text": "Ask Hermes."
     },
     {
-      "start": 2.34,
-      "end": 2.74,
+      "start": 3.784,
+      "end": 5.55,
       "text": "See the world."
     },
     {
-      "start": 4.967,
-      "end": 6.427,
+      "start": 5.967,
+      "end": 9.167,
       "text": "A place is more than coordinates."
     },
     {
-      "start": 12.067,
-      "end": 14.387,
-      "text": "Say fly to Tokyo, switch to night vision."
+      "start": 13.067,
+      "end": 15.008,
+      "text": "Say, fly to Tokyo."
     },
     {
-      "start": 15.167,
-      "end": 15.987,
+      "start": 15.008,
+      "end": 17.487,
+      "text": "Switch to night vision."
+    },
+    {
+      "start": 17.487,
+      "end": 19.967,
       "text": "Hermes moves the globe."
     },
     {
-      "start": 19.667,
-      "end": 21.707,
-      "text": "flights, ships, satellites, and weather."
+      "start": 20.667,
+      "end": 24.643,
+      "text": "Flights, ships, satellites, and weather."
     },
     {
-      "start": 22.567,
-      "end": 24.507,
-      "text": "Public feeds together over San Francisco."
+      "start": 24.643,
+      "end": 28.817,
+      "text": "Public feeds, together over San Francisco."
     },
     {
-      "start": 27.8,
-      "end": 30.16,
-      "text": "Pin the Sydney Opera House, open its"
+      "start": 29.267,
+      "end": 31.547,
+      "text": "Pin the Sydney Opera House."
     },
     {
-      "start": 30.16,
-      "end": 32.04,
-      "text": "research with sources beside the map."
+      "start": 31.547,
+      "end": 35.517,
+      "text": "Open its research, with sources beside the map."
     },
     {
-      "start": 37.067,
-      "end": 39.027,
-      "text": "Turn camera moves into a director scene."
+      "start": 38.533,
+      "end": 42.021,
+      "text": "Turn camera moves into a Director scene."
     },
     {
-      "start": 39.887,
-      "end": 41.687,
-      "text": "Approach Tokyo Tower, then look straight"
+      "start": 42.021,
+      "end": 46.033,
+      "text": "Approach Tokyo Tower, then look straight down."
     },
     {
-      "start": 41.687,
-      "end": 42.067,
-      "text": "down."
+      "start": 46.8,
+      "end": 52.9,
+      "text": "Check public fire detections near Los Angeles, alongside available imagery."
     },
     {
-      "start": 45.334,
-      "end": 47.314,
-      "text": "Check public fire detections near Los"
+      "start": 56.467,
+      "end": 63.167,
+      "text": "Find a public aircraft near Toronto Pearson, and follow it across the globe."
     },
     {
-      "start": 47.314,
-      "end": 49.794,
-      "text": "Angeles, alongside available imagery."
+      "start": 64.333,
+      "end": 70.569,
+      "text": "Compare Montr\u00e9al imagery, then play through the available releases."
     },
     {
-      "start": 55.001,
-      "end": 56.681,
-      "text": "Find a public aircraft near Toronto"
-    },
-    {
-      "start": 56.681,
-      "end": 59.261,
-      "text": "Pearson and follow it across the globe."
-    },
-    {
-      "start": 62.868,
-      "end": 65.048,
-      "text": "Compare Montreal imagery, then play"
-    },
-    {
-      "start": 65.048,
-      "end": 66.388,
-      "text": "through the available releases."
-    },
-    {
-      "start": 67.368,
-      "end": 68.848,
+      "start": 70.569,
+      "end": 73.733,
       "text": "Release dates are not photo dates."
     },
     {
-      "start": 73.101,
-      "end": 75.481,
-      "text": "Pin places near Richmond, draw a route,"
+      "start": 74.567,
+      "end": 83.317,
+      "text": "Pin places near Richmond, draw a route, and keep it organized in the overlays sidebar."
     },
     {
-      "start": 76.021,
-      "end": 77.801,
-      "text": "and keep it organized in the overlay"
+      "start": 86.9,
+      "end": 88.934,
+      "text": "Hermes calls the plugin."
     },
     {
-      "start": 77.801,
-      "end": 78.281,
-      "text": "sidebar."
+      "start": 88.934,
+      "end": 93.85,
+      "text": "Live actions pass through a local relay to the globe pane."
     },
     {
-      "start": 85.434,
-      "end": 86.714,
-      "text": "Hermes calls the plug-in."
+      "start": 94.3,
+      "end": 96.55,
+      "text": "Eleven composable tools."
     },
     {
-      "start": 87.154,
-      "end": 89.534,
-      "text": "Live actions pass through a local relay to"
+      "start": 96.55,
+      "end": 99.55,
+      "text": "One conversation with the globe."
     },
     {
-      "start": 89.534,
-      "end": 90.114,
-      "text": "the globe pane."
+      "start": 100.0,
+      "end": 101.363,
+      "text": "Eye of Hermes."
     },
     {
-      "start": 90.634,
-      "end": 93.034,
-      "text": "11 composable tools, one conversation"
+      "start": 101.363,
+      "end": 104.38,
+      "text": "Built for the Hermes hackathon."
     },
     {
-      "start": 93.034,
-      "end": 93.914,
-      "text": "with the globe."
-    },
-    {
-      "start": 94.534,
-      "end": 96.434,
-      "text": "Eye of Hermes, built for the Hermes"
-    },
-    {
-      "start": 96.434,
-      "end": 98.914,
-      "text": "hackathon, explore the project on GitHub."
+      "start": 104.38,
+      "end": 107.3,
+      "text": "Explore the project on GitHub."
     }
   ]
 }
