@@ -111,17 +111,49 @@ def fixture_commands() -> list[tuple[str, dict]]:
     st.record("s", "hermes_pin_drawer", {"action": "open"},
               {"ok": True, "result": {"open": True, "pin": {
                   "latitude": 35.6895, "longitude": 139.6917, "label": "Tokyo"}}})
+    st.record("s", "hermes_timeline", {
+        "action": "set", "mode": "wayback", "from": "2016-07-13", "to": "2023-12-07",
+        "at": "2020-04-08", "playing": False, "transition": "swipe", "index": 1,
+        "releases": [
+            {"release": 7110, "date": "2020-03-24", "label": "Esri Wayback 2020-03-24",
+             "url": "https://example.com/wayback/{z}/{y}/{x}"},
+            {"release": 7550, "date": "2023-12-07", "label": "Esri Wayback 2023-12-07",
+             "url": "https://example.com/wayback/{z}/{y}/{x}"},
+        ],
+        "events": [],
+    }, {"ok": True, "result": {}})
     return st.restore_commands("s", clear=True)
+
+
+def _timeline_payload(value) -> dict | None:
+    """A small, serialisable slider record for the recovery payload. Never echoes unknown keys."""
+    if not isinstance(value, dict):
+        return None
+    mode = str(value.get("mode") or "")
+    if mode not in ("wayback", "events"):
+        return None
+    out = {"mode": mode, "playing": False}
+    for key in ("from", "to", "at"):
+        raw = value.get(key)
+        if key == "at" and not raw:
+            raw = value.get("date")
+        if isinstance(raw, str) and 0 < len(raw) <= 64 and "\n" not in raw:
+            out[key] = raw
+    return out
 
 
 def context_restored_notice(detail: dict | None = None) -> dict:
     """Success is not an error: no ``error`` string, so fix-it annotation leaves it alone."""
     detail = detail if isinstance(detail, dict) else {}
     pins = detail.get("pins")
+    timeline = _timeline_payload(detail.get("timeline"))
     extra = ""
     if isinstance(pins, int) and not isinstance(pins, bool) and 0 <= pins <= 500:
         extra = f" Pins restored: {pins}."
-    return {
+    if timeline:
+        where = timeline.get("at") or timeline.get("from")
+        extra += f" The time slider resumed in {timeline['mode']} mode" + (f" at {where}." if where else ".")
+    out = {
         "ok": True,
         "code": "CONTEXT_RESTORED",
         "message": (
@@ -130,3 +162,6 @@ def context_restored_notice(detail: dict | None = None) -> dict:
             + extra
         ),
     }
+    if timeline:
+        out["timeline"] = timeline
+    return out

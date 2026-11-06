@@ -121,11 +121,16 @@
       } else if (name === 'hermes_caption') {
         target.caption = args.text ?? null
       } else if (name === 'hermes_timeline') {
-        const tl = {}
-        for (const key of ['mode', 'from', 'to', 'at', 'playing', 'transition', 'index']) {
+        if (args.action === 'clear' || args.clear) { target.timeline = null; continue }
+        const mode = args.mode === 'events' ? 'events' : (args.mode === 'wayback' ? 'wayback' : null)
+        if (!mode) continue
+        const tl = { mode, action: 'set', playing: false }
+        for (const key of ['from', 'to', 'at', 'date', 'transition', 'index', 'feeds']) {
           if (args[key] != null && args[key] !== '') tl[key] = args[key]
         }
-        tl.playing = false
+        if (!tl.at && tl.date) tl.at = tl.date
+        tl.releases = Array.isArray(args.releases) ? args.releases.map((row) => Object.assign({}, row)) : []
+        tl.events = Array.isArray(args.events) ? args.events.map((row) => Object.assign({}, row)) : []
         target.timeline = tl
       } else if (name === 'set_layer_visibility') {
         const id = typeof args.layerId === 'string' ? args.layerId : (typeof args.id === 'string' ? args.id : '')
@@ -134,6 +139,10 @@
         if (args.enabled !== false) target.layers.push(id)
       }
     }
+    const timeline = target.timeline ? Object.assign({}, target.timeline, {
+      releases: Array.isArray(target.timeline.releases) ? target.timeline.releases.slice() : [],
+      events: Array.isArray(target.timeline.events) ? target.timeline.events.slice() : []
+    }) : null
     return {
       camera: Object.assign({}, target.camera),
       pins: target.pins.map((pin) => Object.assign({}, pin)),
@@ -142,7 +151,60 @@
       layers: target.layers.slice(),
       shapes: target.shapes.slice(),
       caption: target.caption ?? null,
-      timeline: target.timeline || null
+      timeline
+    }
+  }
+
+  function timelineRestore(commands) {
+    const list = Array.isArray(commands) ? commands : []
+    let found = null
+    for (const cmd of list) {
+      const [name, args] = pair(cmd)
+      if (name === 'hermes_timeline') found = args
+    }
+    if (!found) return null
+    return applyRestoreCommands({}, [['hermes_timeline', found]]).timeline
+  }
+
+  // The pane applies the slider itself first. This is the one recovery re-apply:
+  // if that first call raced the reboot (Cape Town), retry once on the fresh viewer.
+  async function reapplyTimeline(timeline, opts) {
+    opts = opts || {}
+    if (!timeline || typeof timeline !== 'object' || !timeline.mode) {
+      return { ok: false, skipped: true, attempts: 0, reason: 'no timeline' }
+    }
+    const fixed = typeof opts.apply === 'function' ? opts.apply : null
+    const mounted = () => {
+      try {
+        const mod = typeof globalThis !== 'undefined' ? globalThis.__hermesTimeline : null
+        return mod && typeof mod.command === 'function' ? (args) => mod.command(args) : null
+      } catch { return null }
+    }
+    const args = Object.assign({}, timeline, { action: 'set', playing: false })
+    delete args.emitted
+    const wait = typeof opts.delay === 'function' ? opts.delay : ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+    const retryMs = Number(opts.retryMs) >= 0 ? Number(opts.retryMs) : 150
+    let last = null
+    let tried = false
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const apply = fixed || mounted()
+      if (apply) {
+        tried = true
+        try {
+          last = await apply(args)
+          if (last && last.ok !== false && last.error == null) {
+            return { ok: true, attempts: attempt, mode: args.mode, at: args.at || null }
+          }
+        } catch (error) {
+          last = { ok: false, error: String((error && error.message) || error) }
+        }
+      }
+      if (attempt < 2) { try { await wait(retryMs) } catch { /* keep going */ } }
+    }
+    if (!tried) return { ok: false, skipped: true, attempts: 2, reason: 'timeline not mounted' }
+    return {
+      ok: false, attempts: 2, mode: args.mode, at: args.at || null,
+      error: last && last.error ? String(last.error) : 'timeline did not resume'
     }
   }
 
@@ -165,11 +227,40 @@
     let releasing = false
     let recovering = false
     let generation = 0
+    let inFlight = null
+    let listening = false
+    const cleaned = new WeakSet()
 
     function sameCanvas(event, viewer) {
       const canvas = canvasOf(viewer)
       if (!event || !event.target || !canvas) return true
       return event.target === canvas
+    }
+
+    // One viewer, one context. Release the GPU slot before destroy and never
+    // call either twice for the same object.
+    function cleanup(viewer, clear) {
+      if (!viewer || cleaned.has(viewer)) return
+      cleaned.add(viewer)
+      releasing = true
+      try { opts.releaseContext && opts.releaseContext(viewer) } catch { /* already lost */ }
+      try { opts.destroyViewer && opts.destroyViewer(viewer) } catch { /* already gone */ }
+      releasing = false
+      if (clear !== false) { try { opts.setViewer && opts.setViewer(null) } catch { /* tests */ } }
+    }
+
+    async function sceneCommands() {
+      let last = null
+      const tries = opts.sceneRetries === 0 ? 1 : 2
+      for (let i = 0; i < tries; i++) {
+        try { return await opts.getScene() } catch (error) {
+          last = error
+          if (i + 1 < tries) {
+            try { await delay(Number(opts.sceneRetryMs) >= 0 ? Number(opts.sceneRetryMs) : 100) } catch { /* keep going */ }
+          }
+        }
+      }
+      throw last
     }
 
     async function attempt(count, gen, report) {
@@ -182,24 +273,22 @@
       if (disposed || gen !== generation) { recovering = false; return }
       const prev = typeof opts.getViewer === 'function' ? opts.getViewer() : null
       const container = typeof opts.containerOf === 'function' ? opts.containerOf(prev) : null
+      const factory = prev && prev.constructor
       let next = null
-      try {
-        if (typeof opts.recreate === 'function') next = await opts.recreate(prev, container)
-      } catch (error) {
-        recovering = false
-        if (disposed || gen !== generation) return
-        return fail(error, gen)
+      if (typeof opts.recreate === 'function') {
+        try {
+          next = await opts.recreate(prev, container)
+        } catch (error) {
+          cleanup(prev)
+          recovering = false
+          if (disposed || gen !== generation) return
+          return fail(error, gen)
+        }
+        // A fork hook may hand back a fresh viewer; the lost one still goes.
+        if (next && next !== prev) cleanup(prev, false)
       }
       if (!next) {
-        const factory = prev && prev.constructor
-        releasing = true
-        try {
-          try { opts.releaseContext && opts.releaseContext(prev) } catch { /* already lost */ }
-          try { opts.destroyViewer && opts.destroyViewer(prev) } catch { /* already gone */ }
-          try { opts.setViewer && opts.setViewer(null) } catch { /* tests */ }
-        } finally {
-          releasing = false
-        }
+        cleanup(prev)
         if (disposed || gen !== generation) { recovering = false; return }
         try {
           next = await opts.createViewer(container, { factory, previous: prev })
@@ -214,22 +303,37 @@
         if (disposed || gen !== generation) return
         return fail(new Error('viewer was not recreated'), gen)
       }
+      if (disposed || gen !== generation) { cleanup(next); recovering = false; return }
       try { opts.setViewer && opts.setViewer(next) } catch { /* tests */ }
       let commands = []
-      try { commands = await opts.getScene() } catch (error) {
+      try {
+        commands = await sceneCommands()
+      } catch (error) {
+        cleanup(next)
         recovering = false
         if (disposed || gen !== generation) return
         return fail(error, gen)
       }
-      if (disposed || gen !== generation) { recovering = false; return }
+      if (disposed || gen !== generation) { cleanup(next); recovering = false; return }
       let applied = null
-      try { applied = await opts.applyScene(next, commands || []) } catch (error) {
+      try {
+        applied = await opts.applyScene(next, commands || [])
+      } catch (error) {
+        cleanup(next)
         recovering = false
         if (disposed || gen !== generation) return
         return fail(error, gen)
       }
-      if (disposed || gen !== generation) { recovering = false; return }
+      if (disposed || gen !== generation) { cleanup(next); recovering = false; return }
+      if (applied && applied.timeline) {
+        applied.timelineResume = await reapplyTimeline(applied.timeline, {
+          apply: opts.timelineApply,
+          delay: opts.timelineDelay || delay,
+          retryMs: opts.timelineRetryMs
+        })
+      }
       recovering = false
+      if (disposed || gen !== generation) { cleanup(next); return }
       try { opts.onRecovered && opts.onRecovered(applied || {}) } catch { /* host reports */ }
     }
 
@@ -247,9 +351,12 @@
 
     function onContextLost(event) {
       if (disposed || releasing) return
+      try { event && event.preventDefault && event.preventDefault() } catch { /* already prevented */ }
+      // A second event during the same rebuild must reuse the one in flight,
+      // otherwise two viewers race for the same container.
+      if (recovering && inFlight) return inFlight
       const viewer = typeof opts.getViewer === 'function' ? opts.getViewer() : null
       if (!viewer || !sameCanvas(event, viewer)) return
-      try { event && event.preventDefault && event.preventDefault() } catch { /* already prevented */ }
       if (!enabled()) {
         try { opts.onGiveUp && opts.onGiveUp({ exhausted: false, auto: false }) } catch { /* host shows the card */ }
         return
@@ -262,7 +369,9 @@
         return
       }
       generation += 1
-      return attempt(tick.count, generation, true)
+      const run = attempt(tick.count, generation, true)
+      inFlight = run.finally(() => { inFlight = null })
+      return inFlight
     }
 
     function dispose() {
@@ -270,16 +379,20 @@
       disposed = true
       generation += 1
       recovering = false
+      inFlight = null
+      if (listening) {
+        try { host && host.removeEventListener && host.removeEventListener('webglcontextlost', listener, true) } catch { /* host gone */ }
+        listening = false
+      }
       const viewer = typeof opts.getViewer === 'function' ? opts.getViewer() : null
-      releasing = true
-      try { opts.releaseContext && opts.releaseContext(viewer) } catch { /* already lost */ }
-      try { opts.destroyViewer && opts.destroyViewer(viewer) } catch { /* already gone */ }
-      releasing = false
+      cleanup(viewer)
     }
 
-    const host = typeof globalThis !== 'undefined' ? globalThis : null
+    const host = opts.host || (typeof globalThis !== 'undefined' ? globalThis : null)
+    const listener = onContextLost
     if (opts.listen !== false && host && typeof host.addEventListener === 'function') {
-      host.addEventListener('webglcontextlost', onContextLost, true)
+      host.addEventListener('webglcontextlost', listener, true)
+      listening = true
     }
 
     return {
@@ -297,6 +410,8 @@
     backoffMs,
     createFailureBudget,
     applyRestoreCommands,
+    timelineRestore,
+    reapplyTimeline,
     attach
   }
 })
