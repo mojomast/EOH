@@ -317,8 +317,8 @@ global.window = { parent: { postMessage: (m) => posted.push(m) }, innerWidth: 10
   __hermesPins: { state: () => ({ open: 'anno-2', pins: [{ id: 'anno-2', label: 'Sansotei', latitude: 45.528, longitude: -73.578 }] }) } }
 const tileset = { show: true }
 window.__godsEyeView = { tileset, viewer: { canvas: { clientWidth: 900, clientHeight: 800 }, dataSources: { add() {} },
-  imageryLayers: { addImageryProvider: (p) => { const l = { p }; layers.push(l); return l }, remove: (l) => layers.splice(layers.indexOf(l), 1) },
-  scene: { canvas: {}, globe: { ellipsoid: {} }, pickPositionSupported: true, pickPosition: (pos) => new Cart3(pos.y / 1000, pos.x / 1000), requestRender() {}, splitPosition: 0.5 },
+  imageryLayers: { get length() { return layers.length }, addImageryProvider: (p) => { const l = { p }; layers.push(l); return l }, remove: (l) => layers.splice(layers.indexOf(l), 1), lowerToBottom() {} },
+  scene: { canvas: {}, globe: { show: false, ellipsoid: {} }, pickPositionSupported: true, pickPosition: (pos) => new Cart3(pos.y / 1000, pos.x / 1000), requestRender() {}, splitPosition: 0.5 },
   camera: { heading: Math.PI / 2, pitch: -Math.PI / 4, positionCartographic: { latitude: 0.7942, longitude: -1.2839, height: 1500 }, positionWC: { x: 0, y: 0, z: 0 },
     pickEllipsoid: () => new Cart3(-73.56, 45.5), computeViewRectangle: () => ({ south: 0.794, west: -1.284, north: 0.795, east: -1.283 }) } } }
 global.Cesium = window.Cesium
@@ -328,8 +328,12 @@ global.clearInterval = () => {}
 
 
 def run_js(body: str):
+    helper = (ROOT / "gev" / "compare_surface.js").read_text()
     src = (ROOT / "gev" / "panel_context.js").read_text()
-    prog = MOCK + "\n;" + src + "\n;(async () => { const H = window.__hermesContext;" + body + "})().catch((e) => { console.error(e); process.exit(1) })"
+    prog = (
+        MOCK + "\n;" + helper + "\n;" + src
+        + "\n;(async () => { const H = window.__hermesContext;" + body + "})().catch((e) => { console.error(e); process.exit(1) })"
+    )
     out = subprocess.run([NODE, "-e", prog], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout.strip().splitlines()[-1])
@@ -382,15 +386,16 @@ def test_js_hermes_draw_list_remove_clear():
 @needs_node
 def test_js_compare_swipe_layers():
     r = run_js("""
-      const s = H.command('hermes_compare', { left: { kind: 'xyz', url: 'https://x/{z}/{y}/{x}', label: 'Wayback 2014' }, right: { kind: 'current', label: 'Current view' } })
-      const pos = H.command('hermes_compare', { action: 'position', position: 0.3 })
+      const s = await H.command('hermes_compare', { left: { kind: 'xyz', url: 'https://x/{z}/{y}/{x}', label: 'Wayback 2014' }, right: { kind: 'current', label: 'Current view' } })
+      const pos = await H.command('hermes_compare', { action: 'position', position: 0.3 })
       const split = window.__godsEyeView.viewer.scene.splitPosition, n = window.__godsEyeView.viewer.imageryLayers
       const tilesDuring = window.__godsEyeView.tileset.show
-      const bad = H.command('hermes_compare', { left: { kind: 'stack', label: 'photoreal' } })
-      const ok2 = H.command('hermes_compare', { left: { kind: 'xyz', url: 'https://x/{z}', label: 'A' }, right: { kind: 'xyz', url: 'https://y/{z}', label: 'B' } })
-      const stop = H.command('hermes_compare', { action: 'stop' })
-      console.log(JSON.stringify({ s, pos, split, tilesDuring, bad, ok2, stop, tilesAfter: window.__godsEyeView.tileset.show }))""")
+      const bad = await H.command('hermes_compare', { left: { kind: 'stack', label: 'photoreal' } })
+      const ok2 = await H.command('hermes_compare', { left: { kind: 'xyz', url: 'https://x/{z}', label: 'A' }, right: { kind: 'xyz', url: 'https://y/{z}', label: 'B' } })
+      const stop = await H.command('hermes_compare', { action: 'stop' })
+      console.log(JSON.stringify({ s, pos, split, tilesDuring, bad, ok2, stop, tilesAfter: window.__godsEyeView.tileset.show, surfaceMode: s.surfaceMode }))""")
     assert r["s"]["ok"] and r["s"]["hidPhotorealTiles"] and r["pos"]["position"] == 0.3 and r["split"] == 0.3
+    assert r["surfaceMode"] in ("fallback", "lease")
     assert r["tilesDuring"] is False and r["bad"]["ok"] is False and "split" in r["bad"]["error"]
     assert r["ok2"]["ok"] and r["stop"]["active"] is False and r["tilesAfter"] is True
 

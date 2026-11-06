@@ -502,7 +502,7 @@
         else if (name === 'hermes_draw') window.__hermesContext?.command?.('hermes_draw', args)
         else if (name === 'hermes_overlay') window.__hermesOverlays?.apply?.(args.items || args)
         else if (name === 'hermes_caption') caption(args.text)
-        else if (name === 'hermes_timeline') window.__hermesTimeline?.command?.(args)
+        else if (name === 'hermes_timeline') await Promise.resolve(window.__hermesTimeline?.command?.(args))
         else if (name === 'set_layer_visibility' && typeof run === 'function') await run(name, args)
       } catch {}
     }
@@ -668,12 +668,16 @@
       }
       if (m.name === 'hermes_context' || m.name === 'hermes_draw' || m.name === 'hermes_compare') {
         await ready()
-        payload = window.__hermesContext ? window.__hermesContext.command(m.name, m.args || {}) : { ok: false, error: 'context layer not loaded' }
+        payload = window.__hermesContext
+          ? await Promise.resolve(window.__hermesContext.command(m.name, m.args || {}))
+          : { ok: false, error: 'context layer not loaded' }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_timeline') {
         await ready()
-        payload = window.__hermesTimeline ? window.__hermesTimeline.command(m.args || {}) : { ok: false, error: 'timeline not loaded' }
+        payload = window.__hermesTimeline
+          ? await Promise.resolve(window.__hermesTimeline.command(m.args || {}))
+          : { ok: false, error: 'timeline not loaded' }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_director') {

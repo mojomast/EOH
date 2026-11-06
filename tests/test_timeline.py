@@ -240,6 +240,7 @@ def test_slider_is_in_the_pane_and_persists_from_the_host():
 
 @needs_node
 def test_pane_slider_swipes_fades_and_reveals_event_pins():
+    helper = (ROOT / "gev" / "compare_surface.js").read_text()
     js = (ROOT / "gev" / "panel_timeline.js").read_text()
     prog = r"""
 const posted = []
@@ -271,14 +272,16 @@ global.window = {
     tileset: { show: true },
     viewer: {
       imageryLayers: {
+        get length() { return imagery.length },
         addImageryProvider(p) {
           const layer = { provider: p, show: true, alpha: 1, splitDirection: 0 }
           imagery.push(layer)
           return layer
         },
-        remove(layer) { const i = imagery.indexOf(layer); if (i >= 0) imagery.splice(i, 1) }
+        remove(layer) { const i = imagery.indexOf(layer); if (i >= 0) imagery.splice(i, 1) },
+        lowerToBottom() {}
       },
-      scene: { splitPosition: 0.5, requestRender() {} }
+      scene: { globe: { show: false }, splitPosition: 0.5, requestRender() {} }
     }
   },
   __hermesPins: {
@@ -286,34 +289,35 @@ global.window = {
     remove(id) { pins.delete(id) },
     state() { return { pins: [...pins.values()].map((p) => ({ id: p.id })) } }
   },
-  __hermesContext: { compare(args) { posted.push({ compare: args }) } }
+  __hermesContext: { compare(args) { posted.push({ compare: args }); return { ok: true } } }
 }
-""" + ";\n" + js + r"""
+""" + ";\n" + helper + ";\n" + js + r"""
+;(async () => {
 const T = window.__hermesTimeline
 T._stop()
 const releases = [
   { release: 13851, date: '2016-07-13', label: 'Esri Wayback 2016-07-13', url: 'https://wayback.maptiles.arcgis.com/tile/13851/{z}/{y}/{x}' },
   { release: 48376, date: '2020-04-08', label: 'Esri Wayback 2020-04-08', url: 'https://wayback.maptiles.arcgis.com/tile/48376/{z}/{y}/{x}' }
 ]
-const set = T.command({ action: 'set', mode: 'wayback', transition: 'swipe', from: '2016-07-13', to: '2020-04-08', at: '2016-07-13', releases })
+const set = await T.command({ action: 'set', mode: 'wayback', transition: 'swipe', from: '2016-07-13', to: '2020-04-08', at: '2016-07-13', releases })
 const tilesHidden = window.__godsEyeView.tileset.show === false
-const mid = T.command({ action: 'position', position: 0.5 })
+const mid = await T.command({ action: 'position', position: 0.5 })
 const older = imagery.find((l) => l.provider.url.includes('/13851/'))
 const newer = imagery.find((l) => l.provider.url.includes('/48376/'))
 const olderDir = older && older.splitDirection
 const newerDir = newer && newer.splitDirection
-T.command({ action: 'set', mode: 'wayback', transition: 'fade', from: '2016-07-13', to: '2020-04-08', at: '2016-07-13', releases })
-T.command({ action: 'position', position: 0.5 })
+await T.command({ action: 'set', mode: 'wayback', transition: 'fade', from: '2016-07-13', to: '2020-04-08', at: '2016-07-13', releases })
+await T.command({ action: 'position', position: 0.5 })
 const faded = imagery.find((l) => l.provider.url.includes('/48376/'))
-const events = T.command({ action: 'set', mode: 'events', from: '2026-11-01', to: '2026-11-05', at: '2026-11-03', events: [
+const events = await T.command({ action: 'set', mode: 'events', from: '2026-11-01', to: '2026-11-05', at: '2026-11-03', events: [
   { id: 'q1', feed: 'earthquakes', lat: 45.55, lon: -73.5, time: '2026-11-03T00:00:00Z', title: 'Quake', description_md: '**Magnitude:** 3.4', links: [], color: 'amber' },
   { id: 'f1', feed: 'fires', lat: 45.52, lon: -73.58, time: '2026-11-04T18:42:00Z', title: 'Fire', description_md: '**FRP:** 12.5 MW', links: [], color: 'red' }
 ] })
 const one = [...pins.keys()]
-const step = T.command({ action: 'step', by: 1 })
+const step = await T.command({ action: 'step', by: 1 })
 const two = [...pins.keys()]
 const drawer = pins.get('tl:f1') && pins.get('tl:f1').spec.description_md
-const back = T.command({ action: 'step', by: -1 })
+const back = await T.command({ action: 'step', by: -1 })
 const bar = document.body.children.find((c) => c.id === 'hermes-gev-timeline')
 console.log(JSON.stringify({
   set: set.visible.date, tilesHidden,
@@ -327,6 +331,7 @@ console.log(JSON.stringify({
   posted: posted.some((m) => m.type === 'hermes-gev:timeline'),
   compared: posted.some((m) => m.compare && m.compare.action === 'stop')
 }))
+})().catch((e) => { console.error(e); process.exit(1) })
 """
     out = subprocess.run([NODE, "-e", prog], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr

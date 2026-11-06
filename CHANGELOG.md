@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 — 2026-11-06
+
+### Fixed
+- Compare swipe and Wayback timeline no longer leave a black globe on a photoreal stack. Both acquire a visible imagery surface first (GEV `mapStackController.acquireImageryComparison({ switchPolicy: 'esri-if-photoreal' })`, waiting until `globe.show === true`) and drape XYZ layers on `viewer.imageryLayers`; the lease is released on stop. Without a controller, fall back to showing the globe + Esri World Imagery base and restore on stop. If no surface can be made visible, return `ok: false` with `no_visible_surface` instead of applying a hide-only swipe.
+
+Still exactly 11 composable tools.
+
 ## 0.2.2 — 2026-11-06
 
 Polish sweep from the moltussy-1 feature pass (Orbit bees on `feat/polish-v0.2.2`):
