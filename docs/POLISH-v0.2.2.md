@@ -146,4 +146,4 @@ Hard rules for every bee: change ONLY `assigned_files`; do NOT git commit/branch
 - **Wave A (dispatch now, ≤6):** P01, P03, P04, P05, P06, P07
 - **Held for deps / second wave:** P02 (poi+weather), P08 (live.py), P09 (skill), P10 (composer/scene), P11, P12, P13, P15
 
-Coordinator: the EOH bees orch dir orch (`python3 orch.py status|dispatch`). Model: `deepseek-v4.1-flash` only. Cap concurrent polish bees at 6. No bulk-retry onto other paid models.
+Coordinator: the EOH bees orch dir (`python3 orch.py status|dispatch`). Model: `deepseek-v4.1-flash` only. Cap concurrent polish bees at 6. No bulk-retry onto other paid models.
