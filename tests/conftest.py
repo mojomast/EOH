@@ -20,3 +20,33 @@ def _block_public_network(monkeypatch):
     install(monkeypatch)
     yield
     deactivate()
+
+
+@pytest.fixture(autouse=True)
+def _hermes_secret_scope_shim(monkeypatch):
+    """When Hermes is not on PYTHONPATH, stub agent.secret_scope.get_secret.
+
+    Production code calls get_secret only (catalog rule 11). Outside Hermes the
+    shim mirrors process env so existing cassette tests keep working; it never
+    reads an env file.
+    """
+    import sys
+    import types
+
+    try:
+        from agent.secret_scope import get_secret as _real  # noqa: F401
+        return
+    except ImportError:
+        pass
+
+    def get_secret(name, default=None):
+        return os.environ.get(name, default)
+
+    parent = sys.modules.get("agent")
+    if parent is None:
+        parent = types.ModuleType("agent")
+        monkeypatch.setitem(sys.modules, "agent", parent)
+    mod = types.ModuleType("agent.secret_scope")
+    mod.get_secret = get_secret
+    parent.secret_scope = mod
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", mod)

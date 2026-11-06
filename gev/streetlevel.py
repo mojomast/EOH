@@ -1,17 +1,15 @@
 """Nearest street-level panorama for one coordinate.
 
 Google Street View metadata is tried first. Mapillary is the fallback when
-that lookup misses or the Google key is unset. Keys are read from the
-environment and are never copied into a result, an error, or a log line.
-The pane still opens the picture: this module only names the panorama.
+that lookup misses or the Google key is unset. Keys are read only through
+Hermes ``agent.secret_scope.get_secret`` (catalog rule 11) and are never
+copied into a result, an error, or a log line. The pane still opens the
+picture: this module only names the panorama.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import json
 import math
-import os
 import re
 import urllib.parse
 import urllib.request
@@ -24,6 +22,13 @@ MAPILLARY_IMAGES = "https://graph.mapillary.com/images"
 LOOKUP_RADIUS_M = 50
 _SECRET = re.compile(r"(key|access_token|token|client_token)=([^&\s]+)", re.I)
 _BEARER = re.compile(r"Bearer\s+\S+", re.I)
+
+_HERMES_KEY_FIX = (
+    "Set GOOGLE_MAPS_API_KEY and/or MAPILLARY_CLIENT_TOKEN in Hermes "
+    "(``hermes plugins install`` prompts, or save them with Hermes into the "
+    "active profile ``.env``), then retry. Do not print the key. Do not put "
+    "keys in a Gods Eye View env file for this plugin."
+)
 
 
 def _clean(text: str) -> str:
@@ -42,74 +47,28 @@ def _get(url: str, headers: dict | None = None, timeout: float = 8) -> tuple[int
         return 0, ""
 
 
-def _gev_env_paths() -> list[Path]:
-    """Env files that may hold street-level keys (never log their contents)."""
-    paths: list[Path] = []
-    seen: set[str] = set()
-    for var in ("GEV_ENV_FILE", "GODSEYE_ENV_FILE"):
-        raw = (os.environ.get(var) or "").strip()
-        if not raw:
-            continue
-        path = Path(raw).expanduser()
-        key = str(path)
-        if key not in seen:
-            seen.add(key)
-            paths.append(path)
-    default = Path.home() / ".config" / "gods-eye-view.env"
-    key = str(default)
-    if key not in seen:
-        paths.append(default)
-    return paths
-
-
-def _read_env_file(path: Path) -> dict[str, str]:
-    """Parse KEY=VALUE lines. Never logs values."""
-    out: dict[str, str] = {}
+def _secret(name: str) -> str:
+    """Profile-scoped credential via Hermes. Never reads credential files or process env directly."""
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return out
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, raw = line.split("=", 1)
-        name = name.strip().removeprefix("export ").strip()
-        if not name:
-            continue
-        value = raw.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-            value = value[1:-1]
-        out[name] = value
-    return out
-
-
-def _secret_from_env_files(names: tuple[str, ...]) -> str:
-    """First non-empty value for any of *names* in GEV env files. Values never logged."""
-    for path in _gev_env_paths():
-        data = _read_env_file(path)
-        for name in names:
-            value = (data.get(name) or "").strip()
-            if value:
-                return value
-    return ""
+        from agent.secret_scope import get_secret
+    except ImportError:
+        return ""
+    try:
+        value = get_secret(name)
+    except Exception:
+        # UnscopedSecretError (multiplex) or any host error: degrade, never crash.
+        return ""
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _google_key() -> str:
-    return (
-        os.environ.get("GOOGLE_MAPS_API_KEY")
-        or os.environ.get("GOOGLE_API_KEY")
-        or _secret_from_env_files(("GOOGLE_MAPS_API_KEY", "GOOGLE_API_KEY"))
-        or ""
-    )
+    return _secret("GOOGLE_MAPS_API_KEY") or _secret("GOOGLE_API_KEY") or ""
 
 
 def _mapillary_token() -> str:
-    return (
-        os.environ.get("MAPILLARY_CLIENT_TOKEN")
-        or _secret_from_env_files(("MAPILLARY_CLIENT_TOKEN",))
-        or ""
-    )
+    return _secret("MAPILLARY_CLIENT_TOKEN") or ""
 
 
 def _bbox(lat: float, lon: float, radius_m: float) -> tuple[float, float, float, float]:
@@ -221,12 +180,22 @@ def nearest(lat: float, lon: float, radius_m: float = LOOKUP_RADIUS_M, prefer: s
         if "mapillary" in order and not _mapillary_token():
             missing.append("MAPILLARY_CLIENT_TOKEN")
         message = "No Street View or Mapillary panorama within the search radius."
+        code = "no_pano"
+        fix = (
+            "Turn on the Street Level layer in the pane, or set GOOGLE_MAPS_API_KEY / "
+            "MAPILLARY_CLIENT_TOKEN through Hermes. Do not print the key."
+        )
         if missing and len(missing) == len(order):
-            message = "No street-level key is set, so the server could not look up a panorama. The pane can still open one if its Street Level layer has a key."
+            message = (
+                "No street-level key is set in Hermes, so the server could not look up a "
+                "panorama. The pane can still open one if its Street Level layer has a key."
+            )
+            code = "KEY_MISSING"
+            fix = _HERMES_KEY_FIX
         return {
-            "ok": False, "error": "no_pano", "message": _clean(message),
+            "ok": False, "error": code, "message": _clean(message),
             "tried": tried, "missingKeys": missing,
-            "fix": "Turn on the Street Level layer in the pane, or set GOOGLE_MAPS_API_KEY / MAPILLARY_CLIENT_TOKEN in the env file (mode 0600). Do not print the key.",
+            "fix": fix,
         }
     if found["provider"] != "google" and "google" in tried:
         found = {**found, "fallback": found["provider"]}

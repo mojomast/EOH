@@ -196,15 +196,18 @@ On a checkout without patch 0002 the pane shows the globe and hides the full-UI 
 
 ### Environment
 
-No key is stored in this repository. Put provider keys in `~/.config/gods-eye-view.env` (override the path with `GODSEYE_ENV_FILE`) and `chmod 600` the file. Names only. Doctor reports where a key is set and never prints the value.
+No key is stored in this repository. **Street-level keys** (`GOOGLE_MAPS_API_KEY`, optional alternate `GOOGLE_API_KEY`, and `MAPILLARY_CLIENT_TOKEN`) are declared in `plugin.yaml` `requires_env` and read only through Hermes `agent.secret_scope.get_secret` (catalog rule 11). `hermes plugins install` prompts for them; you can skip and set them later in the active Hermes profile `.env`. Doctor reports where a key is set and never prints the value.
+
+God's Eye View's own pane/client keys for the upstream app (Cesium ion, basemap HUD labels, and the panel rebuild) may still live in `~/.config/gods-eye-view.env` (override with `GODSEYE_ENV_FILE`) mode 0600 for the Node app checkout — that file is **not** a credential source for this plugin's street-level server lookups.
 
 **Provider keys**
 
 | Name | Used for |
 | --- | --- |
 | `CESIUM_ION_TOKEN` | Photorealistic 3D tiles (Cesium ion asset 2275207, Google Photorealistic 3D Tiles). Doctor fails this check when it is missing, and reports `ION_SCOPES` when the token claims more than `assets:read` and `assets:list`. The token is shipped to the browser. |
-| `GOOGLE_MAPS_API_KEY` | Google basemap and place labels for the HUD. Doctor allows it to be unset. |
-| `MAPILLARY_CLIENT_TOKEN` | Mapillary street-level imagery. Doctor allows it to be unset. |
+| `GOOGLE_MAPS_API_KEY` | Optional. Hermes-declared. Google Street View / Maps for server-side street-level lookup, and Google basemap / place labels for the HUD when also present for the pane. Doctor allows it to be unset. |
+| `GOOGLE_API_KEY` | Optional. Hermes-declared alternate used only when `GOOGLE_MAPS_API_KEY` is unset. |
+| `MAPILLARY_CLIENT_TOKEN` | Optional. Hermes-declared. Mapillary street-level imagery when Google misses or has no key. Doctor allows it to be unset. |
 | `PHOTON_URL` | Photon geocoder. An empty value, or `off`, disables it. |
 | `AISSTREAM_API_KEY` | Live ships, server-side only. Doctor reports `KEY_MISSING` when it is unset. |
 | `FIRMS_MAP_KEY` | NASA FIRMS fires, server-side only. `FIRMS_API_KEY`, `FIRMS_KEY`, and `NASA_FIRMS_KEY` are accepted aliases. Doctor reports `KEY_MISSING` when it is unset. |
