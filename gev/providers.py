@@ -18,6 +18,42 @@ TOMTOM_KEY = "TOMTOM_API_KEY"
 ALLOWED_KEYS = tuple(dict.fromkeys((*CLIENT_KEYS.keys(), *SERVER_KEYS.keys(), TOMTOM_KEY)))
 _SECRET_CHARS = 6
 
+_PROVIDER_KEY = {
+    "google": "GOOGLE_MAPS_API_KEY (or GOOGLE_API_KEY)",
+    "mapillary": "MAPILLARY_CLIENT_TOKEN",
+    "ais": "AISSTREAM_API_KEY",
+    "firms": "FIRMS_MAP_KEY",
+    "tomtom": "TOMTOM_API_KEY",
+    "tomtom-tile": "TOMTOM_API_KEY",
+}
+_PROVIDER_FIX = {
+    "ais": "AIS feed is down or timed out. Check AISSTREAM_API_KEY and that the app's AIS stream is connected, "
+           "then retry godseye_admin op=doctor with probe=true once.",
+    "firms": "FIRMS feed is down or timed out. Check FIRMS_MAP_KEY and retry godseye_admin op=doctor with probe=true once.",
+    "tomtom": "TomTom is not answering. Check TOMTOM_API_KEY, then reload the pane and retry the probe once.",
+    "tomtom-tile": "TomTom tiles are not answering. Check TOMTOM_API_KEY, then reload the pane and retry the probe once.",
+    "google": "Google is not answering. Check GOOGLE_MAPS_API_KEY, then retry the probe once.",
+    "mapillary": "Mapillary is not answering. Check MAPILLARY_CLIENT_TOKEN, then retry the probe once.",
+}
+
+
+def feed_fix(provider: str, status: str) -> str | None:
+    """Next step for a probe row. Never contains key material or local paths."""
+    provider = str(provider or "")
+    status = str(status or "")
+    if status in ("ok", ""):
+        return None
+    if status == "missing":
+        name = _PROVIDER_KEY.get(provider, "the provider key")
+        return f"Add {name} to the provider env file (mode 0600) and restart the app. Never print the value."
+    if status == "quota":
+        return "The provider quota is exhausted. Wait for the quota window or use another configured provider, then retry once."
+    if status == "invalid":
+        return f"The provider refused the key. Check {_PROVIDER_KEY.get(provider, 'the provider key')} and retry once. Never print the value."
+    if status in ("timeout", "unreachable"):
+        return _PROVIDER_FIX.get(provider) or "The provider did not answer. Retry the probe once; if it still fails, check the key and network."
+    return _PROVIDER_FIX.get(provider)
+
 
 def _key(name: str, file_env: dict) -> str:
     return str(file_env.get(name) or os.environ.get(name) or "")
@@ -25,6 +61,8 @@ def _key(name: str, file_env: dict) -> str:
 
 def classify_probe(status, body: str = "") -> str:
     text = scrub_text(body or "").lower()
+    if isinstance(status, str) and status.lower() in ("timeout", "timed_out", "timedout"):
+        return "timeout"
     if status is None:
         return "unreachable"
     try:
@@ -48,9 +86,11 @@ def classify_probe(status, body: str = "") -> str:
     return "invalid"
 
 
-def _get(url: str, headers: dict | None, fetch, timeout: float = 4) -> tuple[int | None, str]:
+def _get(url: str, headers: dict | None, fetch, timeout: float = 4) -> tuple[int | str | None, str]:
     try:
         got = fetch(url, headers or {}, timeout)
+    except TimeoutError:
+        return "timeout", ""
     except Exception:
         return None, ""
     if isinstance(got, tuple):
@@ -65,7 +105,11 @@ def _get(url: str, headers: dict | None, fetch, timeout: float = 4) -> tuple[int
 
 
 def _row(provider: str, status: str) -> dict:
-    return {"provider": provider, "status": status}
+    row = {"provider": provider, "status": status}
+    fix = feed_fix(provider, status)
+    if fix:
+        row["fix"] = fix
+    return row
 
 
 def probe_providers(fetch=None, file_env: dict | None = None, api_base: str | None = None) -> list[dict]:
@@ -131,6 +175,12 @@ def _urllib_fetch(url: str, headers: dict, timeout: float):
         except Exception:
             raw = b""
         return exc.code, raw
+    except TimeoutError:
+        return "timeout", b""
+    except urllib.error.URLError as exc:
+        if isinstance(getattr(exc, "reason", None), TimeoutError):
+            return "timeout", b""
+        return None, b""
     except Exception:
         return None, b""
 
