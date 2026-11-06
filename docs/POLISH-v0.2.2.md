@@ -1,7 +1,7 @@
 # EOH polish v0.2.2 — bug list for Orbit bees
 
 Branch: `feat/polish-v0.2.2` off `main` @ `8cb2cb8` (mojomast/EOH, plugin id `godseye`).
-Worktree (box): `/home/box/wt/eoh-polish`. PC project key: `eoh` with `sync_branch: feat/polish-v0.2.2`.
+Worktree (box): the EOH polish worktree. PC project key: `eoh` with `sync_branch: feat/polish-v0.2.2`.
 Keep **exactly 11** composable tools. Prefer new ops / clearer errors over new tools. Report o200k schema delta via `python3 evals/measure_schemas.py`. Tests: `python3 -m pytest -q tests` (+ own file first). Never commit inside the sandbox; leave an uncommitted diff. Never merge to main, never tag, never force-push, never touch moltussy-1.
 
 Hard rules for every bee: change ONLY `assigned_files`; do NOT git commit/branch/stash; write the test first and confirm it fails on the base; no secrets/tailnet/private paths in code or notes.
@@ -146,4 +146,4 @@ Hard rules for every bee: change ONLY `assigned_files`; do NOT git commit/branch
 - **Wave A (dispatch now, ≤6):** P01, P03, P04, P05, P06, P07
 - **Held for deps / second wave:** P02 (poi+weather), P08 (live.py), P09 (skill), P10 (composer/scene), P11, P12, P13, P15
 
-Coordinator: `/workspace/eoh-bees` orch (`python3 orch.py status|dispatch`). Model: `deepseek-v4.1-flash` only. Cap concurrent polish bees at 6. No bulk-retry onto other paid models.
+Coordinator: the EOH bees orch dir orch (`python3 orch.py status|dispatch`). Model: `deepseek-v4.1-flash` only. Cap concurrent polish bees at 6. No bulk-retry onto other paid models.
