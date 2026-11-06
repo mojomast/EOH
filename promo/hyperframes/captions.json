@@ -1,0 +1,124 @@
+{
+  "captions": [
+    {
+      "start": 0.0,
+      "end": 2.397,
+      "text": "Meet Eye of Hermes."
+    },
+    {
+      "start": 2.397,
+      "end": 3.784,
+      "text": "Ask Hermes."
+    },
+    {
+      "start": 3.784,
+      "end": 5.55,
+      "text": "See the world."
+    },
+    {
+      "start": 5.967,
+      "end": 9.167,
+      "text": "A place is more than coordinates."
+    },
+    {
+      "start": 13.067,
+      "end": 15.008,
+      "text": "Say, fly to Tokyo."
+    },
+    {
+      "start": 15.008,
+      "end": 17.487,
+      "text": "Switch to night vision."
+    },
+    {
+      "start": 17.487,
+      "end": 19.967,
+      "text": "Hermes moves the globe."
+    },
+    {
+      "start": 20.667,
+      "end": 24.643,
+      "text": "Flights, ships, satellites, and weather."
+    },
+    {
+      "start": 24.643,
+      "end": 28.817,
+      "text": "Public feeds, together over San Francisco."
+    },
+    {
+      "start": 29.267,
+      "end": 31.547,
+      "text": "Pin the Sydney Opera House."
+    },
+    {
+      "start": 31.547,
+      "end": 35.517,
+      "text": "Open its research, with sources beside the map."
+    },
+    {
+      "start": 38.534,
+      "end": 42.022,
+      "text": "Turn camera moves into a Director scene."
+    },
+    {
+      "start": 42.022,
+      "end": 46.034,
+      "text": "Approach Tokyo Tower, then look straight down."
+    },
+    {
+      "start": 46.801,
+      "end": 53.601,
+      "text": "Trace the Caldor Fire perimeter, then compare the forest before and after."
+    },
+    {
+      "start": 60.268,
+      "end": 66.968,
+      "text": "Find a public aircraft near Toronto Pearson, and follow it across the globe."
+    },
+    {
+      "start": 68.135,
+      "end": 74.185,
+      "text": "Compare Hollywood Park's racetrack with the stadium that replaced it."
+    },
+    {
+      "start": 79.135,
+      "end": 87.885,
+      "text": "Pin places near Richmond, draw a route, and keep it organized in the overlays sidebar."
+    },
+    {
+      "start": 91.468,
+      "end": 93.502,
+      "text": "Hermes calls the plugin."
+    },
+    {
+      "start": 93.502,
+      "end": 98.418,
+      "text": "Live actions pass through a local relay to the globe pane."
+    },
+    {
+      "start": 98.868,
+      "end": 101.118,
+      "text": "Eleven composable tools."
+    },
+    {
+      "start": 101.118,
+      "end": 104.118,
+      "text": "One conversation with the globe."
+    },
+    {
+      "start": 104.568,
+      "end": 105.931,
+      "text": "Eye of Hermes."
+    },
+    {
+      "start": 105.931,
+      "end": 108.948,
+      "text": "Built for the Hermes hackathon."
+    },
+    {
+      "start": 108.948,
+      "end": 111.868,
+      "text": "Explore the project on GitHub."
+    }
+  ]
+}

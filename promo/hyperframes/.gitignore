@@ -1,0 +1,10 @@
+/node_modules/
+/.build/
+/.hyperframes/
+/out/
+/footage/
+/shots/
+/vo/
+# captions.json is committed once transcribed
+# /captions.json
+*.log
