@@ -262,9 +262,15 @@ class SceneStore:
         action = str(args.get("action") or "add")
         if action == "add" and isinstance(result.get("shape"), dict):
             sh = result["shape"]
-            shapes[sh["id"]] = {"action": "add", "id": sh["id"], "kind": sh.get("kind"), "points": sh.get("points"),
-                                "label": args.get("label", sh.get("label")), "color": args.get("color"),
-                                **({"labelAt": args["labelAt"]} if args.get("labelAt") else {})}
+            stored = {"action": "add", "id": sh["id"], "kind": sh.get("kind"), "points": sh.get("points"),
+                      "label": args.get("label", sh.get("label")), "color": args.get("color"),
+                      **({"labelAt": args["labelAt"]} if args.get("labelAt") else {})}
+            for key in ("batch", "group", "session"):
+                if args.get(key):
+                    stored[key] = str(args[key])[:80]
+            if args.get("visible") is False:
+                stored["visible"] = False
+            shapes[sh["id"]] = stored
             while len(shapes) > 40:
                 shapes.pop(next(iter(shapes)))
             return True
@@ -285,6 +291,8 @@ class SceneStore:
             if items and not got.get("ok", True):
                 continue  # the pane could not draw it; do not resurrect it later
             item = {k: v for k, v in spec.items() if k != "flyTo"}
+            from .overlays import stamp_batch
+            stamp_batch(item, args)
             lat, lon = got.get("latitude"), got.get("longitude")
             if item.get("type", "pin") in POINT_TYPES and isinstance(lat, (int, float)) and isinstance(lon, (int, float)) \
                     and item.get("type") != "area":
@@ -500,7 +508,8 @@ class SceneStore:
                 for lid in sc.get("layers") or []:
                     if self._layer_id(lid):
                         cmds.append(("set_layer_visibility", {"layerId": lid, "enabled": True}))
-            specs = [a["spec"] for a in sc["annotations"]]
+            specs = [a["spec"] for a in sc["annotations"]
+                     if (a.get("spec") or {}).get("visible") is not False]
             if redraw_only or clear:
                 cmds.append(("clear_annotations", {}))  # filters stay; re-applied after the redraw
             for i in range(0, len(specs), 24):
@@ -513,6 +522,8 @@ class SceneStore:
                                                    "longitude": dr["longitude"], "label": dr.get("label"),
                                                    "flyTo": False}))
             for sh in (sc.get("shapes") or {}).values():
+                if sh.get("visible") is False:
+                    continue
                 cmds.append(("hermes_draw", dict(sh)))
             if sc.get("caption") and not redraw_only:
                 cmds.append(("hermes_caption", {"text": sc["caption"]}))

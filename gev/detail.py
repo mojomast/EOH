@@ -53,6 +53,7 @@ LARGE_EXTRA = {
     "godseye_investigation_list", "godseye_investigation_load", "godseye_investigation_report",
     "godseye_live_filter_pins",
     "godseye_watch_list", "godseye_watch_create",
+    "godseye_overlays",
 }
 
 IMAGE_TOOLS = {"get_cctv_snapshot", "get_weather_map", "get_recent_imagery", "find_imagery", "control_cctv"}

@@ -117,10 +117,19 @@
     const label = opts.label === undefined ? measure.label : opts.label
     const s = { id, kind: kind === 'box' ? 'box' : k, points: pts, label, measure, by: opts.by || 'hermes', ents: ents(k, pts, label, opts.color, opts.labelAt) }
     shapes.set(id, s)
+    if (opts.visible === false) setVisible(id, false)
     if (s.by === 'user') updateBar()
     return { ok: true, shape: info(s) }
   }
   function remove(id) { const s = shapes.get(id); if (!s) return false; for (const e of s.ents) try { ds.entities.remove(e) } catch {}; shapes.delete(id); return true }
+  function setVisible(id, on) {
+    const s = shapes.get(String(id || ''))
+    if (!s) return false
+    s.visible = on !== false
+    for (const e of s.ents) e.show = s.visible
+    try { g().viewer.scene.requestRender?.() } catch {}
+    return true
+  }
   const info = (s) => ({ id: s.id, kind: s.kind, by: s.by, label: s.label, points: s.points.slice(0, 200), measure: s.measure })
   const start = (m) => { if (!ensure()) return { ok: false, error: 'viewer not ready' }; cancel(); mode = m; draft = []; updateBar(); return { ok: true, mode } }
   function finish() {
@@ -316,8 +325,8 @@
       for (const s of [...shapes.values()]) if (who === 'all' || s.by === who) remove(s.id)
       return { ok: true, remaining: shapes.size }
     }
-    return add(args.kind || 'line', args.points, { id: args.id, label: args.label, color: args.color, labelAt: args.labelAt, by: 'hermes' })
+    return add(args.kind || 'line', args.points, { id: args.id, label: args.label, color: args.color, labelAt: args.labelAt, by: 'hermes', visible: args.visible })
   }
-  window.__hermesContext = { command, context, compare, add, remove, detach, start, finish, cancel, onClick, askPrompt,
+  window.__hermesContext = { command, context, compare, add, remove, setVisible, detach, start, finish, cancel, onClick, askPrompt,
     _geo: { hav, pathLen, area, fmtD, fmtA }, _stop: () => clearInterval(boot) }
 })()

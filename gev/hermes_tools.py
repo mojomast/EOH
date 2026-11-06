@@ -171,6 +171,10 @@ def extend_live_schema(name: str, schema: dict) -> dict:
             ip["title"] = {"type": "string", "description": "card: heading line; pin: drawer title (default: label)"}
             ip.update(DRAWER_PROPS)
             ip["tags"] = TAGS_PROP
+            ip["batch"] = {"type": "string", "maxLength": 80,
+                           "description": "Overlay-sidebar group for this Hermes batch or session."}
+            ip["group"] = {"type": "string", "maxLength": 80}
+            ip["session"] = {"type": "string", "maxLength": 80}
             ip["rows"] = {"type": "array", "maxItems": 8, "description": "card: rows like a menu or price list",
                           "items": {"type": "object", "properties": {"text": {"type": "string"},
                                                                      "price": {"type": ["string", "number"]}},
@@ -716,6 +720,44 @@ EXTRA_TOOLS = {
                 "images": {"type": "array", "items": {"type": "object"}},
                 "links": {"type": "array", "items": {"type": "object"}}}}},
             "persist": {"type": "boolean", "default": True}}}, "🔎"),
+    "godseye_overlays": (
+        "Manage every Hermes overlay in one tree: pins, routes and trails, areas, drawn lines, watches, "
+        "and saved scenes. action=tree is the sidebar. show and hide take an entry or group id. delete "
+        "of a group, watch, or scene needs confirm=true. update changes label, title, or description_md. "
+        "export writes eoh.overlays.v1 JSON under plugin-data/godseye/overlays (and returns the document "
+        "when detail=full). import reads source or document. replace=true replaces this scene's marks. "
+        "The bottom pin-category strip was retired; the same filters are action=filters.",
+        {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["tree", "show", "hide", "delete", "update", "export", "import", "filters"],
+                       "default": "tree"},
+            "id": {"type": "string", "description": "Entry id (ann:, shape:, watch:, scene:) or a group id (kind:)."},
+            "ids": {"type": "array", "items": {"type": "string"}},
+            "label": {"type": "string"},
+            "title": {"type": "string"},
+            "description_md": {"type": "string"},
+            "category": {"type": "string"},
+            "color": {"type": "string"},
+            "batch": {"type": "string", "description": "Group label for a Hermes batch or session."},
+            "group": {"type": "string"},
+            "session": {"type": "string"},
+            "points": {"type": "array", "items": {"type": "object"}},
+            "tags": {"type": "object"},
+            "images": {"type": "array", "items": {"type": "object"}},
+            "links": {"type": "array", "items": {"type": "object"}},
+            "interval_s": {"type": "integer"},
+            "source": {"type": "string", "description": "JSON path for import, or a file name for export."},
+            "document": {"type": "object", "description": "eoh.overlays.v1 object to import."},
+            "replace": {"type": "boolean", "default": True},
+            "confirm": {"type": "boolean"},
+            "purge": {"type": "boolean", "description": "With confirm, drop watches and scenes the import file omits."},
+            "categories": {"type": "array", "items": {"type": "string"}},
+            "min_rating": {"type": ["number", "null"]},
+            "open_now": {"type": "boolean"},
+            "include_unknown": {"type": "boolean"},
+            "cluster": {"type": "boolean"},
+            "clear": {"type": "boolean"},
+            "visible": {"type": "boolean"},
+        }}, "🗂️"),
     "godseye_investigation_save": (
         "Save the whole current scene (pins with drawer content, notes, routes, cards, camera/saved views) "
         "as a named investigation under plugin-data/godseye/investigations/.",
@@ -987,6 +1029,11 @@ def extra_handler(name: str):
                 out = composer.tour_op("cancel", sid, jobId=args.get("jobId"))
             elif name == "godseye_research_pins":
                 out = composer.research_pins_op(args, session_id=sid)
+            elif name == "godseye_overlays":
+                from . import overlays as overlays_mod
+                if mode != "full":
+                    args = {**args, "includeDocument": False}
+                out = overlays_mod.run(args, sid)
             elif name == "godseye_investigation_save":
                 out = composer.investigation_op("save", sid, args=args)
             elif name == "godseye_investigation_list":

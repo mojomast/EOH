@@ -1383,6 +1383,23 @@
       }
     },
     {
+      "id": "overlay-tree",
+      "task": "open the overlay manager",
+      "expect": {
+        "tool": "godseye_annotate",
+        "op": "overlays",
+        "arguments": {
+          "op": "overlays",
+          "action": "tree"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ]
+        }
+      }
+    },
+    {
       "id": "research-pins",
       "task": "research the pins",
       "expect": {

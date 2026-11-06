@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import json
 import math
 import os
@@ -413,6 +414,66 @@ class WatchStore:
         if active:
             self.ensure_running()
         return {"ok": True, "watch": self.public(w)}
+
+    def update_fields(self, wid: str, fields: dict) -> dict:
+        with self.lock:
+            watch = self.data["watches"].get(wid)
+            if not watch:
+                return {"ok": False, "code": "NOT_FOUND", "error": "not_found",
+                        "message": f"No watch {wid!r}.",
+                        "fix": "Use an id from godseye_annotate op=overlays action=tree."}
+            if fields.get("name"):
+                watch["name"] = str(fields["name"])[:80]
+            if "description" in fields and fields["description"] is not None:
+                watch["description"] = str(fields["description"])[:2000]
+            if fields.get("interval_s") is not None:
+                try:
+                    interval = int(fields["interval_s"])
+                except (TypeError, ValueError):
+                    return {"ok": False, "error": "bad_args", "message": "interval_s must be an integer.",
+                            "fix": "Pass interval_s as seconds between 60 and 604800."}
+                watch["interval_s"] = int(max(MIN_INTERVAL_S, min(MAX_INTERVAL_S, interval)))
+            self._save()
+            return {"ok": True, "watch": self.public(watch)}
+
+    def upsert_exported(self, row: dict) -> dict:
+        """Insert or update a watch from an overlay export. Does not copy last-seen ids."""
+        wid = str(row.get("id") or "")
+        if not re.fullmatch(r"w-[0-9a-f]{8}", wid):
+            return {"ok": False, "error": "bad_args", "message": f"Watch id {wid!r} is not a stored watch id.",
+                    "fix": "Export the overlay set again and import that document."}
+        area = row.get("area") if isinstance(row.get("area"), dict) else None
+        feeds = [str(item).lower() for item in (row.get("feeds") or []) if str(item).lower() in FEEDS]
+        if not area or not feeds:
+            return {"ok": False, "error": "bad_args", "message": f"Watch {wid} needs an area and feeds.",
+                    "fix": "Keep area and feeds from the export."}
+        with self.lock:
+            current = self.data["watches"].get(wid)
+            if current is None:
+                current = {"id": wid, "seen": {}, "created": self.clock(), "status": {},
+                           "next_run": self.clock(), "last_run": None, "session_id": None}
+                self.data["watches"][wid] = current
+            current["name"] = str(row.get("name") or current.get("name") or wid)[:80]
+            current["area"] = area
+            current["feeds"] = feeds
+            current["conditions"] = row.get("conditions") if isinstance(row.get("conditions"), dict) else (
+                current.get("conditions") or {})
+            current["active"] = row.get("active") is not False
+            if row.get("description") is not None:
+                current["description"] = str(row.get("description"))[:2000]
+            try:
+                interval = int(row.get("interval_s") or current.get("interval_s") or DEFAULT_INTERVAL_S)
+            except (TypeError, ValueError):
+                interval = DEFAULT_INTERVAL_S
+            current["interval_s"] = int(max(MIN_INTERVAL_S, min(MAX_INTERVAL_S, interval)))
+            for key in ("deliver", "pin", "baseline"):
+                if key in row:
+                    current[key] = row[key]
+            self._save()
+            saved = self.public(current)
+        if current.get("active"):
+            self.ensure_running()
+        return {"ok": True, "watch": saved}
 
     def delete(self, wid: str, confirm: bool) -> dict:
         with self.lock:

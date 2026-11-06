@@ -236,7 +236,7 @@
       // hide when behind the globe: camera->point must not pass the horizon (dot test on the normal)
       const n = { x: pos.x, y: pos.y, z: pos.z }, d = { x: pos.x - cam.x, y: pos.y - cam.y, z: pos.z - cam.z }
       const facing = n.x * d.x + n.y * d.y + n.z * d.z < 0
-      if (!xy || !facing) { c.el.style.display = 'none'; continue }
+      if (c.el.dataset.overlayOff === '1' || !xy || !facing) { c.el.style.display = 'none'; continue }
       c.el.style.display = 'block'
       c.el.style.transform = `translate(${Math.round(xy.x)}px, ${Math.round(xy.y)}px) translate(-50%, calc(-100% - ${c.pinned ? 50 : 14}px))`
     }
@@ -265,6 +265,7 @@
       rows.map((r) => `<div style="display:flex;gap:12px;justify-content:space-between"><span>${esc(r.text)}</span>` +
         `<span style="color:#ffd27a">${esc(r.price ?? '')}</span></div>`).join('')
     cardLayer.appendChild(el)
+    el.dataset.cardKey = String(key)
     cards.set(key, { el, lat, lon, pinned: Boolean(spec.pinned) })
     placeCards()
     try { window.__godsEyeView?.viewer?.scene?.requestRender?.() } catch {}
@@ -290,6 +291,7 @@
       metas[i] = meta
       const a = { ...a0 }
       for (const k of DRAWER_KEYS) delete a[k]
+      delete a.batch; delete a.group; delete a.session; delete a.visible
       if (String(a.type || 'pin').toLowerCase() !== 'card') delete a.title
       const t = String(a.type || 'pin').toLowerCase()
       if (t === 'card') {
@@ -498,6 +500,7 @@
         else if (name === 'hermes_pin_filter') window.__hermesPins?.filterCommand?.(args)
         else if (name === 'hermes_pin_drawer') window.__hermesPins?.command?.(args)
         else if (name === 'hermes_draw') window.__hermesContext?.command?.('hermes_draw', args)
+        else if (name === 'hermes_overlay') window.__hermesOverlays?.apply?.(args.items || args)
         else if (name === 'hermes_caption') caption(args.text)
         else if (name === 'hermes_timeline') window.__hermesTimeline?.command?.(args)
         else if (name === 'set_layer_visibility' && typeof run === 'function') await run(name, args)
@@ -657,6 +660,10 @@
       }
       if (m.name === 'hermes_invalidate_providers') {
         payload = invalidateProviders()
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
+      if (m.name === 'hermes_overlay') {
+        payload = window.__hermesOverlays?.apply?.(m.args?.items || m.args) || { ok: false, error: 'overlay layer not loaded' }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       if (m.name === 'hermes_context' || m.name === 'hermes_draw' || m.name === 'hermes_compare') {

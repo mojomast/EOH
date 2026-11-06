@@ -696,6 +696,27 @@ class Relay:
         self.scenes.note_timeline(pane.last_session or self.scene_key(None, pane), tl, replace=False)
         return {"ok": True}
 
+    def overlays_op(self, body: dict) -> dict:
+        """Sidebar and godseye_annotate op=overlays. Does not start the app."""
+        from .overlays import handle
+        pane = self.panes.get(str((body or {}).get("pane") or ""))
+        sessions = (body or {}).get("sessions")
+        if isinstance(sessions, str):
+            sessions = [item for item in sessions.split(",") if item]
+        if not isinstance(sessions, list):
+            sessions = []
+        sid = (body or {}).get("session_id")
+        if pane and (pane.last_session or pane.sessions):
+            key = pane.last_session or self.scene_key(sid, pane)
+        elif sid:
+            key = self.scene_key(sid, pane)
+        elif sessions:
+            key = self.scenes.pick(sessions) or str(sessions[0])
+        else:
+            key = self.scene_key(sid if isinstance(sid, str) else None)
+        return handle(self.scenes, key, body or {}, relay=self,
+                      session_id=sid if isinstance(sid, str) else None)
+
     def filters_event(self, body: dict) -> dict:
         """The user toggled a pin filter chip in the pane: keep it in the scene."""
         pane = self.panes.get(str(body.get("pane") or ""))
@@ -883,6 +904,8 @@ def make_handler(relay: Relay, token: str):
                 return self._send(200, relay.panes_op(body))
             if self.path == "/filters":
                 return self._send(200, relay.filters_event(body))
+            if self.path == "/overlays":
+                return self._send(200, relay.overlays_op(body))
             if self.path == "/timeline":
                 return self._send(200, relay.timeline_event(body))
             if self.path == "/drawer":
