@@ -1,6 +1,6 @@
 # Eye Of Hermes — HyperFrames promo scaffold
 
-An editable **89-second, 1920×1080, 30 fps** production scaffold. It has 13 timed scenes, designed graphics, a typed draft prompt, a live-control architecture diagram, and clearly marked missing-media cards. It contains **no recorded product footage, voiceover, music, or verified project statistics**. The `11 registered tools` in the architecture and outro is documented in the repository's `plugin.yaml` and README; the three stat-card values deliberately remain `{{PLACEHOLDER}}`.
+An editable **89-second, 1920×1080, 30 fps** production scaffold. It has 13 timed scenes, designed graphics, a typed draft prompt, a live-control architecture diagram, and clearly marked missing-media cards. Media slots are filled from the capture handoff (`footage/`, `vo/`, `shots/`, `captions.json` — gitignored binaries stay local). The stats scene shows verified **11 registered tools** (release `6f8fa8a` / v0.2.5) plus qualitative PUBLIC DATA / LIVE CONTROL cards; invented test/commit counts are not shown.
 
 ## Preview and render
 

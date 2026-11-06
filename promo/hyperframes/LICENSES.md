@@ -9,4 +9,8 @@
 | HyperFrames CLI | [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) | Apache License 2.0; installed via npm, version pinned in the lockfile. |
 | GSAP runtime | [GSAP](https://gsap.com/) | Standard no-charge license, [gsap.com/standard-license](https://gsap.com/standard-license/); installed via npm and copied into the ignored build directory, not committed. |
 
-No music, sound effects, stock footage, or voice recordings are included. Any subsequently supplied recordings, imagery, music, or sound effects must be cleared and credited by the production team. Map imagery and feed attribution must remain visible in captures.
+| Voiceover WAVs (`vo/*.wav`) | Local Kokoro-82M v1.0 (`af_heart`) via [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) | Library MIT; weights [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) Apache-2.0; ONNX model-files-v1.1. No cloning / paid API. |
+| Product footage (`footage/*.mp4`) | Screen capture of God's Eye View map pane for this promo | Project demo capture; map/provider credits remain visible in frame. |
+| Captions (`captions.json`) | Transcribed from the recorded Kokoro WAVs | Same as voiceover; timings match the 89s timeline. |
+
+Product footage and voiceover slots are filled for the draft render. Map imagery and feed attribution must remain visible in captures.
