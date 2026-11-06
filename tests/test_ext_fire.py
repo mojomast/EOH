@@ -135,6 +135,138 @@ def test_timeline_lists_perimeter_discovery_and_update_events(monkeypatch):
     assert all(event["color"] == "red" for event in frame["events"])
 
 
+class FlakyMcp:
+    def __init__(self, failures, payload):
+        self.failures = failures
+        self.payload = payload
+        self.calls = []
+
+    def __call__(self, name, args):
+        self.calls.append((name, args))
+        if len(self.calls) <= self.failures:
+            raise TimeoutError("read timed out")
+        return {"structuredContent": copy.deepcopy(self.payload)}
+
+
+class PayloadFlakyMcp:
+    def __init__(self, first, payload):
+        self.first = first
+        self.payload = payload
+        self.calls = []
+
+    def __call__(self, name, args):
+        self.calls.append((name, args))
+        if len(self.calls) == 1:
+            return {"structuredContent": copy.deepcopy(self.first)}
+        return {"structuredContent": copy.deepcopy(self.payload)}
+
+
+def test_center_area_defaults_radius_for_annotate_and_watch(tmp_path, monkeypatch):
+    fake = FakeMcp(FIXTURE)
+    sleeps = []
+    monkeypatch.setattr(ext_fire, "mcp", fake)
+    monkeypatch.setattr(ext_fire, "_sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(ext_fire, "live", lambda name, args, session_id=None: {"ok": True})
+    st = make_store(tmp_path)
+    monkeypatch.setattr(watch, "_store", st)
+
+    annotate_op = ext_ops.find("godseye_annotate", "fire_perimeters")
+    out = json.loads(annotate_op.handler({"area": {"lat": 45.2, "lon": -121.1}}, session_id="s"))
+    assert out["ok"] is True
+    assert fake.calls, "center area should reach get_fire_perimeters"
+    bbox = fake.calls[0][1]["area"]["bbox"]
+    span = bbox[3] - bbox[1]
+    assert span == pytest.approx(2 * ext_fire.DEFAULT_CENTER_RADIUS_KM / 111.32, rel=0.01)
+
+    watch_op = ext_ops.find("godseye_watch", "fire_perimeters")
+    created = json.loads(watch_op.handler(
+        {"area": {"lat": 45.2, "lon": -121.1}, "name": "Center fire"}, session_id="s"))
+    assert created["ok"] is True
+    area = created["watch"]["area"]
+    assert area["kind"] == "circle"
+    assert area["radius_km"] == ext_fire.DEFAULT_CENTER_RADIUS_KM
+
+
+def test_transient_fire_fetch_retries_once_then_succeeds(monkeypatch):
+    fake = FlakyMcp(1, FIXTURE)
+    sleeps = []
+    monkeypatch.setattr(ext_fire, "mcp", fake)
+    monkeypatch.setattr(ext_fire, "_sleep", lambda seconds: sleeps.append(seconds))
+
+    result = ext_fire.fetch_perimeters(watch.normalize_area({"bbox": AREA}))
+    assert result["status"] == "OK"
+    assert len(result["items"]) == 3
+    assert len(fake.calls) == 2
+    assert sleeps and sleeps[0] > 0
+
+
+def test_transient_payload_retries_once_then_succeeds(monkeypatch):
+    fake = PayloadFlakyMcp(
+        {"ok": False, "code": "fires_failed", "error": "FIRMS request timed out"},
+        FIXTURE)
+    sleeps = []
+    monkeypatch.setattr(ext_fire, "mcp", fake)
+    monkeypatch.setattr(ext_fire, "_sleep", lambda seconds: sleeps.append(seconds))
+
+    result = ext_fire.fetch_perimeters(watch.normalize_area({"bbox": AREA}))
+    assert result["status"] == "OK"
+    assert len(fake.calls) == 2
+    assert len(sleeps) == 1
+
+
+def test_fire_fetch_exhausted_retry_stays_structured(monkeypatch):
+    fake = FlakyMcp(5, FIXTURE)
+    sleeps = []
+    monkeypatch.setattr(ext_fire, "mcp", fake)
+    monkeypatch.setattr(ext_fire, "_sleep", lambda seconds: sleeps.append(seconds))
+
+    result = ext_fire.fetch_perimeters(watch.normalize_area({"bbox": AREA}))
+    assert result["status"] == "ERROR"
+    assert result["code"] == "fires_failed"
+    assert result["items"] == []
+    assert "TimeoutError" in result["error"]
+    assert result["fix"]
+    assert len(fake.calls) == 2
+    assert len(sleeps) == 1
+
+
+def test_non_transient_fire_fetch_does_not_retry(monkeypatch):
+    class BadMcp:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, name, args):
+            self.calls.append((name, args))
+            raise ValueError("bad request")
+
+    fake = BadMcp()
+    sleeps = []
+    monkeypatch.setattr(ext_fire, "mcp", fake)
+    monkeypatch.setattr(ext_fire, "_sleep", lambda seconds: sleeps.append(seconds))
+
+    result = ext_fire.fetch_perimeters(watch.normalize_area({"bbox": AREA}))
+    assert result["status"] == "ERROR"
+    assert result["code"] == "fires_failed"
+    assert result["fix"]
+    assert len(fake.calls) == 1
+    assert sleeps == []
+
+
+def test_annotate_fire_fetch_failure_keeps_code_and_fix(monkeypatch):
+    fake = FlakyMcp(5, FIXTURE)
+    sleeps = []
+    monkeypatch.setattr(ext_fire, "mcp", fake)
+    monkeypatch.setattr(ext_fire, "_sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(ext_fire, "live", lambda name, args, session_id=None: {"ok": True})
+
+    annotate_op = ext_ops.find("godseye_annotate", "fire_perimeters")
+    out = json.loads(annotate_op.handler({"area": {"bbox": AREA}}, session_id="s"))
+    assert out["ok"] is False
+    assert out["code"] == "fires_failed"
+    assert out["fix"]
+    assert len(fake.calls) == 2
+
+
 def test_watch_and_annotate_ops_are_registered(tmp_path, monkeypatch):
     monkeypatch.setattr(ext_fire, "mcp", FakeMcp(FIXTURE))
     st = make_store(tmp_path)

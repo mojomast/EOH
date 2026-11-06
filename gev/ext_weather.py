@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from . import areas, errors
 from .ext_ops import ExtOp
@@ -9,6 +10,9 @@ from .ext_ops import ExtOp
 _WEATHER_LAYERS = ("wind", "weather-radar", "weather-satellite", "weather-cyclones")
 _PRESETS = {"weather": _WEATHER_LAYERS}
 _BASEMAPS = {"esri": "esri-imagery"}
+_LIVE_RETRY_CODES = {"pane_busy", "timeout"}
+_LIVE_RETRIES = 1
+_RETRY_DELAY_S = 0.15
 
 
 def live_call(name: str, args: dict | None = None, session_id: str | None = None,
@@ -27,6 +31,52 @@ def _fail(error: str, message: str, fix: str | None = None) -> str:
     if fix:
         payload["fix"] = fix
     return json.dumps(errors.annotate(payload, tool="godseye_layers"), ensure_ascii=False)
+
+
+def _live_error(result) -> tuple[str | None, dict]:
+    """The pane error inside a live result, or ``(None, {})`` when it succeeded.
+
+    A relay/pane answer may carry ``ok:false`` at the top level or wrap the pane
+    payload under ``result``; both count as failure. An ``error`` code without an
+    ``ok`` key is also a failure (do not fall through and enable the remaining
+    layers blind).
+    """
+    if not isinstance(result, dict):
+        return "tool_failed", {"message": "The pane returned no result."}
+    sources = [result]
+    nested = result.get("result")
+    if isinstance(nested, dict) and nested is not result:
+        sources.append(nested)
+    for source in sources:
+        code = source.get("code") or source.get("error")
+        if source.get("ok") is False or (code and source.get("ok") is not True):
+            return str(code or "tool_failed"), source
+    return None, {}
+
+
+def _live_checked(name: str, args: dict, session_id, label: str) -> tuple[dict, dict | None]:
+    """Run one live call with at most one retry for a transient pane state.
+
+    ``no_pane``/``pane_lost``/``relay_unavailable`` are not retried: no amount of
+    waiting can enable a layer with no pane. ``pane_busy`` and ``timeout`` get one
+    short retry, then the preset stops and reports the structured failure.
+    """
+    result: dict = {}
+    source: dict = {}
+    for attempt in range(_LIVE_RETRIES + 1):
+        result = live_call(name, dict(args), session_id=session_id)
+        source_result = result if isinstance(result, dict) else {}
+        code, source = _live_error(result)
+        if code is None:
+            return source_result, None
+        if code in _LIVE_RETRY_CODES and attempt < _LIVE_RETRIES:
+            if _RETRY_DELAY_S:
+                time.sleep(_RETRY_DELAY_S)
+            continue
+        source = dict(source)
+        source.setdefault("message", f"Could not {label}.")
+        return source_result, {"code": code, **source}
+    return result if isinstance(result, dict) else {}, {"code": "tool_failed", **source}
 
 
 def _number(value):
@@ -247,18 +297,21 @@ def weather_preset(args: dict, **kw) -> str:
     session_id = kw.get("session_id")
     layers = list(_PRESETS[preset])
     for layer in layers:
-        result = live_call("set_layer_visibility", {"layerId": layer, "enabled": True},
-                           session_id=session_id)
-        if isinstance(result, dict) and result.get("ok") is False:
-            return _fail(str(result.get("error") or "tool_failed"),
-                         str(result.get("message") or f"Could not enable {layer}."),
-                         result.get("fix"))
+        _result, failure = _live_checked(
+            "set_layer_visibility", {"layerId": layer, "enabled": True}, session_id,
+            f"enable the {layer} layer")
+        if failure:
+            return _fail(str(failure.get("code") or "tool_failed"),
+                         str(failure.get("message") or f"Could not enable {layer}."),
+                         failure.get("fix"))
     if basemap is not None:
-        result = live_call("set_map_stack", {"stack": _BASEMAPS[basemap]}, session_id=session_id)
-        if isinstance(result, dict) and result.get("ok") is False:
-            return _fail(str(result.get("error") or "tool_failed"),
-                         str(result.get("message") or f"Could not switch the map stack to {basemap}."),
-                         result.get("fix"))
+        _result, failure = _live_checked(
+            "set_map_stack", {"stack": _BASEMAPS[basemap]}, session_id,
+            f"switch the map stack to {basemap}")
+        if failure:
+            return _fail(str(failure.get("code") or "tool_failed"),
+                         str(failure.get("message") or f"Could not switch the map stack to {basemap}."),
+                         failure.get("fix"))
     try:
         result = mcp_call("get_cyclones", area)
     except Exception as exc:

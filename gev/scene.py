@@ -37,8 +37,22 @@ def _public_annotation(ann: dict, full: bool) -> dict:
 
 DEFAULT_KEY = "default"
 MAX_ITEMS = 96
+MAX_LAYERS = 16
 POINT_TYPES = {"pin", "highlight", "label", "area", "card"}
 _LAYER_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
+
+def _disabled_layers(sc: dict | None) -> list[str]:
+    """Layer ids the user turned off, kept so a restore never silently turns them back on."""
+    raw = (sc or {}).get("disabled_layers")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for value in raw:
+        text = str(value or "")[:64]
+        if text and _LAYER_ID.fullmatch(text) and text not in out:
+            out.append(text)
+    return out
 
 
 def stored_shapes(raw) -> dict:
@@ -336,9 +350,13 @@ class SceneStore:
         if not lid:
             return False
         layers = [x for x in (sc.get("layers") or []) if x != lid]
+        disabled = [x for x in _disabled_layers(sc) if x != lid]
         if (args or {}).get("enabled") is not False:
             layers.append(lid)
-        sc["layers"] = layers[:16]
+        else:
+            disabled.append(lid)
+        sc["layers"] = layers[:MAX_LAYERS]
+        sc["disabled_layers"] = disabled[:MAX_LAYERS]
         return True
 
     @classmethod
@@ -346,21 +364,32 @@ class SceneStore:
         raw = result.get("layers") if isinstance(result, dict) else None
         if not isinstance(raw, list) or not raw:
             return False
+        old_layers = [x for x in (sc.get("layers") or []) if cls._layer_id(x)]
+        old_disabled = _disabled_layers(sc)
+        disabled = list(old_disabled)
         ids: list[str] = []
         for layer in raw:
             lid = None
             if isinstance(layer, str):
                 lid = cls._layer_id(layer)
-            elif isinstance(layer, dict) and layer.get("enabled") is not False and layer.get("visible") is not False:
+            elif isinstance(layer, dict):
                 lid = cls._layer_id(layer.get("id") or layer.get("layerId"))
-            if lid and lid not in ids:
+                if lid and (layer.get("enabled") is False or layer.get("visible") is False):
+                    if lid not in disabled:
+                        disabled.append(lid)
+                    continue
+            if lid and lid not in disabled and lid not in ids:
                 ids.append(lid)
-            if len(ids) >= 16:
+            if len(ids) >= MAX_LAYERS:
                 break
-        if not ids:
-            return False
         sc["layers"] = ids
-        return True
+        sc["disabled_layers"] = disabled[:MAX_LAYERS]
+        return ids != old_layers or disabled != old_disabled
+
+    def disabled_layers(self, key: str | None) -> list[str]:
+        """Layer ids the user turned off in this scene (never created by a read)."""
+        with self.lock:
+            return _disabled_layers(self.scenes.get(str(key or DEFAULT_KEY)))
 
     # -- queries -------------------------------------------------------------------------------
     def list(self, key: str | None, full: bool = False) -> dict:
@@ -369,6 +398,8 @@ class SceneStore:
             from .timeline import public_timeline
             out = {"ok": True, "scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "drawer": sc.get("drawer"),
                    "filters": sc.get("filters"), "timeline": public_timeline(sc.get("timeline")),
+                   "layers": list(sc.get("layers") or []),
+                   "disabled_layers": _disabled_layers(sc),
                    "annotations": [_public_annotation(a, full) for a in sc["annotations"]]}
             if isinstance(sc.get("motion"), dict):
                 motion = sc["motion"]
@@ -447,6 +478,7 @@ class SceneStore:
             sc = self.scene(key)
             out = {"scene": key or DEFAULT_KEY, "camera": sc.get("camera"), "caption": sc.get("caption"),
                    "drawer": sc.get("drawer"), "timeline": sc.get("timeline"), "updated": sc.get("updated"),
+                   "layers": list(sc.get("layers") or []), "disabled_layers": _disabled_layers(sc),
                    "annotations": [{"id": a["id"], "paneId": a.get("paneId"), "spec": dict(a.get("spec") or {})}
                                    for a in sc.get("annotations") or []]}
             if isinstance(sc.get("motion"), dict):
@@ -471,6 +503,8 @@ class SceneStore:
             sc["caption"] = data.get("caption")
             sc["drawer"] = data.get("drawer")
             sc["shapes"] = stored_shapes(data.get("shapes"))
+            disabled = data.get("disabled_layers", data.get("disabled"))
+            sc["disabled_layers"] = _disabled_layers({"disabled_layers": disabled}) if isinstance(disabled, list) else []
             timeline = data.get("timeline") if isinstance(data.get("timeline"), dict) else None
             if timeline:
                 from .timeline import clean_state
@@ -482,8 +516,13 @@ class SceneStore:
             self._save()
             return {"ok": True, "scene": key or DEFAULT_KEY, "annotations": len(sc["annotations"])}
 
-    def restore_commands(self, key: str | None, redraw_only: bool = False, clear: bool = False) -> list[tuple[str, dict]]:
-        """Commands that rebuild the scene in a fresh pane, in order."""
+    def restore_commands(self, key: str | None, redraw_only: bool = False, clear: bool = False,
+                         requested_layers: list[str] | None = None) -> list[tuple[str, dict]]:
+        """Commands that rebuild the scene in a fresh pane, in order.
+
+        A layer the user turned off is never enabled here unless ``requested_layers``
+        names it for this call (an explicit user/op request).
+        """
         with self.lock:
             sc = self.scene(key)
             cmds: list[tuple[str, dict]] = []
@@ -505,9 +544,14 @@ class SceneStore:
                         pose["rangeM"] = cam.get("heightM")
                     cmds.append(("hermes_frame", pose))
             if not redraw_only:
-                for lid in sc.get("layers") or []:
-                    if self._layer_id(lid):
-                        cmds.append(("set_layer_visibility", {"layerId": lid, "enabled": True}))
+                disabled = _disabled_layers(sc)
+                requested = [lid for lid in (requested_layers or []) if self._layer_id(lid)]
+                layers = [lid for lid in (sc.get("layers") or []) if self._layer_id(lid)]
+                layers.extend(lid for lid in requested if lid not in layers)
+                for lid in layers:
+                    if lid in disabled and lid not in requested:
+                        continue
+                    cmds.append(("set_layer_visibility", {"layerId": lid, "enabled": True}))
             specs = [a["spec"] for a in sc["annotations"]
                      if (a.get("spec") or {}).get("visible") is not False]
             if redraw_only or clear:

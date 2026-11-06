@@ -2,7 +2,22 @@
 (() => {
   const MIGRATION = 'The bottom pin-category strip was retired. Category, rating, and open-now filters are in the Overlays sidebar. godseye_annotate op=filter still sets them.'
 
+  function open(params) {
+    const detail = { open: true }
+    if (params && typeof params === 'object' && !Array.isArray(params)) {
+      for (const key of ['action', 'paneId', 'session']) {
+        if (params[key] != null) detail[key] = params[key]
+      }
+    }
+    try { window.parent.postMessage({ type: 'hermes-gev:overlays', detail }, '*') } catch {}
+    return { ok: true, action: 'open', sidebar: 'overlays', open: true }
+  }
+
   function apply(items) {
+    if (items && !Array.isArray(items) && typeof items === 'object') {
+      const action = String(items.action || '').toLowerCase()
+      if (action === 'open' || action === 'expand' || action === 'sidebar') return open(items)
+    }
     const list = Array.isArray(items) ? items : (items && Array.isArray(items.items) ? items.items : [])
     let applied = 0
     let needsRedraw = false
@@ -61,5 +76,5 @@
     const timer = setInterval(() => { if (document.body) mount() }, 1000)
     if (timer && typeof timer.unref === 'function') timer.unref()
   }
-  window.__hermesOverlays = { apply, mount, migration: MIGRATION }
+  window.__hermesOverlays = { apply, open, mount, migration: MIGRATION }
 })()

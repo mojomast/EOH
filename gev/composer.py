@@ -172,7 +172,52 @@ def _coords(place: str):
     return PLACES.get((place or "").strip().lower())
 
 
-def brief_and_show(args: dict, session_id: str | None = None, live=None, mcp=None) -> dict:
+def _scene_source(scenes=None):
+    if scenes is not None:
+        return scenes
+    try:
+        return _relay_scenes()
+    except Exception:
+        return None
+
+
+def stored_disabled_layers(session_id: str | None = None, scenes=None) -> set[str]:
+    """Layer ids the user turned off for this session's scene (empty when unknown)."""
+    store = _scene_source(scenes)
+    if store is None:
+        return set()
+    key = str(session_id or "default")
+    try:
+        if hasattr(store, "disabled_layers"):
+            return {str(lid) for lid in store.disabled_layers(key) if lid}
+        data = store.scene(key) if hasattr(store, "scene") else {}
+        raw = data.get("disabled_layers") if isinstance(data, dict) else []
+        return {str(lid) for lid in raw or [] if lid}
+    except Exception:
+        return set()
+
+
+def layers_to_enable(layers, disabled=None, requested=None) -> list[str]:
+    """Filter layers through the stored preference. Only ``requested`` may turn a disabled one on."""
+    disabled = {str(lid) for lid in (disabled or set()) if lid}
+    requested = [str(lid) for lid in (requested or []) if lid]
+    out: list[str] = []
+    for layer in layers or []:
+        if isinstance(layer, dict):
+            layer = layer.get("id") or layer.get("layerId")
+        lid = str(layer or "")
+        if not lid or lid in out:
+            continue
+        if lid in disabled and lid not in requested:
+            continue
+        out.append(lid)
+    for lid in requested:
+        if lid not in out:
+            out.append(lid)
+    return out
+
+
+def brief_and_show(args: dict, session_id: str | None = None, live=None, mcp=None, scenes=None) -> dict:
     live, mcp = live or live_call, mcp or mcp_call
     place = str(args.get("place") or "").strip()
     question = str(args.get("question") or "")
@@ -246,10 +291,16 @@ def brief_and_show(args: dict, session_id: str | None = None, live=None, mcp=Non
                 return bool(r.get("ok"))
             if not fly.get("ok"):
                 note("fly", fly)
-            for layer in view.get("layers") or []:
+            disabled = stored_disabled_layers(session_id, scenes)
+            requested = args.get("layers") or args.get("enable_layers") or []
+            for layer in layers_to_enable(view.get("layers") or [], disabled, requested):
                 r = live("set_layer_visibility", {"layerId": layer, "enabled": True}, session_id)
                 if note(f"layer {layer}", r):
                     shown["layers"].append(layer)
+            skipped = [lid for lid in view.get("layers") or []
+                       if isinstance(lid, str) and lid in disabled and lid not in requested]
+            if skipped:
+                shown["layers_skipped"] = skipped
             if hits:
                 details = [d if isinstance(d, dict) else {} for d in (args.get("pin_details") or [])]
                 intent = args.get("intent") or args.get("context") or question or place
@@ -275,16 +326,19 @@ def _structured_live(res: dict) -> dict:
 
 
 # -- home view -----------------------------------------------------------------------------------
-def view_from_state(state: dict) -> dict:
+def view_from_state(state: dict, disabled=None) -> dict:
     cam = state.get("camera") or {}
-    layers = [l.get("id") for l in state.get("layers") or [] if isinstance(l, dict) and l.get("enabled") is not False and l.get("id")]
+    disabled = {str(lid) for lid in (disabled or set()) if lid}
+    layers = [l.get("id") for l in state.get("layers") or []
+              if isinstance(l, dict) and l.get("enabled") is not False and l.get("id")
+              and l.get("id") not in disabled]
     return {"lat": cam.get("latitude"), "lon": cam.get("longitude"), "altitude_m": cam.get("heightM"),
             "heading": cam.get("heading") if isinstance(cam.get("heading"), (int, float)) else cam.get("headingDeg"),
             "pitch": cam.get("pitch") if isinstance(cam.get("pitch"), (int, float)) else cam.get("pitchDeg"),
             "style": state.get("style"), "layers": layers}
 
 
-def go_home(session_id: str | None = None, live=None) -> dict:
+def go_home(session_id: str | None = None, live=None, scenes=None, requested_layers=None) -> dict:
     live = live or live_call
     v = home.get_or_default()
     fly = live("fly_to_location", {"latitude": v["lat"], "longitude": v["lon"],
@@ -292,9 +346,14 @@ def go_home(session_id: str | None = None, live=None) -> dict:
     if not fly.get("ok"):
         return {"ok": False, "home": v, "error": fly.get("error"), "message": fly.get("message")}
     live("set_visual_style", {"style": v["style"]}, session_id)
-    for layer in v["layers"]:
+    disabled = stored_disabled_layers(session_id, scenes)
+    for layer in layers_to_enable(v["layers"], disabled, requested_layers):
         live("set_layer_visibility", {"layerId": layer, "enabled": True}, session_id)
-    return {"ok": True, "home": v, "pane": fly.get("pane")}
+    out = {"ok": True, "home": v, "pane": fly.get("pane")}
+    skipped = [lid for lid in v["layers"] if lid in disabled and lid not in (requested_layers or [])]
+    if skipped:
+        out["layers_skipped"] = skipped
+    return out
 
 
 def set_home(args: dict, session_id: str | None = None, live=None) -> dict:

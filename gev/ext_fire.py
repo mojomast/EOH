@@ -25,6 +25,57 @@ _UPDATED_KEYS = ("ModifiedDate", "modifiedTime", "modified_date", "updatedTime",
 _LIST_KEYS = ("perimeters", "fires", "items", "results", "data", "features")
 _DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 
+DEFAULT_CENTER_RADIUS_KM = 40.0
+_RETRY_ATTEMPTS = 2
+_RETRY_BACKOFF_S = 0.5
+_TRANSIENT_HINTS = (
+    "timeout", "timed out", "timedout", "etimedout", "temporar", "unavailable",
+    "rate limit", "too many requests", "connection reset", "connection aborted",
+    "connection refused", "econnreset", "econnrefused", "network", "429", "502", "503", "504",
+)
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _default_center_radius(area):
+    """Default a center area's missing radius_km instead of failing BAD_AREA."""
+    if not isinstance(area, dict):
+        return area
+    if area.get("view") or area.get("bbox") is not None or area.get("polygon") is not None:
+        return area
+    lat = area.get("lat")
+    if lat is None:
+        lat = area.get("latitude")
+    lon = area.get("lon")
+    if lon is None:
+        lon = area.get("longitude")
+    if lat is None or lon is None:
+        return area
+    if area.get("radius_km") is not None:
+        return area
+    return {**area, "radius_km": DEFAULT_CENTER_RADIUS_KM}
+
+
+def _is_transient(exc: Exception | None = None, message=None) -> bool:
+    if exc is not None:
+        if isinstance(exc, (TimeoutError, ConnectionError)):
+            return True
+        text = f"{type(exc).__name__}: {exc}"
+    else:
+        text = str(message or "")
+    lowered = text.lower()
+    return any(hint in lowered for hint in _TRANSIENT_HINTS)
+
+
+def _fire_error(error, retried: bool = False) -> dict:
+    fix = "Retry godseye_annotate or godseye_watch op=fire_perimeters, or narrow the area."
+    if retried:
+        fix += " The transient failure was retried once."
+    return {"status": "ERROR", "items": [], "error": str(error)[:200],
+            "code": "fires_failed", "fix": fix}
+
 
 def _call_mcp(name: str, args: dict) -> dict:
     if mcp is not None:
@@ -321,16 +372,28 @@ def fetch_perimeters(area: dict, conditions: dict | None = None) -> dict:
     grow_pct = 10.0 if grow_pct is None else grow_pct
     previous = cond.get("_previous_acres")
     previous = previous if isinstance(previous, dict) else {}
-    try:
-        result = _call_mcp("get_fire_perimeters", {"area": {"bbox": [w, s, e, n]}, "limit": limit})
-    except Exception as exc:
-        return {"status": "ERROR", "items": [],
-                "error": f"get_fire_perimeters failed: {type(exc).__name__}: {str(exc)[:160]}"}
-    data = _payload(result)
-    if isinstance(data.get("ok"), bool) and not data["ok"]:
-        return {"status": "ERROR", "items": [], "error": str(data.get("error") or "get_fire_perimeters failed")[:200]}
-    rows = _rows(data)
-    return {"status": "OK", "items": [_item(row, grow_pct, previous) for row in rows]}
+    last_error = "get_fire_perimeters failed"
+    for attempt in range(_RETRY_ATTEMPTS):
+        retry_left = attempt + 1 < _RETRY_ATTEMPTS
+        try:
+            result = _call_mcp("get_fire_perimeters", {"area": {"bbox": [w, s, e, n]}, "limit": limit})
+        except Exception as exc:
+            last_error = f"get_fire_perimeters failed: {type(exc).__name__}: {str(exc)[:160]}"
+            if retry_left and _is_transient(exc=exc):
+                _sleep(_RETRY_BACKOFF_S)
+                continue
+            return _fire_error(last_error, retried=attempt > 0)
+        data = _payload(result)
+        if isinstance(data.get("ok"), bool) and not data["ok"]:
+            detail = " ".join(str(data.get(key) or "") for key in ("code", "error", "message"))
+            last_error = str(data.get("error") or data.get("message") or last_error)[:200]
+            if retry_left and _is_transient(message=detail):
+                _sleep(_RETRY_BACKOFF_S)
+                continue
+            return _fire_error(last_error, retried=attempt > 0)
+        rows = _rows(data)
+        return {"status": "OK", "items": [_item(row, grow_pct, previous) for row in rows]}
+    return _fire_error(last_error, retried=_RETRY_ATTEMPTS > 1)
 
 
 def _view_fn(session_id):
@@ -349,7 +412,7 @@ def watch_fire_perimeters(args: dict, **kw) -> str:
         conditions["fire_perimeters"]["limit"] = int(limit)
     store = watch.store()
     out = store.create({
-        "area": args.get("area"),
+        "area": _default_center_radius(args.get("area")),
         "feeds": ["fire_perimeters"],
         "name": args.get("name") or "Fire perimeters",
         "conditions": conditions,
@@ -366,7 +429,7 @@ def watch_fire_perimeters(args: dict, **kw) -> str:
 def annotate_fire_perimeters(args: dict, **kw) -> str:
     from . import watch
     try:
-        area = watch.normalize_area(args.get("area") or {})
+        area = watch.normalize_area(_default_center_radius(args.get("area") or {}))
     except ValueError as exc:
         return json.dumps({"ok": False, "error": "BAD_AREA", "message": str(exc)}, ensure_ascii=False)
     conditions = {}
@@ -375,8 +438,11 @@ def annotate_fire_perimeters(args: dict, **kw) -> str:
         conditions["limit"] = int(limit)
     result = fetch_perimeters(area, conditions)
     if result.get("status") != "OK":
-        return json.dumps({"ok": False, "error": result.get("error") or "fire perimeters unavailable"},
-                          ensure_ascii=False)
+        body = {"ok": False, "error": result.get("error") or "fire perimeters unavailable",
+                "code": result.get("code") or "fires_failed"}
+        if result.get("fix"):
+            body["fix"] = result["fix"]
+        return json.dumps(body, ensure_ascii=False)
     annotations = [perimeter_drawer(item) for item in result["items"]
                    if item.get("lat") is not None and item.get("lon") is not None]
     intent = args.get("intent") or "WFIGS fire perimeters"
@@ -393,13 +459,14 @@ def annotate_fire_perimeters(args: dict, **kw) -> str:
 
 _AREA = {
     "type": "object",
-    "description": "Place name, bbox [south, west, north, east], lat/lon with radius_km, or view=true.",
+    "description": ("Place name, bbox [south, west, north, east], lat/lon with radius_km "
+                    "(default 40 km when omitted), or view=true."),
     "properties": {
         "place": {"type": "string"},
         "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
         "lat": {"type": "number"},
         "lon": {"type": "number"},
-        "radius_km": {"type": "number"},
+        "radius_km": {"type": "number", "description": "Center radius in kilometers. Default 40."},
         "view": {"type": "boolean"},
     },
     "required": True,
@@ -425,7 +492,9 @@ ANNOTATE_PROPS = {
 
 EXT_OPS = [
     ExtOp(tool="godseye_watch", op="fire_perimeters", handler=watch_fire_perimeters,
-          props=WATCH_PROPS, blurb="Watch WFIGS fire perimeters; alert on new or grown fires."),
+          props=WATCH_PROPS, blurb="Watch WFIGS fire perimeters; alert on new or grown fires. "
+          "Center areas without radius_km default to 40 km."),
     ExtOp(tool="godseye_annotate", op="fire_perimeters", handler=annotate_fire_perimeters,
-          props=ANNOTATE_PROPS, blurb="Pin WFIGS fire perimeters with acres and containment drawers."),
+          props=ANNOTATE_PROPS, blurb="Pin WFIGS fire perimeters with acres and containment drawers. "
+          "Center areas without radius_km default to 40 km."),
 ]

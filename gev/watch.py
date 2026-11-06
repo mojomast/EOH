@@ -37,6 +37,26 @@ MAX_PINS_PER_RUN = 12
 COLORS = {"earthquakes": "amber", "fires": "red", "flights": "blue", "ships": "cyan", "pois": "green",
           "fire_perimeters": "red"}
 TICK_S = 15.0
+FEED_FIX = {
+    "earthquakes": "USGS did not answer. Retry godseye_watch op=list check=<id> once; if it still fails, wait a minute and retry.",
+    "fires": "FIRMS is down. Check FIRMS_MAP_KEY and retry the watch once.",
+    "flights": "OpenSky is rate-limited or down and the adsb.lol fallback also failed. Retry the watch once in about a minute.",
+    "ships": "AIS is down or timed out. Check AISSTREAM_API_KEY and that the app's AIS stream is connected, then retry the watch once.",
+    "pois": "Place search is unavailable. Retry the watch once; if it still fails, use a smaller area or godseye_query op=find_places.",
+    "fire_perimeters": "Fire perimeter feed is unavailable. Retry the watch once; if it still fails, use the fire layer in the pane.",
+}
+FEED_FIX_DEFAULT = "Retry the watch once. If it still fails, call godseye_admin op=doctor before changing the area or feeds."
+
+
+def _status_for_message(text) -> str:
+    low = str(text or "").lower()
+    return "TIMEOUT" if "timeout" in low or "timed out" in low or "time out" in low else "ERROR"
+
+
+def _feed_failure(feed: str, error, status: str | None = None, fix: str | None = None, **extra) -> dict:
+    status = status or _status_for_message(error)
+    return {"status": status, "items": [], "state": status.lower(), "error": str(error)[:300],
+            "fix": fix or FEED_FIX.get(feed, FEED_FIX_DEFAULT), **extra}
 
 
 def default_path() -> Path:
@@ -246,44 +266,124 @@ def feed_fires(area: dict, cond: dict) -> dict:
     return {"status": "OK", "items": items}
 
 
-def feed_flights(area: dict, cond: dict) -> dict:
-    s, w, n, e = area["bbox"]
-    code, body = _get(f"https://opensky-network.org/api/states/all?lamin={s}&lomin={w}&lamax={n}&lomax={e}")
-    if code != 200:
-        return {"status": "ERROR", "items": [], "error": f"OpenSky HTTP {code} (anonymous access is rate-limited)"}
-    prefix = [str(p).upper() for p in (cond.get("callsign_prefix") or [])] if isinstance(cond.get("callsign_prefix"), list) \
-        else ([str(cond["callsign_prefix"]).upper()] if cond.get("callsign_prefix") else [])
+def _flight_prefix(cond: dict) -> list[str]:
+    raw = cond.get("callsign_prefix")
+    if isinstance(raw, list):
+        return [str(p).upper() for p in raw]
+    return [str(raw).upper()] if raw else []
+
+
+def _keep_flight(cond: dict, cs: str, alt, ground, prefix: list[str]) -> bool:
+    if ground and cond.get("airborne_only", True):
+        return False
+    if prefix and not any(cs.upper().startswith(p) for p in prefix):
+        return False
     min_alt, max_alt = cond.get("min_altitude_m"), cond.get("max_altitude_m")
+    if min_alt is not None and (alt is None or alt < float(min_alt)):
+        return False
+    if max_alt is not None and (alt is None or alt > float(max_alt)):
+        return False
+    return True
+
+
+def _opensky_items(body: str, cond: dict) -> list[dict]:
+    prefix = _flight_prefix(cond)
     items = []
     for st in json.loads(body).get("states") or []:
-        icao, cs, la, lo, alt, ground = st[0], (st[1] or "").strip(), st[6], st[5], st[7], st[8]
-        if ground and cond.get("airborne_only", True):
+        try:
+            icao, cs, la, lo, alt, ground = st[0], (st[1] or "").strip(), st[6], st[5], st[7], st[8]
+        except (IndexError, TypeError):
             continue
-        if prefix and not any(cs.upper().startswith(p) for p in prefix):
-            continue
-        if min_alt is not None and (alt is None or alt < float(min_alt)):
-            continue
-        if max_alt is not None and (alt is None or alt > float(max_alt)):
+        if not _keep_flight(cond, cs, alt, ground, prefix):
             continue
         items.append({"id": f"icao:{icao}", "lat": la, "lon": lo, "title": f"Flight {cs or icao}",
                       "description_md": f"**Callsign:** {cs or '?'}\n**ICAO24:** `{icao}`\n**Origin:** {st[2]}\n"
                                         f"**Altitude:** {alt if alt is not None else '?'} m\n\nSource: OpenSky Network",
                       "links": [{"label": "ADS-B Exchange", "url": f"https://globe.adsbexchange.com/?icao={icao}"}]})
-    return {"status": "OK", "items": items}
+    return items
+
+
+def _adsb_lol_flights(area: dict, cond: dict) -> dict:
+    """Keyless fallback when OpenSky fails. Returns {ok, items} or {ok:false, error}."""
+    s, w, n, e = area["bbox"]
+    lat, lon = (s + n) / 2.0, (w + e) / 2.0
+    radius_km = max(haversine_km(lat, lon, a, b) for a, b in ((s, w), (s, e), (n, w), (n, e)))
+    radius_nm = int(max(1, min(250, math.ceil(radius_km / 1.852))))
+    code, body = _get(f"https://api.adsb.lol/v2/point/{lat:.4f}/{lon:.4f}/{radius_nm}")
+    if code != 200:
+        return {"ok": False, "error": f"adsb.lol HTTP {code}"}
+    try:
+        data = json.loads(body)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "adsb.lol returned invalid JSON"}
+    rows = data.get("ac") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return {"ok": False, "error": "adsb.lol returned no aircraft list"}
+    prefix = _flight_prefix(cond)
+    items = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        icao = str(r.get("hex") or "").strip()
+        la, lo = r.get("lat"), r.get("lon")
+        if not icao or not isinstance(la, (int, float)) or not isinstance(lo, (int, float)):
+            continue
+        cs = str(r.get("flight") or r.get("callsign") or "").strip()
+        raw_alt = r.get("alt_baro")
+        ground = raw_alt == "ground" or bool(r.get("ground"))
+        alt = round(float(raw_alt) * 0.3048) if isinstance(raw_alt, (int, float)) and not isinstance(raw_alt, bool) else None
+        if not _keep_flight(cond, cs, alt, ground, prefix):
+            continue
+        items.append({"id": f"icao:{icao}", "lat": la, "lon": lo, "title": f"Flight {cs or icao}",
+                      "description_md": f"**Callsign:** {cs or '?'}\n**ICAO24:** `{icao}`\n"
+                                        f"**Altitude:** {alt if alt is not None else '?'} m\n\nSource: adsb.lol",
+                      "links": [{"label": "ADS-B Exchange", "url": f"https://globe.adsbexchange.com/?icao={icao}"}]})
+    return {"ok": True, "items": items}
+
+
+def feed_flights(area: dict, cond: dict) -> dict:
+    s, w, n, e = area["bbox"]
+    opensky_error = None
+    try:
+        code, body = _get(f"https://opensky-network.org/api/states/all?lamin={s}&lomin={w}&lamax={n}&lomax={e}")
+    except Exception as exc:
+        code, body = None, ""
+        opensky_error = f"OpenSky request failed ({type(exc).__name__}: {str(exc)[:120]})"
+    if code == 200:
+        try:
+            return {"status": "OK", "items": _opensky_items(body, cond)}
+        except (TypeError, ValueError):
+            opensky_error = "OpenSky returned invalid JSON"
+    elif opensky_error is None:
+        opensky_error = (f"OpenSky HTTP {code} (anonymous access is rate-limited)"
+                         if code is not None else "OpenSky unreachable")
+    fallback = _adsb_lol_flights(area, cond)
+    if fallback.get("ok"):
+        return {"status": "OK", "items": fallback["items"], "fallback": "adsb.lol",
+                "note": f"{opensky_error}; flights came from adsb.lol."}
+    error = f"{opensky_error}; adsb.lol fallback failed ({fallback.get('error')})"
+    return _feed_failure("flights", error, fallback={"provider": "adsb.lol", "ok": False,
+                                                     "error": fallback.get("error")})
 
 
 def feed_ships(area: dict, cond: dict) -> dict:
     if not key_value("AISSTREAM_API_KEY"):
-        return {"status": "KEY_MISSING", "items": [], "key": "AISSTREAM_API_KEY",
-                "error": "AISSTREAM_API_KEY is not set (env or ~/.config/gods-eye-view.env); ships are not checked."}
+        return {"status": "KEY_MISSING", "items": [], "state": "key_missing", "key": "AISSTREAM_API_KEY",
+                "error": "AISSTREAM_API_KEY is not set in the provider env file; ships are not checked.",
+                "fix": "Add AISSTREAM_API_KEY to the provider env file (mode 0600) and restart the app. Never print the value."}
     s, w, n, e = area["bbox"]
     try:  # the app holds the AIS stream; ask it (needs the God's Eye View MCP server)
         from . import composer
         res = composer.mcp_call("vessels_in_area", {"area": {"bbox": [w, s, e, n]}, "limit": 200,
                                                      **({"type": cond["type"]} if cond.get("type") else {})})
     except Exception as exc:
-        return {"status": "ERROR", "items": [], "error": f"vessels_in_area failed: {type(exc).__name__}: {str(exc)[:160]}"}
+        return _feed_failure("ships", f"AIS vessels_in_area failed ({type(exc).__name__}: {str(exc)[:160]})")
     data = (res or {}).get("structuredContent") or {}
+    if isinstance(res, dict) and not data and (res.get("isError") or res.get("error")):
+        text = str(res.get("error") or "")
+        if not text:
+            text = " ".join(str(c.get("text") or "") for c in (res.get("content") or []) if isinstance(c, dict))
+        return _feed_failure("ships", f"AIS vessels_in_area failed: {text or 'no structured content'}"[:240])
     rows = next((v for v in data.values() if isinstance(v, list) and v and isinstance(v[0], dict)), []) if isinstance(data, dict) else []
     items = []
     for r in rows:
@@ -504,7 +604,7 @@ class WatchStore:
             try:
                 res = self.fetchers[feed](w["area"], cond)
             except Exception as exc:
-                res = {"status": "ERROR", "items": [], "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+                res = _feed_failure(feed, f"{type(exc).__name__}: {str(exc)[:200]}")
             items = [i for i in res.get("items", []) if contains(w["area"], i.get("lat"), i.get("lon"))]
             try:
                 grow_pct = float(cond.get("grow_pct", 10))
@@ -540,10 +640,15 @@ class WatchStore:
                 w["seen_meta"][feed] = {key: value for key, value in meta.items() if key in seen_set}
             baseline = first and w.get("baseline", True)
             grown = sum(1 for i in fresh if i.get("changed"))
-            report[feed] = {"status": res.get("status", "OK"), "in_area": len(items),
-                            "new": 0 if baseline else len(fresh), **({"baselined": len(fresh)} if baseline else {}),
-                            **({"grown": grown} if grown and not baseline else {}),
-                            **({"error": res["error"]} if res.get("error") else {}), **({"key": res["key"]} if res.get("key") else {})}
+            entry = {"status": res.get("status", "OK"), "in_area": len(items),
+                     "new": 0 if baseline else len(fresh), **({"baselined": len(fresh)} if baseline else {}),
+                     **({"grown": grown} if grown and not baseline else {})}
+            for field in ("state", "error", "key", "fallback", "note", "fix"):
+                if res.get(field) not in (None, ""):
+                    entry[field] = res[field]
+            if entry["status"] != "OK" and not entry.get("fix"):
+                entry["fix"] = FEED_FIX.get(feed, FEED_FIX_DEFAULT)
+            report[feed] = entry
             if not baseline:
                 new_items += [{**i, "feed": feed} for i in fresh]
         now = self.clock()
@@ -564,6 +669,12 @@ class WatchStore:
                 del self.data["alerts"][:-MAX_ALERTS_QUEUED]
             self._save()
         out = {"ok": True, "watch": wid, "feeds": report, "new": len(new_items), "baseline_run": first and w.get("baseline", True)}
+        fallbacks = {feed: row["fallback"] for feed, row in report.items() if row.get("fallback")}
+        if fallbacks:
+            out["fallback"] = fallbacks
+        notes = {feed: row["note"] for feed, row in report.items() if row.get("note")}
+        if notes:
+            out["notes"] = notes
         if alert:
             out["alert"] = alert["id"]
             if w.get("pin", True) and self.pin:

@@ -571,6 +571,34 @@ class Book:
         pane = self._redraw(structural)
         return {"ok": True, "action": "update", "updated": changed, "pane": pane}
 
+    def open_sidebar(self) -> dict:
+        """Ask the pane to show the Overlays sidebar. ``show`` with no id does the same."""
+        relay = self.relay
+        if relay is None or not relay.open_panes():
+            return _fail(
+                "no_pane",
+                "The Overlays sidebar needs an open Eye Of Hermes (EOH) pane.",
+                "Open the Eye Of Hermes pane, then call godseye_annotate op=overlays action=show with no id.",
+                action="open",
+            )
+        result = relay.submit(
+            "hermes_overlay", {"action": "open"}, session_id=self.session_id, record=False, wait=4,
+        )
+        ok = bool(isinstance(result, dict) and result.get("ok"))
+        if not ok:
+            return _fail(
+                "pane_unavailable",
+                "The pane did not open the Overlays sidebar.",
+                "Retry once, or click Overlays in the pane toolbar.",
+                action="open", pane={"pane": True, "opened": False},
+            )
+        return {
+            "ok": True,
+            "action": "open",
+            "sidebar": "overlays",
+            "pane": {"pane": True, "opened": True},
+        }
+
     def set_filters(self, fields: dict) -> dict:
         current = dict(_FILTER_DEFAULT)
         snap = self._snapshot()
@@ -895,9 +923,13 @@ def handle(scenes, key: str, body: dict, watches=None, relay=None, session_id: s
     eid = str(body.get("id") or "")
     if action == "tree":
         return book.tree()
+    if action in {"open", "expand", "sidebar"}:
+        return book.open_sidebar()
     if action in {"show", "hide"}:
         if not eid:
-            return _fail("bad_args", "show and hide need an id.",
+            if action == "show":
+                return book.open_sidebar()
+            return _fail("bad_args", "hide needs an id.",
                          "Pass id of an entry or a group from action=tree.")
         return book.set_visible(eid, action == "show")
     if action == "delete":
@@ -947,15 +979,22 @@ def handle(scenes, key: str, body: dict, watches=None, relay=None, session_id: s
         return book.import_doc(doc, replace=body.get("replace", True) is not False,
                                purge=body.get("purge") is True, confirm=body.get("confirm") is True)
     return _fail("bad_args", f"Unknown overlay action {action!r}.",
-                 "Use action tree, show, hide, delete, update, filters, export, or import.")
+                 "Use action tree, open (or show with no id), show, hide, delete, update, "
+                 "filters, export, or import.")
 
 
 def run(args: dict, session_id: str | None = None) -> dict:
     from . import live
-    relay = live.current()
-    if relay is None:
-        return _fail("relay_unavailable", "The live-globe relay is not running.",
-                     "Restart Hermes with the godseye plugin enabled, then retry op=overlays.")
     body = dict(args or {})
     body["session_id"] = session_id
-    return relay.overlays_op(body)
+    relay = live.current()
+    if relay is not None:
+        return relay.overlays_op(body)
+    # The relay normally lives in whichever process bound the port (dashboard,
+    # gateway, or a headless run). Tools that run in another process still reach
+    # it over HTTP, so do that instead of reporting relay_unavailable.
+    from . import bridge
+    out = live.call("/overlays", bridge.ensure_token(), body)
+    if isinstance(out, dict) and out.get("error") == "relay_unavailable":
+        out.setdefault("fix", "Restart Hermes with the godseye plugin enabled, then retry op=overlays.")
+    return out

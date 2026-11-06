@@ -6,8 +6,18 @@ backend (/api/plugins/godseye/live/next), runs the command in its sandboxed fram
 View's own voice-agent action runner, and posts /result. No pane polling = "no pane open".
 
 Each pane polls with its own pane id (and the chat session ids it is showing), so commands go
-to the pane bound to the calling session, else the most recently active one. A pane that is
-open but did not pick a command up because it is still running an earlier one is "pane busy".
+to the pane bound to the calling session, else the most recently focused one the user can see.
+A pane that is open but did not pick a command up because it is still running an earlier one
+is "pane busy".
+
+Panes may report ``visible`` and ``focused`` (pane heartbeat body, or the ``/next`` query).
+Older panes do not, so the flags default to visible / not focused and routing keeps the
+previous last-poll order. A hidden pane stays routable when it is the only one, but it never
+outranks a visible pane.
+
+The relay waits ``COMMAND_WAIT_S`` for one command. The pane frame's own ceiling
+(``PANE_COMMAND_MS`` in desktop/plugin.js) is wider; a relay timeout returns a retryable
+``timeout`` with a ``fix`` instead of hanging for two and a half minutes.
 """
 from __future__ import annotations
 
@@ -23,12 +33,14 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PANE_STALE_S = 30.0
-# desktop/plugin.js waits this long for one command (PANE_COMMAND_MS). The relay uses the
-# same budget: a shorter wait returned timeout while the pane was still allowed to finish,
-# and the late result then had nobody waiting.
+# desktop/plugin.js keeps its own per-command ceiling (PANE_COMMAND_MS, 150s) for the frame.
+# The relay does not wait that long: a hidden or stale pane would block the caller for two and
+# a half minutes. COMMAND_WAIT_S is the relay budget (20-30s); PANE_COMMAND_S stays as the
+# pane-side ceiling so older callers that read it keep working.
 PANE_COMMAND_S = 150.0
-RESULT_WAIT_S = PANE_COMMAND_S
-INFLIGHT_STALE_S = 170.0  # a little past PANE_COMMAND_S so a picked-up command is not pruned first
+COMMAND_WAIT_S = 25.0
+RESULT_WAIT_S = PANE_COMMAND_S  # legacy HTTP ceiling; submit() uses COMMAND_WAIT_S by default
+INFLIGHT_STALE_S = 30.0  # slightly past COMMAND_WAIT_S so a picked-up command is not pruned first
 # A fly_route or street_walk may hitch the page. Heartbeats normally refresh last_poll;
 # this is the gap allowed when those heartbeats pause but the pane still says it is busy.
 BUSY_STALE_S = 180.0
@@ -54,6 +66,21 @@ def _plain_name(value) -> str:
     if text and all(ch.isalnum() or ch == "_" for ch in text):
         return text
     return ""
+
+
+def _as_bool(value):
+    """True/False for a presence flag, or None when the pane did not report it."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in ("1", "true", "yes", "on"):
+            return True
+        if low in ("0", "false", "no", "off"):
+            return False
+    return None
 
 
 def _public_detail(detail) -> dict:
@@ -111,6 +138,17 @@ class Pane:
         self.last_heartbeat = 0.0
         self.context_losses = 0
         self.activity: dict = {}  # fly_route / street_walk, held while that job runs
+        # Presence reported by the pane chrome. Unknown/old panes stay routable (visible,
+        # not focused) so routing falls back to last-poll order.
+        self.visible = True
+        self.focused = False
+        self.last_focus = 0.0
+        self.last_visible = 0.0
+
+    def route_rank(self) -> tuple:
+        """Visible first, then the most recently focused, then the readiest poller."""
+        return (bool(self.visible), bool(self.focused), self.last_focus,
+                self.polling > 0, self.last_poll)
 
     def busy_route(self) -> bool:
         name = (self.activity or {}).get("name")
@@ -126,10 +164,12 @@ class Pane:
         out = {"id": self.id, "sessions": sorted(self.sessions),
                "lastPollAgeS": 0.0 if self.polling else round(max(0.0, now - self.last_poll), 1),
                "polling": self.polling > 0, "busy": bool(self.inflight) or self.busy_route(),
-               "queued": len(self.queue),
+               "queued": len(self.queue), "visible": bool(self.visible), "focused": bool(self.focused),
                "open": self.fresh(now)}
         if self.label:
             out["label"] = self.label
+        if self.last_focus:
+            out["lastFocusAgeS"] = round(max(0.0, now - self.last_focus), 1)
         if self.context_losses:
             out["contextLosses"] = self.context_losses
         if self.last_heartbeat:
@@ -149,6 +189,9 @@ class Relay:
         self.panes: dict[str, Pane] = {}
         self.results: dict[int, dict] = {}
         self.callbacks: dict[int, object] = {}  # internal commands: result goes to a callback
+        # Commands the relay stopped waiting for. The pane may still post a late result:
+        # drop it instead of growing self.results after every timeout.
+        self.abandoned: dict[int, float] = {}
         self.ids = itertools.count(1)
         self.scenes = scenes if scenes is not None else SceneStore(None)
         self.tours: dict[str, object] = {}
@@ -170,16 +213,48 @@ class Relay:
             self.panes[pid] = Pane(pid)
         return self.panes[pid]
 
+    def _apply_presence(self, pane: Pane, visible, focused, now: float) -> None:
+        """Record pane chrome presence. Caller holds ``self.cond``.
+
+        At most one pane is focused: a focus report clears the flag on the others but keeps
+        their ``last_focus`` so "most recently focused" still has history.
+        """
+        visible = _as_bool(visible)
+        focused = _as_bool(focused)
+        if visible is not None:
+            pane.visible = visible
+            pane.last_visible = now
+        if focused is not None:
+            if focused:
+                for other in self.panes.values():
+                    if other is not pane:
+                        other.focused = False
+                pane.focused = True
+                pane.last_focus = now
+                pane.last_visible = now
+            else:
+                pane.focused = False
+
+    def note_presence(self, pane_id: str | None, visible=None, focused=None) -> dict:
+        """Visibility/focus report from a pane chrome (no command, no queue)."""
+        with self.cond:
+            pane = self._pane(pane_id)
+            self._apply_presence(pane, visible, focused, time.monotonic())
+            return {"ok": True, "pane": pane.info(time.monotonic())}
+
     def _internal(self, pane: Pane, name: str, args: dict, callback=None) -> None:
         cid = next(self.ids)
         self.callbacks[cid] = callback
         pane.queue.append({"id": cid, "name": name, "args": args})
 
     def next(self, wait: float = POLL_WAIT_S, pane_id: str | None = None, sessions=None,
-             fresh: bool = False, label: str | None = None) -> dict | None:
+             fresh: bool = False, label: str | None = None,
+             visible=None, focused=None) -> dict | None:
         with self.cond:
-            self._prune_locked(now=time.monotonic())
+            now = time.monotonic()
+            self._prune_locked(now=now)
             pane = self._pane(pane_id)
+            self._apply_presence(pane, visible, focused, now)
             if label is not None:
                 pane.label = str(label).strip()[:80] or None
             if sessions:
@@ -231,6 +306,9 @@ class Relay:
             cid = int(cid)
             for pane in self.panes.values():
                 pane.inflight.discard(cid)
+            if self.abandoned.pop(cid, None) is not None:
+                self.cond.notify_all()
+                return
             if cid in self.callbacks:
                 cb = self.callbacks.pop(cid)
                 if cb:
@@ -245,8 +323,9 @@ class Relay:
     # -- tool side -----------------------------------------------------------------------------
     def open_panes(self) -> list[Pane]:
         now = time.monotonic()
-        # ready (polling) panes first, then the most recently active
-        return sorted((p for p in self.panes.values() if p.fresh(now)), key=lambda p: (p.polling > 0, p.last_poll), reverse=True)
+        # visible first, then the most recently focused, then ready (polling) / newest poll
+        return sorted((p for p in self.panes.values() if p.fresh(now)),
+                      key=lambda p: p.route_rank(), reverse=True)
 
     def pane_open(self) -> bool:
         return bool(self.open_panes())
@@ -270,6 +349,11 @@ class Relay:
             for sid, bound in list(self.session_binding.items()):
                 if bound == pid:
                     del self.session_binding[sid]
+        # Forget abandoned ids whose late result never arrived.
+        cutoff = now - max(COMMAND_WAIT_S * 4.0, 120.0)
+        for cid, at in list(self.abandoned.items()):
+            if at < cutoff:
+                del self.abandoned[cid]
         return removed
 
     def prune(self) -> dict:
@@ -334,8 +418,9 @@ class Relay:
                     return hit[:1]
         return live[:1]
 
-    def submit(self, name: str, args: dict, wait: float = RESULT_WAIT_S, session_id: str | None = None,
+    def submit(self, name: str, args: dict, wait: float | None = None, session_id: str | None = None,
                pane_id: str | None = None, fanout: bool = False, record: bool = True) -> dict:
+        wait = COMMAND_WAIT_S if wait is None else wait
         if name == "annotate_map" and isinstance(args, dict):
             try:
                 from . import enrich
@@ -550,7 +635,9 @@ class Relay:
         busy = bool(body.get("busy")) and bool(name)
         with self.cond:
             pane = self._pane(pane_id)
-            pane.last_poll = time.monotonic()
+            now = time.monotonic()
+            self._apply_presence(pane, body.get("visible"), body.get("focused"), now)
+            pane.last_poll = now
             pane.last_heartbeat = pane.last_poll
             if (pane.activity or {}).get("hold"):
                 self.cond.notify_all()
@@ -835,12 +922,20 @@ class Relay:
                 return dict(PANE_BUSY if pane.inflight else NO_PANE)
             if now >= deadline:
                 pane.inflight.discard(cid)
+                if any(c["id"] == cid for c in pane.queue):  # never started: do not run it late
+                    pane.queue = [c for c in pane.queue if c["id"] != cid]
+                else:
+                    self.abandoned[cid] = now
                 if not pane.fresh(now):
                     self._remember_lost(pane, now)
                     return self._pane_lost_from_pane(pane, now)
+                budget = max(1, int(round(wait)))
                 return {"ok": False, "error": "timeout", "code": "timeout",
-                        "message": "The Eye Of Hermes (EOH) pane did not answer in time.",
-                        "fix": "Retry this call once. If it times out again, call godseye_view op=panes and godseye_admin op=doctor before changing arguments."}
+                        "message": f"The Eye Of Hermes (EOH) pane did not answer in time ({budget}s budget).",
+                        "fix": "Retry this call once. If it times out again, call godseye_view op=panes "
+                               "to check which pane is open, focused, and visible, then godseye_admin "
+                               "op=doctor before changing arguments.",
+                        "budgetS": budget}
             self.cond.wait(max(0.05, min(pickup if queued else deadline, deadline) - now))
         return self.results.pop(cid)
 
@@ -877,9 +972,11 @@ def make_handler(relay: Relay, token: str):
             if url.path == "/next":
                 sessions = [s for s in ",".join(q.get("sessions", [])).split(",") if s]
                 label = (q.get("label") or [None])[0]
-                return self._send(200, {"command": relay.next(pane_id=(q.get("pane") or [None])[0], sessions=sessions,
-                                                              fresh=(q.get("fresh") or ["0"])[0] == "1",
-                                                              label=label)})
+                return self._send(200, {"command": relay.next(
+                    pane_id=(q.get("pane") or [None])[0], sessions=sessions,
+                    fresh=(q.get("fresh") or ["0"])[0] == "1", label=label,
+                    visible=_as_bool((q.get("visible") or [None])[0]),
+                    focused=_as_bool((q.get("focused") or [None])[0]))})
             self._send(404, {"error": "not found"})
 
         def do_POST(self):

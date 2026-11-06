@@ -175,3 +175,68 @@ def test_gl_recover_harness_forces_lose_context():
     assert report["oldLost"] is True and report["newLost"] is False
     assert report["camera"]["headingDeg"] == 120 and report["camera"]["rollDeg"] == 12
     assert [p["label"] for p in report["pins"]] == ["Tokyo", "Port"]
+
+
+def test_fixture_commands_keep_a_reapplicable_wayback_timeline():
+    cmds = gl_recover.fixture_commands()
+    timeline = [args for name, args in cmds if name == "hermes_timeline"]
+    assert len(timeline) == 1
+    body = timeline[0]
+    assert body["action"] == "set" and body["playing"] is False
+    assert body["mode"] == "wayback" and body["at"]
+    assert body["releases"] and body["releases"][0]["release"]
+    assert isinstance(body["events"], list)
+
+
+def test_restored_notice_reports_that_the_timeline_resumed():
+    note = gl_recover.context_restored_notice({
+        "pins": 2,
+        "timeline": {"mode": "wayback", "at": "2020-04-08", "playing": True},
+    })
+    assert note["ok"] is True and note["code"] == "CONTEXT_RESTORED"
+    assert note["timeline"]["mode"] == "wayback" and note["timeline"]["at"] == "2020-04-08"
+    assert note["timeline"]["playing"] is False
+    assert "time slider" in note["message"].lower() and "resumed" in note["message"].lower()
+    assert "error" not in note and "fix" not in note
+    bare = gl_recover.context_restored_notice({"timeline": "wayback"})
+    assert "timeline" not in bare and "resumed" not in bare["message"].lower()
+
+
+def test_relay_restore_after_recovery_carries_the_cape_town_timeline():
+    store = SceneStore(None)
+    store.record("chat", "fly_to_location",
+                 {"latitude": -33.9249, "longitude": 18.4241, "rangeM": 1500},
+                 {"ok": True, "result": {"camera": {
+                     "latitude": -33.9249, "longitude": 18.4241, "heightM": 1500,
+                     "pitchDeg": -40, "headingDeg": 15, "rollDeg": 2}}})
+    store.record("chat", "hermes_timeline", {
+        "action": "set", "mode": "wayback", "from": "2016-07-13", "to": "2023-12-07",
+        "at": "2020-04-08", "playing": True, "transition": "swipe", "index": 1,
+        "releases": [
+            {"release": 7110, "date": "2020-03-24", "label": "Esri Wayback 2020-03-24",
+             "url": "https://example.com/wayback/{z}/{y}/{x}"},
+            {"release": 7550, "date": "2023-12-07", "label": "Esri Wayback 2023-12-07",
+             "url": "https://example.com/wayback/{z}/{y}/{x}"},
+        ],
+        "events": [],
+    }, {"ok": True, "result": {}})
+    relay = live.Relay(store)
+    relay.next(wait=0, pane_id="P", sessions=["chat"])
+    restored = relay.gl_event({"pane": "P", "event": "restore", "sessions": ["chat"]})
+    body = next(args for name, args in restored["commands"] if name == "hermes_timeline")
+    assert body["action"] == "set" and body["playing"] is False
+    assert body["mode"] == "wayback" and body["at"] == "2020-04-08"
+    assert [r["release"] for r in body["releases"]] == [7110, 7550]
+    notice = relay.gl_event({
+        "pane": "P", "event": "recovered", "sessions": ["chat"],
+        "detail": {"timeline": {"mode": body["mode"], "at": body["at"]}},
+    })
+    assert notice["timeline"]["mode"] == "wayback" and notice["timeline"]["at"] == "2020-04-08"
+    assert "resumed" in notice["message"].lower()
+
+
+def test_gl_recover_js_exposes_a_single_viewer_timeline_reapply():
+    js = (ROOT / "gev" / "gl_recover.js").read_text()
+    assert "reapplyTimeline" in js
+    assert "timelineApply" in js
+    assert "removeEventListener" in js

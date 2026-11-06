@@ -25,6 +25,24 @@
     `<path d="M15 41 C15 41 2 24.5 2 15 A13 13 0 0 1 28 15 C28 24.5 15 41 15 41 Z" fill="${col}" stroke="#06121c" stroke-width="2.2"/>` +
     `<circle cx="15" cy="15" r="5.2" fill="#06121c"/></svg>`)
 
+  // ---- Cesium graphic hygiene: the two console warnings this layer must never cause ---------
+  // Cesium warns when a graphic sets heightReference but no height, and disables/warns for
+  // outlines on terrain-clamped geometry. Pins are point/billboard graphics (a ground reference
+  // is safe once the position carries a height), but guard any geometry spec added here so a
+  // clamp can never ship without a height, and never with an outline.
+  const refNone = () => C()?.HeightReference?.NONE ?? 0
+  const isClamp = (ref) => ref != null && ref !== refNone()
+  const safeGraphic = (g, kind = 'geometry') => {
+    if (!g || typeof g !== 'object') return g
+    if (isClamp(g.heightReference) || g.clampToGround === true) {
+      if (g.outline) { g.outline = false; g.outlineWidth = 0 }
+      // Billboard/point/label graphics have no entity geometry height (billboard.height is the
+      // image height), so only geometry needs and accepts the height default.
+      if (!['billboard', 'point', 'label'].includes(kind) && g.height == null) g.height = 0
+    }
+    return g
+  }
+
   // ---- ground height: re-sampled per camera LOD bucket, never "settled" forever ------------
   const groundAt = (lon, lat) => {
     const Ce = C(), v = g().viewer
@@ -45,8 +63,16 @@
     const Ce = C()
     const h = groundAt(p.lon, p.lat)
     if (h != null) p.h = h
-    const pos = Ce.Cartesian3.fromDegrees(p.lon, p.lat, p.h ?? 0)
-    for (const e of p.ents) e.position = pos
+    // No sampled height (coarse/absent terrain): let Cesium clamp to the ground it loads,
+    // with a defined height on the position. Never ship a clamp without that height.
+    const clamp = p.h == null && C()?.HeightReference?.CLAMP_TO_GROUND != null
+    const ref = clamp ? C().HeightReference.CLAMP_TO_GROUND : refNone()
+    const pos = Ce.Cartesian3.fromDegrees(p.lon, p.lat, clamp ? 0 : (p.h ?? 0))
+    for (const e of p.ents) {
+      if (e.billboard) e.billboard.heightReference = ref
+      if (e.point) e.point.heightReference = ref
+      e.position = pos
+    }
   }
   const resampleAll = (force) => {
     const b = camBucket()
@@ -103,9 +129,9 @@
     const NEVER_DEPTH = Number.POSITIVE_INFINITY  // label names fade out at region zoom; pins stay
     const common = { _hermesPin: id }
     const pin = ds.entities.add({ ...common,
-      billboard: { image: pinSvg(col), width: 30, height: 42, verticalOrigin: Ce.VerticalOrigin.BOTTOM,
+      billboard: safeGraphic({ image: pinSvg(col), width: 30, height: 42, verticalOrigin: Ce.VerticalOrigin.BOTTOM,
         horizontalOrigin: Ce.HorizontalOrigin.CENTER, disableDepthTestDistance: NEVER_DEPTH,
-        scaleByDistance: new Ce.NearFarScalar(300, 1.0, 2.0e6, 0.55) },
+        scaleByDistance: new Ce.NearFarScalar(300, 1.0, 2.0e6, 0.55) }, 'billboard'),
       label: label ? { text: label, font: '600 13px ui-monospace, Menlo, monospace', fillColor: Ce.Color.fromCssColorString('#e8fff6'),
         outlineColor: Ce.Color.fromCssColorString('#020a08'), outlineWidth: 3, style: Ce.LabelStyle.FILL_AND_OUTLINE,
         showBackground: true, backgroundColor: Ce.Color.fromCssColorString('rgba(0,14,10,0.78)'),
@@ -114,8 +140,8 @@
         translucencyByDistance: new Ce.NearFarScalar(1.2e4, 1.0, 6.0e4, 0.0) } : undefined })
     // the exact spot: a small dot ON the ground at the billboard tip
     const dot = ds.entities.add({ ...common,
-      point: { pixelSize: 7, color: Ce.Color.fromCssColorString(col), outlineColor: Ce.Color.fromCssColorString('#06121c'),
-        outlineWidth: 2, disableDepthTestDistance: NEVER_DEPTH } })
+      point: safeGraphic({ pixelSize: 7, color: Ce.Color.fromCssColorString(col), outlineColor: Ce.Color.fromCssColorString('#06121c'),
+        outlineWidth: 2, disableDepthTestDistance: NEVER_DEPTH }, 'point') })
     pin._hermesPin = id; dot._hermesPin = id
     const p = { id, lat, lon, label, color: col, meta: drawerMeta(spec, label), tags: pinTags(spec),
       timeline: spec.timeline === true, h: null, ents: [pin, dot] }
@@ -550,9 +576,14 @@
       const lat = gr.members.reduce((s, p) => s + p.lat, 0) / gr.members.length
       const lon = gr.members.reduce((s, p) => s + p.lon, 0) / gr.members.length
       const h = Math.max(...gr.members.map((p) => p.h ?? 0))
-      const e = ds.entities.add({ _hermesCluster: id, position: Ce.Cartesian3.fromDegrees(lon, lat, h),
-        billboard: { image: bubbleSvg(gr.members.length), verticalOrigin: Ce.VerticalOrigin.CENTER ?? Ce.VerticalOrigin.BOTTOM,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY } })
+      // Same rule as pins: clamp only when no member has a sampled height, and then keep a
+      // defined height on the position so Cesium has no heightReference-without-height case.
+      const clamp = gr.members.every((p) => p.h == null) && C()?.HeightReference?.CLAMP_TO_GROUND != null
+      const ref = clamp ? C().HeightReference.CLAMP_TO_GROUND : refNone()
+      const e = ds.entities.add({ _hermesCluster: id, position: Ce.Cartesian3.fromDegrees(lon, lat, clamp ? 0 : h),
+        billboard: safeGraphic({ image: bubbleSvg(gr.members.length), heightReference: ref,
+          verticalOrigin: Ce.VerticalOrigin.CENTER ?? Ce.VerticalOrigin.BOTTOM,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY }, 'billboard') })
       e._hermesCluster = id
       clusterEnts.push(e)
       clusters.set(id, { id, lat, lon, ids: gr.members.map((p) => p.id) })
@@ -618,7 +649,7 @@
     return setFilters(args)
   }
   window.__hermesPins = { add, remove, clear, detach, open, close, command, renderMarkdown, heightFor, syncWithBoard, labelOffsets,
-    setFilters, setOverlay, filterCommand, filterState, expandCluster, refreshView,
+    setFilters, setOverlay, filterCommand, filterState, expandCluster, refreshView, _safeGraphic: safeGraphic,
     state: () => ({ open: openId, filters: { ...filters }, clusters: [...clusters.values()].map((c) => ({ id: c.id, count: c.ids.length })),
       pins: [...pins.values()].map((p) => ({ ...pinInfo(p), h: p.h, visible: p.visible !== false, clustered: Boolean(p.clustered) })) }) }
 })()

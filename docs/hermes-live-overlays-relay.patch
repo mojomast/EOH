@@ -1,0 +1,48 @@
+diff --git a/gev/overlays.py b/gev/overlays.py
+index 40db53b..187fbed 100644
+--- a/gev/overlays.py
++++ b/gev/overlays.py
+@@ -952,10 +952,16 @@ def handle(scenes, key: str, body: dict, watches=None, relay=None, session_id: s
+ 
+ def run(args: dict, session_id: str | None = None) -> dict:
+     from . import live
+-    relay = live.current()
+-    if relay is None:
+-        return _fail("relay_unavailable", "The live-globe relay is not running.",
+-                     "Restart Hermes with the godseye plugin enabled, then retry op=overlays.")
+     body = dict(args or {})
+     body["session_id"] = session_id
+-    return relay.overlays_op(body)
++    relay = live.current()
++    if relay is not None:
++        return relay.overlays_op(body)
++    # The relay normally lives in whichever process bound the port (dashboard,
++    # gateway, or a headless run). Tools that run in another process still reach
++    # it over HTTP, so do that instead of reporting relay_unavailable.
++    from . import bridge
++    out = live.call("/overlays", bridge.ensure_token(), body)
++    if isinstance(out, dict) and out.get("error") == "relay_unavailable":
++        out.setdefault("fix", "Restart Hermes with the godseye plugin enabled, then retry op=overlays.")
++    return out
+diff --git a/skills/godseye-analyst/SKILL.md b/skills/godseye-analyst/SKILL.md
+index 8e8f4ed..34a2d65 100644
+--- a/skills/godseye-analyst/SKILL.md
++++ b/skills/godseye-analyst/SKILL.md
+@@ -92,7 +92,7 @@ Pins and drawings on the open pane.
+ | `delete` | One mark (`id`) or several (`ids`). |
+ | `update` | Patch `label`, `description_md`, `images`, `links`, or `tags` on one pin. No redraw. |
+ | `filter` | Category, rating, and open-now. The Overlays sidebar holds the same filters. `action`: `set`, `state`, `expand`. `op=filter` still sets them. |
+-| `overlays` | Sidebar tree of pins, routes and trails, areas, watches, and saved scenes. `action`: `tree` (default), `show`, `hide`, `delete`, `update`, `filters`, `export`, `import`. `id` is an entry (`ann:`, `shape:`, `watch:`, `scene:`) or a group (`kind:pins`, `kind:routes/batch:…`). Delete of a group, a watch, or a scene needs `confirm: true`. `update` changes `label`, `title`, or `description_md`. `export` writes `eoh.overlays.v1` JSON under `plugin-data/godseye/overlays/`. `import` reads `source` or `document`. `replace` (default true) replaces this scene's marks. Watches and scenes are upserted and are not deleted unless `purge` and `confirm` are both true. |
++| `overlays` | Sidebar tree of pins, routes and trails, areas, watches, and saved scenes. `action`: `tree` (default), `show`, `hide`, `delete`, `update`, `filters`, `export`, `import`. `id` is an entry (`ann:`, `shape:`, `watch:`, `scene:`) or a group (`kind:pins`, `kind:routes/batch:…`). Delete of a group, a watch, or a scene needs `confirm: true`. `update` changes `label`, `title`, or `description_md`. `export` writes `eoh.overlays.v1` JSON under `plugin-data/godseye/overlays/`. `import` reads `source` or `document`. `replace` (default true) replaces this scene's marks. Watches and scenes are upserted and are not deleted unless `purge` and `confirm` are both true. The sidebar itself is a toggle in the pane chrome ("Overlays" button); no op opens it, so report the tree and point at the button. `op=overlays` runs in-process (`gev/overlays.py` `run()`), unlike the other live ops that POST to the relay: if it returns `relay_unavailable` while `godseye_layers` or `godseye_annotate` still work, the relay is bound in another process (the desktop app) and this process's module cache is stale. `run()` falls back to `POST /overlays` over HTTP, which takes effect for a fresh process; from a live process run `python3 -c "from gev import overlays; overlays.run({'op':'overlays','action':'tree'}, SID)"` until Hermes restarts. |
+ | `drawer` | Open or close one pin drawer (`op=drawer`). `action`: `open`, `close`, `state`. Pick the pin by `id`, `label`, or lat/lon. |
+ | `clip` | Attach a YouTube or X status URL to a stored pin. `url` required. `title` optional. YouTube accepts `start_sec` (seconds, or a clock such as `1m30s`, or `t=` / `start=` on the URL). The same URL updates in place. At most 4 clips. List returns them. The drawer shows a youtube-nocookie or X embed plus the https link. Other hosts are refused. |
+ | `research` | Fill drawers (`op=research`) from Wikipedia, Wikidata, Commons, OSM tags, and a site's meta description. `mode`: `light` or `full`. Never invent facts. This plugin cannot call Hermes `web_search`. Pass verified snippets as `agent_notes`. |
+@@ -107,7 +107,7 @@ Pins and drawings on the open pane.
+ | `street_walk` | Walk a saved route in Street View. Argument `walk` is `start`, `pause`, `resume`, `step`, `stop`, or `state` (not a second `op`). Pass `label` of a drawn route, or `points` / `waypoints` / `stops`. Default spacing is about 75 m (`stepM`, 20–250). `dwellS` is seconds at each panorama (default 4). `provider` is `google` or `mapillary`. `state` reports progress. A reload interrupts the walk; `walk=resume` continues it. |
+ | `street_level` | Open one panorama. Argument `street` is `at`, `next`, `prev`, or `route` (not a second `op`). `at` takes `lat`/`lon`. `next` and `prev` step from the last panorama. `route` uses the same route resolution as `fly_route`. |
+ | `itinerary` | Build a `drive` or `walk` route through `pins` (ids or `{lat, lon}`), draw it as one mark, and optionally set `dolly` or `streetStops`. |
+-| `compare` | `op=compare`. Imagery swipe. `left` / `right`: `current`, `osm`, or `wayback:YYYY[-MM[-DD]]`. `action: "list_dates"` lists Wayback releases. `action: "stop"` ends it. Map stacks cannot be split. |
++| `compare` | `op=compare`. Imagery swipe. `left` / `right`: `current`, `osm`, or `wayback:YYYY[-MM[-DD]]`. `action: "list_dates"` lists Wayback releases. `position` is a 0–1 fraction of the pane, not a percentage: 50% is `position: 0.5` and `50` clamps to 1. The start call often reports `position: 1`, so follow it with `action: "position"` and confirm with `action: "state"`. `action: "stop"` ends it. Map stacks cannot be split. |
+ | `timeline` | Time slider. Argument `timeline` is `set`, `play`, `step`, `stop`, `state`, or `list_dates` (not a second `op`). `mode`: `wayback` (Esri Wayback releases over the current view, `transition` `swipe` or `fade`) or `events` (USGS quakes and NASA FIRMS fires, plus stored watch alerts, as pins that appear when the playhead reaches them). `from` / `to` / `date` are `YYYY-MM-DD`. Events default to the last 7 days. `area` is `{south, west, north, east}`, `[south, west, north, east]`, or `{place, radius_km}`. `feeds`: `earthquakes` and/or `fires`. `by` on `step` is `1` or `-1`. `state` reads the date and what is visible. Wayback tiles are for viewing only. Do not sample photorealistic 3D tiles. The slider is saved with the scene and with investigations. |
+ 
+ ## godseye_track

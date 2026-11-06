@@ -165,3 +165,79 @@ def test_preset_ext_op_stays_on_the_eleven_tool_catalog(monkeypatch):
     assert "preset" in schema["properties"]["op"]["enum"]
     assert schema["properties"]["preset"]["enum"] == ["weather"]
     assert schema["properties"]["basemap"]["enum"] == ["esri"]
+
+
+def _failing(monkeypatch, response, on_wind=None):
+    calls: list[tuple[str, dict]] = []
+
+    def live_call(name, args=None, session_id=None, fanout=False):
+        calls.append((name, dict(args or {})))
+        if callable(response):
+            return response(name, dict(args or {}))
+        return dict(response)
+
+    def mcp_call(name, args):
+        calls.append((name, dict(args or {})))
+        return {"structuredContent": _payload()}
+
+    monkeypatch.setattr(ext_weather, "live_call", live_call)
+    monkeypatch.setattr(ext_weather, "mcp_call", mcp_call)
+    return calls
+
+
+def test_pane_busy_is_one_retry_then_structured_failure(monkeypatch):
+    calls = _failing(monkeypatch, {"ok": False, "error": "pane_busy", "code": "pane_busy"})
+
+    out = _run({"op": "preset", "preset": "weather"})
+
+    assert out["ok"] is False
+    assert out["error"] == "pane_busy"
+    assert out.get("fix")
+    assert [name for name, _args in calls] == ["set_layer_visibility", "set_layer_visibility"]
+    assert {args["layerId"] for _name, args in calls} == {"wind"}
+
+
+def test_no_pane_without_ok_key_fails_before_enabling_more_layers(monkeypatch):
+    calls = _failing(monkeypatch, {"error": "no_pane", "code": "no_pane", "message": "No pane."})
+
+    out = _run({"op": "preset", "preset": "weather"})
+
+    assert out["ok"] is False
+    assert out["error"] == "no_pane"
+    assert out.get("fix")
+    assert [name for name, _args in calls] == ["set_layer_visibility"]
+
+
+def test_timeout_retries_once_then_the_preset_completes(monkeypatch):
+    attempts = {"wind": 0}
+
+    def response(name, args):
+        if name == "set_layer_visibility" and args.get("layerId") == "wind":
+            attempts["wind"] += 1
+            if attempts["wind"] == 1:
+                return {"ok": False, "error": "timeout", "code": "timeout"}
+        return {"ok": True, "result": {"name": name}}
+
+    calls = _failing(monkeypatch, response)
+
+    out = _run({"op": "preset", "preset": "weather"})
+
+    assert out.get("ok") is not False
+    assert out["layers_on"] == list(ext_weather._WEATHER_LAYERS)
+    names = [name for name, _args in calls]
+    assert names[:5] == ["set_layer_visibility"] * 5
+    assert [args["layerId"] for name, args in calls if name == "set_layer_visibility"] == [
+        "wind", "wind", "weather-radar", "weather-satellite", "weather-cyclones"]
+    assert names[-1] == "get_cyclones"
+
+
+def test_nested_pane_error_is_not_a_success(monkeypatch):
+    calls = _failing(monkeypatch, {"ok": True, "result": {"ok": False, "error": "pane_busy"}})
+
+    out = _run({"op": "preset", "preset": "weather"})
+
+    assert out["ok"] is False
+    assert out["error"] == "pane_busy"
+    assert out.get("fix")
+    assert len(calls) == 2
+    assert all(name == "set_layer_visibility" for name, _args in calls)
