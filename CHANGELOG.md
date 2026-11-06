@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5 — 2026-11-06
+
+### Fixed
+- `plugin.yaml` had a duplicated `name: godseye` (and a second copy of the manifest body) from a bad v0.2.4 version bump that replaced the `version:` line with the entire file. Hermes refused to load the plugin (`found duplicate key name`). Restored a single clean manifest and added `scripts/bump_plugin_version.py` plus a strict YAML duplicate-key test so this cannot land again.
+
+Still exactly 11 composable tools.
+
 ## 0.2.4 — 2026-11-06
 
 ### Fixed
