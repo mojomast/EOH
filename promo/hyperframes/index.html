@@ -7,10 +7,11 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main id="film" data-composition-id="eoh-promo" data-start="0" data-duration="89" data-width="1920" data-height="1080" data-fps="30">
+<main id="film" data-composition-id="eoh-promo" data-start="0" data-duration="89" data-width="1920" data-height="1080" data-fps="30" data-motion-blur="on" data-motion-blur-tier="filter" data-motion-blur-shutter="180" data-motion-blur-samples="12">
   <div class="background" data-layout-ignore></div>
   <div class="grain" data-layout-ignore></div>
-  <div class="masthead"><span>EOH <i></i> FIELD NOTES</span><span>HERMES AGENT <i></i> GOD'S EYE VIEW</span></div>
+  <div class="masthead" data-motion-blur="off"><span>EOH <i></i> FIELD NOTES</span><span>HERMES AGENT <i></i> GOD'S EYE VIEW</span></div>
+  <!-- CHAPTER_RAIL -->
 
   <section id="scene-01" class="scene clip" data-start="0" data-duration="6" data-track-index="1" data-track-kind="graphics">
     <div class="scene-inner intro-layout">
@@ -21,7 +22,7 @@
         <p class="intro-line">Ask Hermes. <span>See the world.</span></p>
       </div>
       <div class="intro-visual enter">
-        <div class="orbit orbit-one" data-layout-ignore></div><div class="orbit orbit-two" data-layout-ignore></div>
+        <!-- OPTICS -->
         <div class="slot-visual" data-slot="footage/01-cold-open.mp4">
           <!-- SLOT_MEDIA:01-cold-open -->
           <div class="slot-card"><span class="slot-tag">GLOBE REVEAL / AWAITING MEDIA</span><strong>SLOT: footage/01-cold-open.mp4</strong><span data-slot="shots/01-cold-open.png">OR: shots/01-cold-open.png</span><small>Spinning globe · no substitute footage</small></div>
@@ -103,12 +104,15 @@
   </section>
 
   <section id="scene-13" class="scene clip" data-start="83" data-duration="6" data-track-index="1" data-track-kind="graphics">
-    <div class="scene-inner outro-layout"><div class="outro-center enter"><img class="outro-mark" src="assets/brand/eoh-logo-512.png" alt="Eye Of Hermes winged-eye logo"><div class="eyebrow"><span>13 / KEEP EXPLORING</span><span>THE WORLD IS WAITING</span></div><h2>Eye Of <em>Hermes</em></h2><p class="repo-url">github.com/mojomast/EOH</p><p class="catalog-line">GODSEYE CATALOG &nbsp;·&nbsp; 11 COMPOSABLE TOOLS</p><p class="hackathon">BUILT FOR THE HERMES HACKATHON</p></div><div class="small-slot enter"><div class="slot-visual" data-slot="footage/13-outro.mp4"><!-- SLOT_MEDIA:13-outro --><div class="slot-card"><span class="slot-tag">OPTIONAL INSERT</span><strong>SLOT: footage/13-outro.mp4</strong><span data-slot="shots/13-outro.png">OR: shots/13-outro.png</span></div></div></div></div><div class="vo-slot" data-slot="vo/13-outro.wav">VO SLOT: vo/13-outro.wav</div>
+    <div class="scene-inner outro-layout"><div class="outro-optics"><!-- OPTICS --></div><div class="outro-center enter"><img class="outro-mark" src="assets/brand/eoh-logo-512.png" alt="Eye Of Hermes winged-eye logo"><div class="eyebrow"><span>13 / KEEP EXPLORING</span><span>THE WORLD IS WAITING</span></div><h2>Eye Of <em>Hermes</em></h2><p class="repo-url">github.com/mojomast/EOH</p><p class="catalog-line">GODSEYE CATALOG &nbsp;·&nbsp; 11 COMPOSABLE TOOLS</p><p class="hackathon">BUILT FOR THE HERMES HACKATHON</p></div><div class="small-slot enter"><div class="slot-visual" data-slot="footage/13-outro.mp4"><!-- SLOT_MEDIA:13-outro --><div class="slot-card"><span class="slot-tag">OPTIONAL INSERT</span><strong>SLOT: footage/13-outro.mp4</strong><span data-slot="shots/13-outro.png">OR: shots/13-outro.png</span></div></div></div></div><div class="vo-slot" data-slot="vo/13-outro.wav">VO SLOT: vo/13-outro.wav</div>
   </section>
 
-  <div class="transition-wipe" data-layout-ignore></div><div class="transition-iris" data-layout-ignore></div>
-  <div class="caption-track" data-slot="captions.json"><!-- CAPTION_TRACK --><div class="caption-empty">SLOT: captions.json</div></div>
-  <div class="bottom-rule"><span>ASK HERMES. SEE THE WORLD.</span><span>EOH / PROMO SCAFFOLD</span></div>
+  <div class="transition-slice" aria-hidden="true" data-layout-ignore></div>
+  <div class="transition-shutter" aria-hidden="true" data-layout-ignore><div class="shutter-top"></div><div class="shutter-bottom"></div></div>
+  <div class="transition-iris" aria-hidden="true" data-layout-ignore data-motion-blur="off"></div>
+  <div class="transition-ring" aria-hidden="true" data-layout-ignore></div>
+  <div class="caption-track" data-slot="captions.json" data-motion-blur="off"><!-- CAPTION_TRACK --><div class="caption-empty">SLOT: captions.json</div></div>
+  <div class="bottom-rule" data-motion-blur="off"><span>ASK HERMES. SEE THE WORLD.</span><span>EOH / PROMO SCAFFOLD</span></div>
   <!-- VO_TRACKS -->
 </main>
 <script src="assets/gsap.min.js"></script>

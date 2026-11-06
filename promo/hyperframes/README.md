@@ -47,16 +47,31 @@ Captions are **not** filled from the draft: create `captions.json` after the act
 
 The timeline is explicit in `index.html`; `scripts/build.mjs` turns its scene sections into Studio scene hosts for preview. Shared styles live in `style.css`; deterministic, seekable motion lives in `motion.js` and `scene-motion.js`.
 
-* **Feature title card:** `.scene-copy`, `.eyebrow`, heading, supporting paragraph, and `.side-note`. The `.enter` class applies the common entrance animation.
+* **Feature title card:** `.scene-copy`, `.eyebrow`, heading, supporting paragraph, and `.side-note`. The build wraps heading words in `.word-mask` / `.title-word` spans for staggered perspective roll-ups; edit the plain heading in `index.html`.
 * **Lower third:** `.lower-third` with `.lower-number`, a `b` title, and a `small` label. Position is set in `style.css`.
 * **Chat:** `.chat-bubble` accepts a JSON array of strings in `data-chat`, such as `data-chat='["Fly to Tokyo."]'`; `.chat-text` is typed by the seekable scene timeline. This is a shot-direction prompt, not an invented agent response.
 * **Footage HUD:** `.hud-frame`, `.hud-top`, `.slot-visual`, and `.hud-bottom`. Each `.slot-visual` holds a unique `data-slot` and a matching `SLOT_MEDIA` marker consumed by the build.
 * **Map callouts:** `.callout-ring` and `.callout-arrow`; adjust their CSS position to match the real footage. They are decorative and do not imply a real map location.
 * **Captions:** `.caption-track` and generated `.caption-cue` elements. Change typography and placement in `style.css`, not in the recorded transcript.
-* **Transitions:** `.transition-wipe` and `.transition-iris` are driven by the root GSAP timeline. Change scene-boundary times in `motion.js` if the timeline is retimed.
+* **Transitions:** diagonal `.transition-slice`, split `.transition-shutter`, and circular `.transition-iris` are driven by the root GSAP timeline. Their timing and the segmented chapter-progress rail are derived from the generated scene hosts, so they follow the section timing in `index.html`.
 * **Counters:** on a `.counter`, replace both `data-count="{{PLACEHOLDER}}"` and its displayed text with a verified non-negative integer. The scene timeline will animate it; unfilled values never animate into invented numbers.
 
-When retiming, update the section's `data-start`/`data-duration`, the corresponding transition boundary in `motion.js`, and the manifest. Ensure scenes are contiguous, caption/VO timings still match, and the root `data-duration` and the two timeline durations agree.
+When retiming, update the section's `data-start`/`data-duration` and the manifest. Ensure scenes are contiguous, caption/VO timings still match, the root `data-duration` matches the total, and the scene-local animation fits each beat. The current caption validator caps cues at 89 seconds; update that cap if the film length changes.
+
+## Motion direction
+
+The optical-instrument treatment layers several independently timed planes:
+
+* **Kinetic typography:** clipped per-word reveals, perspective settling, and delayed supporting copy keep the headline first in the reading order.
+* **Hero optics:** original SVG tick marks, drawn-on paths, counter-rotating rings, and a gimbal frame the opening and closing brand lockups. Markup comes from `scripts/motion-design.mjs`.
+* **HUD choreography:** directional clip reveals, shallow 3D entrances, traced highlight edges, a flipping chapter badge, and staggered interface labels. The panels settle to a flat, readable media frame.
+* **Ambient depth:** slow light-field drift, oversized outlined chapter numerals, and scanning instruments behind empty slots. The scan/reticle is omitted when real media is supplied.
+* **Architecture flow:** nodes enter in sequence, followed by two finite packet passes and timed surface highlights. This is an animated schematic of the documented control path.
+* **Cut design:** opaque shutters, diagonal panels, and an iris cover each scene boundary before opening onto the next shot. The chapter rail tracks actual film time.
+
+Motion uses paused, finite GSAP timelines registered with HyperFrames. There are no CSS animation clocks, random particles, or independent animation loops. The root opts into HyperFrames' native **180° shutter / 12-sample motion blur**, explicitly using the portable `filter` tier; it approximates rotational blur and works without HTML-in-Canvas support. Headings, captions, and inserted media opt out to preserve readability. For a sharp-motion export, pass `--page-motion-blur off` to `hyperframes render`.
+
+Adjust entrance distances, stagger, and eases in `scene-motion.js`; adjust cut styles in `motion.js`. Decorative color, opacity, geometry, and masking live in `style.css`. Final footage retains `object-fit: contain`, scene-local playback, and its original full frame after the entrance settles.
 
 ## Verification
 

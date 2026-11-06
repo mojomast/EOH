@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { decorateScene, placeholderInstrument, chapterRail } from './motion-design.mjs';
 
 // Materialize the editable source into a disposable HyperFrames project.
 // Real media is linked/copied only when it exists, so missing assets never
@@ -41,12 +42,12 @@ for (const scene of scenes) {
   let media = '';
   if (exists(video)) {
     copyAsset(video);
-    media = `<video id="video-${scene.number}" class="clip slot-media" data-start="0" data-duration="${scene.duration}" data-track-index="2" src="${video}" muted playsinline></video>`;
+    media = `<video id="video-${scene.number}" class="clip slot-media" data-motion-blur="off" data-start="0" data-duration="${scene.duration}" data-track-index="2" src="${video}" muted playsinline></video>`;
   } else if (exists(shot)) {
     copyAsset(shot);
-    media = `<img class="slot-media" src="${shot}" alt="${escapeHtml(scene.name)} screenshot">`;
+    media = `<img class="slot-media" data-motion-blur="off" src="${shot}" alt="${escapeHtml(scene.name)} screenshot">`;
   }
-  html = html.replace(`<!-- SLOT_MEDIA:${scene.name} -->`, media);
+  html = html.replace(`<!-- SLOT_MEDIA:${scene.name} -->`, media || placeholderInstrument());
   if (exists(voice)) {
     copyAsset(voice);
     audio.push(`<audio id="voice-${scene.number}" class="clip" data-start="${scene.start}" data-duration="${scene.duration}" data-track-index="4" data-volume="1" src="${voice}"></audio>`);
@@ -60,11 +61,12 @@ const sceneMotion = fs.readFileSync(path.join(root, 'scene-motion.js'), 'utf8');
 html = html.replace(scenePattern, (whole, number, start, duration, body) => {
   const id = `scene-${number}`;
   const feature = Number(number) >= 3 && Number(number) <= 10 ? ' feature' : '';
-  const composition = `<template>\n<section id="${id}" class="scene${feature}" data-composition-id="${id}" data-width="1920" data-height="1080">${body}</section>\n<script>\n${sceneMotion.replaceAll('__SCENE_ID__', id).replaceAll('__SCENE_DURATION__', duration)}\n</script>\n</template>\n`;
+  const composition = `<template>\n<section id="${id}" class="scene${feature}" data-composition-id="${id}" data-width="1920" data-height="1080">${decorateScene(body, number)}</section>\n<script>\n${sceneMotion.replaceAll('__SCENE_ID__', id).replaceAll('__SCENE_DURATION__', duration)}\n</script>\n</template>\n`;
   fs.writeFileSync(path.join(build, 'compositions', `${id}.html`), composition);
   return `<div id="${id}" class="clip scene-host" data-composition-id="${id}" data-composition-src="compositions/${id}.html" data-start="${start}" data-duration="${duration}" data-track-index="1" data-track-kind="graphics" data-width="1920" data-height="1080"></div>`;
 });
 html = html.replace('<!-- VO_TRACKS -->', audio.join('\n  '));
+html = html.replace('<!-- CHAPTER_RAIL -->', chapterRail(scenes));
 
 if (exists('captions.json')) {
   const json = JSON.parse(fs.readFileSync(path.join(root, 'captions.json'), 'utf8'));
