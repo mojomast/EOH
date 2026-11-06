@@ -27,13 +27,14 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-FEEDS = ("earthquakes", "fires", "flights", "ships", "pois")
+FEEDS = ("earthquakes", "fires", "flights", "ships", "pois", "fire_perimeters")
 FEED_KEYS = {"fires": "FIRMS_MAP_KEY", "ships": "AISSTREAM_API_KEY"}
 MIN_INTERVAL_S, DEFAULT_INTERVAL_S, MAX_INTERVAL_S = 60, 900, 7 * 86400
 SEEN_CAP = 3000
 MAX_ALERTS_QUEUED = 200
 MAX_PINS_PER_RUN = 12
-COLORS = {"earthquakes": "amber", "fires": "red", "flights": "blue", "ships": "cyan", "pois": "green"}
+COLORS = {"earthquakes": "amber", "fires": "red", "flights": "blue", "ships": "cyan", "pois": "green",
+          "fire_perimeters": "red"}
 TICK_S = 15.0
 
 
@@ -312,7 +313,13 @@ def feed_pois(area: dict, cond: dict) -> dict:
     return {"status": "OK", "items": items}
 
 
-FETCHERS = {"earthquakes": feed_earthquakes, "fires": feed_fires, "flights": feed_flights, "ships": feed_ships, "pois": feed_pois}
+def feed_fire_perimeters(area: dict, cond: dict) -> dict:
+    from . import ext_fire
+    return ext_fire.fetch_perimeters(area, cond)
+
+
+FETCHERS = {"earthquakes": feed_earthquakes, "fires": feed_fires, "flights": feed_flights, "ships": feed_ships,
+            "pois": feed_pois, "fire_perimeters": feed_fire_perimeters}
 
 
 # ---- store + runner -----------------------------------------------------------------------
@@ -372,7 +379,8 @@ class WatchStore:
              "interval_s": interval, "active": True, "session_id": str(session_id) if session_id else None,
              "deliver": "inject" if args.get("deliver") == "inject" else "queue",
              "pin": args.get("pin", True) is not False, "baseline": args.get("baseline", True) is not False,
-             "created": self.clock(), "last_run": None, "next_run": self.clock(), "seen": {}, "status": {}}
+             "created": self.clock(), "last_run": None, "next_run": self.clock(), "seen": {}, "seen_meta": {},
+             "status": {}}
         with self.lock:
             self.data["watches"][wid] = w
             self._save()
@@ -384,7 +392,8 @@ class WatchStore:
 
     @staticmethod
     def public(w: dict) -> dict:
-        return {k: v for k, v in w.items() if k != "seen"} | {"seen_counts": {f: len(v) for f, v in w.get("seen", {}).items()}}
+        return {k: v for k, v in w.items() if k not in ("seen", "seen_meta")} | {
+            "seen_counts": {f: len(v) for f, v in w.get("seen", {}).items()}}
 
     def list(self, session_id: str | None = None) -> dict:
         with self.lock:
@@ -428,22 +437,51 @@ class WatchStore:
         first = w["last_run"] is None
         report, new_items = {}, []
         for feed in w["feeds"]:
-            cond = (w.get("conditions") or {}).get(feed) or {}
+            cond = dict((w.get("conditions") or {}).get(feed) or {})
+            previous = (w.get("seen_meta") or {}).get(feed)
+            cond["_previous_acres"] = previous if isinstance(previous, dict) else {}
             try:
                 res = self.fetchers[feed](w["area"], cond)
             except Exception as exc:
                 res = {"status": "ERROR", "items": [], "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
             items = [i for i in res.get("items", []) if contains(w["area"], i.get("lat"), i.get("lon"))]
+            try:
+                grow_pct = float(cond.get("grow_pct", 10))
+            except (TypeError, ValueError):
+                grow_pct = 10.0
+            for i in items:
+                acres = i.get("acres")
+                try:
+                    prior = float((previous or {}).get(i["id"]))
+                except (TypeError, ValueError, KeyError):
+                    prior = None
+                if isinstance(acres, (int, float)) and not isinstance(acres, bool) and prior is not None:
+                    if prior <= 0:
+                        changed = acres > 0
+                    else:
+                        changed = (acres - prior) / prior * 100.0 >= grow_pct
+                    if changed and not i.get("changed"):
+                        i["changed"] = True
             seen = w["seen"].setdefault(feed, [])
             seen_set = set(seen)
-            fresh = [i for i in items if i["id"] not in seen_set]
+            fresh = [i for i in items if i["id"] not in seen_set or i.get("changed")]
             for i in fresh:
-                seen.append(i["id"])
-                seen_set.add(i["id"])
+                if i["id"] not in seen_set:
+                    seen.append(i["id"])
+                    seen_set.add(i["id"])
             del seen[:-SEEN_CAP]
+            meta = w.setdefault("seen_meta", {}).setdefault(feed, {})
+            for i in items:
+                acres = i.get("acres")
+                if isinstance(acres, (int, float)) and not isinstance(acres, bool):
+                    meta[i["id"]] = float(acres)
+            if len(meta) > SEEN_CAP:
+                w["seen_meta"][feed] = {key: value for key, value in meta.items() if key in seen_set}
             baseline = first and w.get("baseline", True)
+            grown = sum(1 for i in fresh if i.get("changed"))
             report[feed] = {"status": res.get("status", "OK"), "in_area": len(items),
                             "new": 0 if baseline else len(fresh), **({"baselined": len(fresh)} if baseline else {}),
+                            **({"grown": grown} if grown and not baseline else {}),
                             **({"error": res["error"]} if res.get("error") else {}), **({"key": res["key"]} if res.get("key") else {})}
             if not baseline:
                 new_items += [{**i, "feed": feed} for i in fresh]
@@ -453,6 +491,7 @@ class WatchStore:
             if not cur:
                 return {"ok": False, "code": "NOT_FOUND", "error": "deleted during check"}
             cur["seen"], cur["last_run"], cur["status"] = w["seen"], now, report
+            cur["seen_meta"] = w.get("seen_meta") or {}
             cur["next_run"] = now + cur["interval_s"]
             alert = None
             if new_items:

@@ -1,0 +1,41 @@
+{
+  "count": 3,
+  "perimeters": [
+    {
+      "UniqueFireIdentifier": "2025-CA-CDF-000123",
+      "IncidentName": "Cedar Creek",
+      "GISAcres": 1200,
+      "PercentContained": 35,
+      "FireCause": "Lightning",
+      "TotalPersonnel": 412,
+      "FireDiscoveryDateTime": "2025-07-01T14:20:00Z",
+      "ModifiedDate": "2025-07-04T08:00:00Z",
+      "InciWebURL": "https://inciweb.wildfire.gov/incident-information/ca-cdf-000123",
+      "lat": 45.12,
+      "lon": -121.34
+    },
+    {
+      "UniqueFireIdentifier": "2025-OR-ODF-000456",
+      "IncidentName": "Ridge",
+      "GISAcres": 340,
+      "PercentContained": 80,
+      "FireCause": "Human",
+      "TotalPersonnel": 96,
+      "FireDiscoveryDateTime": "2025-07-02T09:00:00Z",
+      "ModifiedDate": "2025-07-03T17:30:00Z",
+      "lat": 45.55,
+      "lon": -120.9
+    },
+    {
+      "UniqueFireIdentifier": "2025-WA-DNR-000789",
+      "IncidentName": "Pine Hollow",
+      "GISAcres": 87,
+      "PercentContained": 10,
+      "FireCause": "Unknown",
+      "FireDiscoveryDateTime": "2025-06-28T21:10:00Z",
+      "ModifiedDate": "2025-07-05T06:15:00Z",
+      "lat": 44.9,
+      "lon": -121.7
+    }
+  ]
+}
