@@ -30,6 +30,13 @@ USER_AGENT = os.environ.get(
     "hermes-godseye/0.2.0 (+https://github.com/mojomast/hermes-godseye; Eye Of Hermes research)")
 TIMEOUT_S = 12.0
 GAP_S = 0.4
+# Wikipedia geosearch returns nearest-first. A pin beside a landmark often has a smaller
+# sub-feature (e.g. "Pavillon de l'Horloge") closer than the article the pin is named for
+# (e.g. "Louvre"), so ask for several hits and rank them instead of trusting hit #1.
+GEO_LIMIT = 5
+# An exact-title hit further than this from the nearest hit is treated as a distant homonym.
+GEO_HOMONYM_FACTOR = 3.0
+GEO_HOMONYM_FLOOR_M = 250.0
 MAX_HTTP_PER_PIN = 4
 MAX_PINS = 24
 MAX_IMAGES = 3
@@ -230,34 +237,124 @@ def wikipedia_summary(title: str, lang: str = "en") -> dict:
     return out
 
 
-def wikipedia_geosearch(lat: float, lon: float, lang: str = "en", radius_m: int = 800) -> dict:
-    """Nearest Wikipedia page via MediaWiki geosearch (keyless)."""
+def _norm_title(value) -> str:
+    """Lowercase, unquote and collapse a Wikipedia title/label for comparison."""
+    text = urllib.parse.unquote(str(value or "")).replace("_", " ")
+    text = re.sub(r"\s*\([^)]*\)\s*$", "", text)  # drop a trailing disambiguator
+    text = re.sub(r"[^a-z0-9]+", " ", text.lower())
+    return " ".join(text.split())
+
+
+def _title_score(candidate: str, label: str, title: str) -> float:
+    """How well a geosearch title matches the pin label/title; exact beats containment."""
+    cand = _norm_title(candidate)
+    if not cand:
+        return 0.0
+    names = {_norm_title(label), _norm_title(title)}
+    names.discard("")
+    if not names:
+        return 0.0
+    if cand in names:
+        return 100.0
+    for name in names:
+        if cand in name or name in cand:
+            return 70.0
+        ct, nt = set(cand.split()), set(name.split())
+        if nt and nt <= ct:
+            return 60.0
+        if ct and nt:
+            overlap = len(ct & nt) / len(ct | nt)
+            if overlap:
+                return 50.0 * overlap
+    return 0.0
+
+
+def _rank_wikipedia_hits(hits: list | None, *, label=None, title=None) -> dict | None:
+    """Pick the best geosearch hit: exact pin name first, else best title/distance score.
+
+    Hits beyond a distance horizon around the nearest hit are dropped, so a far-away page
+    that merely shares the pin's name cannot beat a closer page with a matching name.
+    """
+    rows = [h for h in (hits or []) if isinstance(h, dict) and str(h.get("title") or "").strip()]
+    if not rows:
+        return None
+
+    def dist_of(h):
+        try:
+            return float(h.get("dist"))
+        except (TypeError, ValueError):
+            return None
+
+    known = [d for d in (dist_of(h) for h in rows) if d is not None]
+    horizon = None
+    if known:
+        horizon = max(min(known) * GEO_HOMONYM_FACTOR, GEO_HOMONYM_FLOOR_M)
+    candidates = []
+    for h in rows:
+        d = dist_of(h)
+        if horizon is None or d is None or d <= horizon:
+            candidates.append((h, d))
+    if not candidates:
+        candidates = [(rows[0], dist_of(rows[0]))]
+
+    names = {_norm_title(label), _norm_title(title)}
+    names.discard("")
+    exact = [h for h, _ in candidates if _norm_title(h.get("title")) in names]
+    if exact:
+        return min(exact, key=lambda h: (dist_of(h) is None, dist_of(h) or 0.0))
+
+    def score(pair):
+        h, d = pair
+        return (_title_score(h.get("title"), label, title) - (d or 0.0) / 1000.0,
+                -(d if d is not None else 1e12))
+
+    return max(candidates, key=score)[0]
+
+
+def wikipedia_geosearch(lat: float, lon: float, lang: str = "en", radius_m: int = 800,
+                        limit: int = GEO_LIMIT, prefer_title: str | None = None,
+                        label: str | None = None) -> dict:
+    """Wikipedia pages near a point via MediaWiki geosearch (keyless).
+
+    ``hits`` keeps the API's nearest-first order; the returned top-level title is the
+    best title/label match when ``prefer_title``/``label`` is supplied, else the nearest.
+    """
     lang = lang if re.match(r"^[a-z-]{2,12}$", lang or "") else "en"
-    ck = f"geo:{lang}:{round(lat, 4)}:{round(lon, 4)}:{radius_m}"
+    limit = max(1, min(20, int(limit)))
+    ck = f"geo:{lang}:{round(lat, 4)}:{round(lon, 4)}:{radius_m}:{limit}"
     hit = cache_get(ck)
     if hit is not None:
-        return hit
-    qs = urllib.parse.urlencode({
-        "action": "query", "list": "geosearch", "gscoord": f"{lat}|{lon}",
-        "gsradius": max(50, min(10000, int(radius_m))), "gslimit": 1, "format": "json",
-    })
-    status, body = _http(f"https://{lang}.wikipedia.org/w/api.php?{qs}")
-    if status != 200 or not body:
-        out = {"ok": False, "unavailable": True}
-        cache_set(ck, out)
-        return out
-    try:
-        data = json.loads(body)
-        hits = (data.get("query") or {}).get("geosearch") or []
-    except Exception:
+        cached = hit
+    else:
+        qs = urllib.parse.urlencode({
+            "action": "query", "list": "geosearch", "gscoord": f"{lat}|{lon}",
+            "gsradius": max(50, min(10000, int(radius_m))), "gslimit": limit, "format": "json",
+        })
+        status, body = _http(f"https://{lang}.wikipedia.org/w/api.php?{qs}")
         hits = []
-    if not hits:
-        out = {"ok": False, "unavailable": True}
-        cache_set(ck, out)
-        return out
-    out = {"ok": True, "title": hits[0].get("title"), "pageid": hits[0].get("pageid"),
-           "dist": hits[0].get("dist"), "lat": hits[0].get("lat"), "lon": hits[0].get("lon")}
-    cache_set(ck, out)
+        if status == 200 and body:
+            try:
+                data = json.loads(body)
+                hits = (data.get("query") or {}).get("geosearch") or []
+            except Exception:
+                hits = []
+        if not hits:
+            cached = {"ok": False, "unavailable": True}
+        else:
+            keep = ("title", "pageid", "dist", "lat", "lon")
+            cached = {"ok": True,
+                      "title": hits[0].get("title"), "pageid": hits[0].get("pageid"),
+                      "dist": hits[0].get("dist"), "lat": hits[0].get("lat"), "lon": hits[0].get("lon"),
+                      "hits": [{k: h.get(k) for k in keep if k in h} for h in hits]}
+        cache_set(ck, cached)
+    if not cached.get("ok"):
+        return cached
+    best = _rank_wikipedia_hits(cached.get("hits") or [cached], label=label, title=prefer_title)
+    out = dict(cached)
+    if best:
+        for key in ("title", "pageid", "dist", "lat", "lon"):
+            if key in best:
+                out[key] = best[key]
     return out
 
 
@@ -453,12 +550,16 @@ def research_one(spec: dict, budget: list[int] | None = None) -> dict:
     elif wd and wd.get("enwiki") and spend():
         wp = wikipedia_summary(wd["enwiki"], "en")
     elif isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and spend():
-        geo = wikipedia_geosearch(float(lat), float(lon))
-        if geo.get("ok") and geo.get("title") and spend():
-            wp = wikipedia_summary(geo["title"], "en")
-            if wp.get("ok") and geo.get("dist") is not None:
+        geo = wikipedia_geosearch(float(lat), float(lon), prefer_title=title, label=label)
+        picked = _rank_wikipedia_hits(geo.get("hits") or ([geo] if geo.get("ok") else []),
+                                      label=label, title=title)
+        geo_title = (picked or {}).get("title") or geo.get("title")
+        geo_dist = (picked or {}).get("dist", geo.get("dist"))
+        if geo.get("ok") and geo_title and spend():
+            wp = wikipedia_summary(geo_title, "en")
+            if wp.get("ok") and geo_dist is not None:
                 sources.append({"name": "Wikipedia geosearch", "status": "ok",
-                                "dist_m": geo.get("dist"), "title": geo.get("title")})
+                                "dist_m": geo_dist, "title": geo_title})
         elif not geo.get("ok"):
             sources.append({"name": "Wikipedia geosearch", "status": "unavailable"})
     elif spend():
@@ -662,13 +763,31 @@ def research_pins(scene_store, session_key: str | None, *, ids=None, labels=None
 
     pane = None
     if persist and updated and live is not None:
-        # redraw scene so drawers show new content
+        # Redraw scene so drawers show new content. Snapshot the specs BEFORE clearing: a
+        # live relay records clear_annotations into the same scene store, which would
+        # otherwise leave nothing to redraw (and lose every pin).
         try:
-            pane = live("clear_annotations", {})
             with scene_store.lock:
-                specs = [x["spec"] for x in scene_store.scene(session_key).get("annotations") or []]
-            for i in range(0, len(specs), 24):
-                live("annotate_map", {"annotations": specs[i:i + 24], "persist": True})
+                before = [{"id": x["id"], "paneId": x.get("paneId"), "spec": dict(x["spec"])}
+                          for x in scene_store.scene(session_key).get("annotations") or []]
+            pane = live("clear_annotations", {})
+            for i in range(0, len(before), 24):
+                live("annotate_map", {"annotations": [x["spec"] for x in before[i:i + 24]],
+                                      "persist": True})
+            # A live relay can record the redraw into this same store, replacing every
+            # annotation id. Research only owns drawer fields, so put the pin ids back.
+            with scene_store.lock:
+                sc = scene_store.scene(session_key)
+                anns = sc.get("annotations") or []
+                if not anns and before:
+                    sc["annotations"] = before
+                elif len(anns) == len(before):
+                    for ann, old in zip(anns, before):
+                        ann["id"] = old["id"]
+                sc["updated"] = time.time()
+                save = getattr(scene_store, "_save", None)
+                if callable(save):
+                    save()
         except Exception as exc:
             pane = {"ok": False, "error": str(exc)[:200]}
 
