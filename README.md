@@ -31,17 +31,27 @@ Person search, face recognition, and tracking an individual are refused in `gev/
 
 ## A tour of the pane
 
-The pictures are the running pane over Montreal. The names and coordinates are public places. Imagery credits in the corner (Cesium ion, Esri) belong to those providers, through God's Eye View.
+The pictures are the running pane. London, Tokyo, and Sydney are the Hermes Webapp in dark mode, with a narrow chat beside the globe. Measure and compare stay on Montreal. The names and coordinates are public places. Imagery credits in the corner (Cesium ion, Google Maps, Esri) belong to those providers, through God's Eye View.
+
+### New in recent builds
+
+<img src="docs/images/overlays-sidebar.png" alt="Eye Of Hermes over London. The Overlays sidebar lists Tower Bridge, Big Ben, and the London Eye, plus the Westminster to Tower Bridge route." width="100%">
+
+<sub>London, <b>NORMAL</b> style, EOH mark in the corner. The Overlays sidebar is open: <b>Pins (3)</b> holds Tower Bridge, Big Ben, and the London Eye under landmark, and <b>Routes, trails, and lines</b> holds Westminster to Tower Bridge, drawn in orange along the Thames. <b>Scenes</b> and <b>Saved</b> include London landmarks. Choose File and <b>Export</b> sit at the top. Pin filters include <b>Open now</b>.</sub>
+
+<img src="docs/images/director-scene.png" alt="Authoring panel for the Tokyo Tower demo after playback, reading Scene run complete, beside a FLIR view of Tokyo." width="100%">
+
+<sub>Tokyo in the <b>FLIR</b> style. The Authoring panel is the Director scene <b>Tokyo Tower demo</b> after playback, and it reads <b>Scene run complete</b>. The shot list shows <b>01 Approach</b> (FLIR · OFF · 6.0s + 1.0s) and <b>02 Overhead</b> (FLIR · OFF · 5.0s + 2.0s). The chat says the three-shot move finished on the final detail, 800 m up, heading 200°.</sub>
+
+<img src="docs/images/pin-drawer.png" alt="Sydney Opera House pin with the drawer open: visitor note, coordinates, and an Official site link." width="100%">
+
+<sub>Sydney Opera House, rooftop framing, <b>NORMAL</b> style. The pin drawer is open on <b>-33.85680, 151.21530</b>, with a short description, a visitor note (golden hour, the forecourt, Opera Bar), the position, and an <b>Official site</b> link. <b>Ask Hermes</b> is on the drawer.</sub>
 
 ### What am I looking at
 
 `godseye_query` with `op=context` reads the camera, the visible box, the selected pin, the last clicked ground point, and any shape on the map. `focus` is its best guess for "this": the open pin, then the newest drawing, then the last click, then the centre of the screen. It reverse-geocodes that point and lists nearby named places. `op=what_is_here` does the same lookup for a lat/lon with no pane open.
 
-The toolbar at the bottom left draws a box (two clicks), an area, or a line. Distance and area are labeled on the shape. **Ask Hermes** copies a ready question to the clipboard and focuses the chat composer. The Desktop plugin SDK cannot submit a chat message on its own, so you paste and send.
-
-<img src="docs/images/eoh-context.jpg" alt="Marché Bonsecours pin drawer beside a drawn box labeled 4.91 hectares, with Box, Area, Line, and Ask Hermes" width="880">
-
-<sub>A drawn box of 4.91 ha around Marché Bonsecours. The drawer shows 45.50886, -73.55180 and "Bonsecours Market, 1847, Old Montréal." <b>Ask Hermes</b> is on the drawer and on the draw toolbar.</sub>
+The toolbar at the bottom left draws a box (two clicks), an area, or a line. Distance and area are labeled on the shape. **Ask Hermes** copies a ready question to the clipboard and focuses the chat composer. The Desktop plugin SDK cannot submit a chat message on its own, so you paste and send. On the Montreal example, a drawn box of 4.91 ha around Marché Bonsecours shows 45.50886, -73.55180 and "Bonsecours Market, 1847, Old Montréal." That box is in the measure picture below. The Sydney picture above is the same drawer, open on a visitor note.
 
 ### Measure, routes, and reach
 
@@ -68,10 +78,6 @@ The toolbar at the bottom left draws a box (two clicks), an area, or a line. Dis
 `mode=events` shows USGS earthquakes and NASA FIRMS fires, plus alerts already stored by an area watch, as pins. A pin appears when the playhead reaches its time, and it opens the same drawer as any other pin. Omit `from` and `to` to use the last 7 days. `feeds` is `earthquakes`, `fires`, or both. `area` is `[south, west, north, east]`. Omit it to use the open view. FIRMS' area API covers the last 10 days. Older fires in the window come from the watch history.
 
 `timeline=play` runs the slider. `timeline=step` with `by=1` or `by=-1` moves one release, or one event day. `timeline=state` reads the date and what is visible. `timeline=stop` pauses. The slider is saved with the scene and with an investigation, and it comes back when the pane reopens or WebGL recovers. Dragging the control saves the playhead the same way a filter chip does. Photorealistic 3D tiles are hidden while Wayback imagery is up. They are not sampled.
-
-<img src="docs/images/eoh-timeline.jpg" alt="Eye Of Hermes time slider on Wayback, playhead at 2020-04-08, three releases" width="880">
-
-<sub>Wayback playhead on <b>2020-04-08</b>, three Esri releases in the window. Play, step, and the range sit on the EOH pane.</sub>
 
 ### Street View walk
 
@@ -453,7 +459,7 @@ The time slider is `godseye_nav` `op=timeline`. `mode=wayback` scrubs Esri Wayba
 
 - **[God's Eye View](https://github.com/bilawalsidhu/gods-eye-view)** by Bilawal Sidhu and contributors, MIT. This plugin reuses its MCP server, its globe panel, its voice actions, and its HUD prompt. The upstream license is included as [`LICENSE.upstream-gods-eye-view`](LICENSE.upstream-gods-eye-view). Eye Of Hermes is an independent integration. It is not affiliated with or endorsed by the upstream project.
 - The embed protocol (`gev:config`, `gev:visibility`, `perf=embed`) comes from the [mojomast fork](https://github.com/mojomast/gods-eye-view).
-- Pane imagery in the screenshots is credited on screen to Cesium ion and Esri, via God's Eye View.
+- Pane imagery in the screenshots is credited on screen to Cesium ion, Google Maps, and Esri, via God's Eye View.
 
 ## License
 
