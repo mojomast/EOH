@@ -219,3 +219,111 @@ def test_js_overlay_hides_a_pin_the_filters_would_show():
     assert got["off"]["ok"] and got["hidden"] and got["still"]
     assert got["redraw"]["needsRedraw"] is True
     assert got["mounted"] and "retired" in got["title"]
+
+
+class _RecordingRelay:
+    """Minimal relay: records pane commands and can report no open pane."""
+
+    def __init__(self, panes=True):
+        self.sent = []
+        self._panes = panes
+
+    def open_panes(self):
+        return [object()] if self._panes else []
+
+    def submit(self, name, args, **kw):
+        self.sent.append((name, args, kw))
+        return {"ok": True, "action": "open"}
+
+
+def test_run_uses_http_relay_when_live_current_is_none(tmp_path, monkeypatch):
+    from gev import bridge, overlays as overlays_mod
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    calls = {}
+
+    def fake_call(path, token, body=None, timeout=None):
+        calls.update(path=path, token=token, body=body, timeout=timeout)
+        return {"ok": True, "schema": SCHEMA, "scene": body.get("session_id")}
+
+    monkeypatch.setattr(live, "current", lambda: None)
+    monkeypatch.setattr(live, "call", fake_call)
+    monkeypatch.setattr(bridge, "ensure_token", lambda: "test-token")
+
+    out = overlays_mod.run({"op": "overlays", "action": "tree"}, "s")
+    assert out["ok"] is True
+    assert calls["path"] == "/overlays"
+    assert calls["token"] == "test-token"
+    assert calls["body"]["action"] == "tree"
+    assert calls["body"]["session_id"] == "s"
+
+
+def test_run_returns_relay_unavailable_only_for_a_true_outage(tmp_path, monkeypatch):
+    from gev import bridge, overlays as overlays_mod
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(live, "current", lambda: None)
+    monkeypatch.setattr(live, "call", lambda *a, **k: {
+        "ok": False, "error": "relay_unavailable", "message": "down"})
+    monkeypatch.setattr(bridge, "ensure_token", lambda: "test-token")
+
+    out = overlays_mod.run({"action": "tree"}, "s")
+    assert out["ok"] is False and out["error"] == "relay_unavailable"
+    assert out.get("fix")
+
+
+def test_run_prefers_the_in_process_relay(tmp_path, monkeypatch):
+    from gev import overlays as overlays_mod
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+
+    class Relay:
+        def overlays_op(self, body):
+            return {"ok": True, "via": "relay", "body": body}
+
+    monkeypatch.setattr(live, "current", lambda: Relay())
+    monkeypatch.setattr(live, "call", lambda *a, **k: (_ for _ in ()).throw(AssertionError("HTTP fallback used")))
+    out = overlays_mod.run({"action": "tree"}, "s")
+    assert out["via"] == "relay" and out["body"]["session_id"] == "s"
+
+
+def test_open_action_drives_the_pane_sidebar_hook(tmp_path, monkeypatch):
+    st, watches = _seed(tmp_path, monkeypatch)
+    relay = _RecordingRelay()
+    out = handle(st, "s", {"action": "open"}, watches=watches, relay=relay)
+    assert out["ok"] is True and out["action"] == "open" and out["sidebar"] == "overlays"
+    assert relay.sent[0][0] == "hermes_overlay" and relay.sent[0][1]["action"] == "open"
+    assert relay.sent[0][2].get("record") is False
+
+
+def test_show_without_an_id_opens_the_sidebar(tmp_path, monkeypatch):
+    st, watches = _seed(tmp_path, monkeypatch)
+    relay = _RecordingRelay()
+    out = handle(st, "s", {"action": "show"}, watches=watches, relay=relay)
+    assert out["ok"] is True and out["action"] == "open"
+    assert relay.sent[0][0] == "hermes_overlay" and relay.sent[0][1]["action"] == "open"
+
+
+def test_open_without_a_pane_is_a_clear_failure(tmp_path, monkeypatch):
+    st, watches = _seed(tmp_path, monkeypatch)
+    out = handle(st, "s", {"action": "open"}, watches=watches, relay=_RecordingRelay(panes=False))
+    assert out["ok"] is False and out["error"] == "no_pane" and out.get("fix")
+
+
+@needs_node
+def test_overlay_open_hook_posts_the_sidebar_message():
+    from test_pins import MOCK
+    src = (ROOT / "gev" / "panel_overlays.js").read_text()
+    body = r"""
+      const viaApply = window.__hermesOverlays.apply({ action: 'open' })
+      const viaCall = window.__hermesOverlays.open()
+      console.log(JSON.stringify({ viaApply, viaCall, posted }))
+    """
+    prog = MOCK + "\n;" + src + "\n;(async () => {" + body + "})().catch((e) => { console.error(e); process.exit(1) })"
+    out = subprocess.run([NODE, "-e", prog], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    assert got["viaApply"]["ok"] and got["viaApply"]["action"] == "open"
+    assert got["viaCall"]["ok"] and got["viaCall"]["action"] == "open"
+    messages = [m for m in got["posted"] if m.get("type") == "hermes-gev:overlays"]
+    assert messages and all(m.get("detail", {}).get("open") is True for m in messages)
