@@ -103,7 +103,7 @@ def test_no_keys_does_not_call_out(monkeypatch):
     called = []
     monkeypatch.setattr(streetlevel, "_get", lambda *a, **k: called.append(a) or (0, ""))
     out = streetlevel.nearest(45.5, -73.57)
-    assert out["error"] == "no_pano" and called == []
+    assert out["error"] == "KEY_MISSING" and called == []
     assert "GOOGLE_MAPS_API_KEY" in out["missingKeys"]
 
 

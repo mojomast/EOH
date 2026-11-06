@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.6 — 2026-11-06
+
+### Changed
+- Street-level keys (`GOOGLE_MAPS_API_KEY`, alternate `GOOGLE_API_KEY`, `MAPILLARY_CLIENT_TOKEN`) are declared in `plugin.yaml` `requires_env` (rich form, optional in the description, `secret: true`) and read only via Hermes `agent.secret_scope.get_secret`. The v0.2.4 fallback that read `~/.config/gods-eye-view.env` / `GEV_ENV_FILE` / `GODSEYE_ENV_FILE` is removed (Hermes catalog rule 11). Missing keys return `KEY_MISSING` with a Hermes fix hint; `register()` never crashes.
+
+Still exactly 11 composable tools.
+
 ## 0.2.5 — 2026-11-06
 
 ### Fixed
