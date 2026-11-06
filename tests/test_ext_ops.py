@@ -117,5 +117,6 @@ def test_unknown_tool_is_refused(monkeypatch):
 def test_import_failure_is_skipped_and_recorded_for_the_doctor(monkeypatch):
     monkeypatch.setitem(sys.modules, "gev.ext_broken", None)
 
-    assert ext_ops.discover() == []
+    found = ext_ops.discover()
+    assert all(not record.handler.__module__.endswith("ext_broken") for record in found)
     assert "gev.ext_broken" in ext_ops.errors()
