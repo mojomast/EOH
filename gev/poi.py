@@ -184,17 +184,118 @@ def bbox_polygon(bbox: list[float]) -> list[list[float]]:
     return [[w, s], [e, s], [e, n], [w, n], [w, s]]
 
 
-def geocode(place: str) -> dict | None:
-    res = nominatim("search", {"q": place, "limit": 1, "addressdetails": 1})
-    if not res:
+_US_STATES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+    "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia",
+    "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+    "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri",
+    "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey",
+    "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+    "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+    "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+    "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+    "DC": "District of Columbia",
+}
+_US_COUNTRY_WORDS = {"USA", "US", "U.S.", "U.S.A.", "UNITED STATES", "UNITED STATES OF AMERICA"}
+_STATE_TAIL = re.compile(r"^(.*\S)\s+([A-Za-z]{2})$")
+
+
+def _clean_place(place: str) -> str:
+    return " ".join(str(place or "").split()).strip(" ,")
+
+
+def _place_queries(place: str) -> list[str]:
+    """Nominatim queries for a user phrase, most literal first then US-city forms.
+
+    Bare city names are ambiguous to a free-text geocoder, and a two-letter state
+    suffix ("Chicago, IL", "Chicago IL") is often not expanded. Retrying with the
+    full state and country makes the common US city forms resolve.
+    """
+    q = _clean_place(place)
+    if not q:
+        return []
+    out: list[str] = []
+
+    def add(value: str) -> None:
+        value = _clean_place(value)
+        if value and value.lower() not in {item.lower() for item in out}:
+            out.append(value)
+
+    add(q)
+    parts = [part.strip() for part in q.split(",") if part.strip()]
+    if len(parts) >= 2:
+        city = parts[0]
+        state = re.sub(r"\.$", "", parts[1]).strip()
+        full = _US_STATES.get(state.upper())
+        if full:
+            add(f"{city}, {full}, USA")
+            add(f"{city}, {full}")
+        if parts[-1].upper() not in _US_COUNTRY_WORDS:
+            add(q + ", USA")
+    else:
+        tail = _STATE_TAIL.match(q)
+        if tail and tail.group(2).upper() in _US_STATES:
+            add(f"{tail.group(1)}, {_US_STATES[tail.group(2).upper()]}, USA")
+        add(q + ", USA")
+    return out[:4]
+
+
+def _geocode_failure(code: str, message: str, fix: str) -> dict:
+    return {"ok": False, "error": code, "code": code, "message": message, "fix": fix}
+
+
+def _geocode_hit(row: dict) -> dict | None:
+    try:
+        lat, lon = float(row["lat"]), float(row["lon"])
+    except (KeyError, TypeError, ValueError):
         return None
-    r = res[0]
-    bb = [float(x) for x in r.get("boundingbox", [])] if r.get("boundingbox") else None  # S,N,W,E
-    out = {"name": r.get("display_name"), "lat": float(r["lat"]), "lon": float(r["lon"]),
-           "type": r.get("type"), "class": r.get("category") or r.get("class")}
-    if bb and bb[0] != bb[1]:
+    out = {"ok": True, "name": row.get("display_name") or row.get("name"),
+           "lat": lat, "lon": lon, "type": row.get("type"),
+           "class": row.get("category") or row.get("class")}
+    try:
+        bb = [float(x) for x in row.get("boundingbox") or []]  # S,N,W,E
+    except (TypeError, ValueError):
+        bb = []
+    if len(bb) == 4 and bb[0] != bb[1]:
         out["bbox"] = [bb[0], bb[2], bb[1], bb[3]]
     return out
+
+
+def geocode(place: str) -> dict | None:
+    """Geocode a place phrase. Returns a hit dict, or a structured failure dict.
+
+    Failure codes are ``no_match`` (Nominatim answered but had no place) and
+    ``geocoder_unavailable`` (no Nominatim answer). Both carry ``message`` and
+    ``fix`` so the caller can act without inventing coordinates.
+    """
+    queries = _place_queries(place)
+    if not queries:
+        return _geocode_failure("no_match", "No place name was given.",
+                                "Pass a place name such as 'Chicago, IL, USA'.")
+    answered = False
+    last_error = ""
+    for query in queries:
+        try:
+            res = nominatim("search", {"q": query, "limit": 1, "addressdetails": 1})
+        except Exception as exc:  # timeout, refused, non-200, bad JSON
+            last_error = str(exc)[:160]
+            continue
+        answered = True
+        rows = res if isinstance(res, list) else ([res] if isinstance(res, dict) else [])
+        for row in rows:
+            if isinstance(row, dict):
+                hit = _geocode_hit(row)
+                if hit:
+                    return hit
+    if answered:
+        return _geocode_failure(
+            "no_match", f"Nominatim found no place named {_clean_place(place)!r}.",
+            "Add a state or country (for example 'Chicago, IL, USA') and retry. "
+            "Do not invent coordinates.")
+    return _geocode_failure(
+        "geocoder_unavailable", f"Nominatim geocoding failed: {last_error or 'no answer'}.",
+        "Retry once. If it still fails, pass lat/lon or use godseye_query op=find_places.")
 
 
 def _addr(tags: dict) -> str | None:
@@ -271,8 +372,14 @@ def find_places(args: dict) -> dict:
         center = {"lat": float(src["lat"]), "lon": float(src["lon"]), "name": src.get("name")}
     elif near:
         g = geocode(str(near))
-        if not g:
-            return {"ok": False, "code": "PLACE_NOT_FOUND", "error": f"Nominatim found no place named {near!r}."}
+        if not g or g.get("ok") is False or g.get("lat") is None:
+            failed = g if isinstance(g, dict) else {}
+            out = {"ok": False, "code": "PLACE_NOT_FOUND",
+                   "error": failed.get("message") or f"Nominatim found no place named {near!r}.",
+                   "fix": failed.get("fix") or "Use a fuller place name, or pass lat/lon or bbox."}
+            if failed.get("code") == "geocoder_unavailable":
+                out["code"] = "OSM_UNAVAILABLE"
+            return out
         center = g
         if not radius and g.get("bbox"):
             bbox = g["bbox"]
@@ -530,7 +637,7 @@ def resolve_area_fallback(args: dict, out: dict, call) -> dict:
         g = geocode(str(args["query"]))
     except Exception:
         pass
-    if g:
+    if g and g.get("lat") is not None:
         bb = g.get("bbox") or bbox_around(g["lat"], g["lon"], float(args.get("radiusM") or 1000))
         out["fallback"] = {"bbox": bb, "polygon": bbox_polygon(bb), "center": [g["lat"], g["lon"]],
                            "note": "Nominatim point; bbox polygon. Use with godseye_query op=find_places bbox=..."}
