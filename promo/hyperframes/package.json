@@ -1,0 +1,18 @@
+{
+  "name": "eoh-hyperframes-promo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Editable 89-second Eye Of Hermes HyperFrames scaffold",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "preview": "npm run build && hyperframes preview .build --no-open",
+    "lint": "npm run build && hyperframes lint .build",
+    "check": "npm run build && hyperframes check .build",
+    "render": "npm run build && hyperframes render .build --fps 30 --quality draft --output out/scaffold-preview.mp4"
+  },
+  "devDependencies": {
+    "gsap": "3.15.1",
+    "hyperframes": "0.9.19"
+  }
+}

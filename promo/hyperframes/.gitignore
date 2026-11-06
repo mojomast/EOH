@@ -1,0 +1,9 @@
+/node_modules/
+/.build/
+/.hyperframes/
+/out/
+/footage/
+/shots/
+/vo/
+/captions.json
+*.log
