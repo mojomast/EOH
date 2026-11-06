@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config, home, policy
@@ -350,7 +351,31 @@ def encode_share(v: dict) -> dict:
 
 
 # -- doctor --------------------------------------------------------------------------------------
-def doctor() -> dict:
+def catalog_age(now=None, path=None) -> dict:
+    """Check the age of gev/feature_snapshot.json without touching the network."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    snapshot = Path(path) if path is not None else _ROOT / "gev" / "feature_snapshot.json"
+    fix = "scripts/snapshot_tools.sh"
+    try:
+        data = json.loads(snapshot.read_text())
+        raw = data["generated_at"]
+        generated = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if generated.tzinfo is None:
+            generated = generated.replace(tzinfo=timezone.utc)
+    except Exception as exc:
+        return {"check": "catalog_age", "ok": False,
+                "detail": f"{snapshot.name} is not readable ({type(exc).__name__})", "fix": fix}
+    days = (current - generated).total_seconds() / 86400.0
+    if days < 30:
+        return {"check": "catalog_age", "ok": True,
+                "detail": f"feature snapshot generated {raw} ({days:.1f} days old)"}
+    return {"check": "catalog_age", "ok": False,
+            "detail": f"feature snapshot is {days:.1f} days old (limit 30 days)", "fix": fix}
+
+
+def doctor(now=None) -> dict:
     checks = []
 
     def add(name, ok, detail, fix=""):
@@ -382,6 +407,17 @@ def doctor() -> dict:
         "Apply patches/0001-hud-summary-compatible-endpoint.patch to the checkout (git apply).")
     add("patch #1572 embed full UI", p.get("fullUi"), "applied" if p.get("fullUi") else "missing",
         "Apply patches/0002-embed-full-ui.patch to the checkout; without it the pane shows the globe only.")
+    checks.append(catalog_age(now=now))
+    try:
+        from . import ext_ops
+        ext_ops.discover()
+        ext_errors = ext_ops.errors()
+        add("ext modules", not ext_errors,
+            "all imported" if not ext_errors else "; ".join(f"{name}: {error}" for name, error in ext_errors.items()),
+            "Fix or remove the listed gev/ext_*.py module.")
+    except Exception as exc:
+        add("ext modules", False, f"{type(exc).__name__}: {exc}",
+            "Fix the duplicate or invalid op in gev/ext_*.py.")
     st = relay_status()
     relay_ok = "error" not in st
     add("live relay", relay_ok, "running" if relay_ok else (st.get("message") or "not running"),

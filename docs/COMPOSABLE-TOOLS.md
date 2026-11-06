@@ -178,3 +178,46 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_app_start` | `godseye_admin` | `app_start` | B | start the app; user-triggered |
 | `godseye_app_stop` | `godseye_admin` | `app_stop` | B | stop the app after ownership checks |
 | `godseye_app_restart` | `godseye_admin` | `app_restart` | B | restart the app; refuses a foreign port |
+
+## Extension ops
+
+New behaviour is a new op on one of the eleven tools, never a twelfth tool. A
+plugin module named `gev/ext_<name>.py` exports `EXT_OPS`, a list of frozen
+`ExtOp` records from `gev/ext_ops.py`:
+
+```python
+from gev.ext_ops import ExtOp
+
+def handler(args, **kw):
+    return '{"ok": true}'
+
+EXT_OPS = [
+    ExtOp(
+        tool="godseye_nav",
+        op="hello",
+        handler=handler,
+        props={"target": {"type": "string", "description": "Who to greet."}},
+        blurb="Say hello without leaving the map.",
+    ),
+]
+```
+
+`props` maps an argument name to its JSON Schema property. A property marked
+with `"required": True` is enforced by the router and the marker is stripped
+before the schema reaches the model. `handler(args, **kw)` receives only the
+declared props; `session_id` and the other keyword arguments are forwarded.
+
+`gev/ext_ops.discover()` imports every `gev/ext_*.py` module on disk and any
+matching module already in `sys.modules`. A module that fails to import is
+skipped, and its error is kept by `gev/ext_ops.errors()` for the doctor. An op
+that names a tool outside the eleven, or that duplicates an existing
+`(tool, op)` pair (including two extension modules claiming the same pair),
+raises `ValueError` during discovery. The router reads the discovered records
+for the op enum, the schema union, the op blurb, `prepare`, and dispatch, so a
+new extension module needs no router edit. `register_tools` still registers
+exactly the eleven composable tools; extension ops are reached through them.
+
+The `godseye_admin` `op=doctor` report includes `catalog_age`, which reads
+`generated_at` from `gev/feature_snapshot.json` (ok under 30 days, warn
+otherwise) and points at `scripts/snapshot_tools.sh`. It also reports any
+extension module that failed to import.
