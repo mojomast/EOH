@@ -80,20 +80,44 @@
   reveal('.catalog-line,.hackathon', { y: 14, opacity: 0 },
     { y: 0, opacity: 1, duration: .75, stagger: .18, ease: 'power3.out' }, 1.45);
 
-  // Mock Hermes terminal: type the scene prompt, finishing before/as map action settles.
-  const chat = scene.querySelector('.chat-bubble');
+  // Mock Hermes terminal: finish typing the prompt before the map transition (data-action-at),
+  // then optionally type a Hermes reply while the footage plays.
+  const pane = scene.querySelector('.chat-pane');
+  const chat = scene.querySelector('.chat-bubble.chat-user') || scene.querySelector('.chat-bubble');
   if (chat) {
-    reveal('.chat-bubble', { scale: .94, y: 16, opacity: 0, transformOrigin: 'top left' },
+    reveal('.chat-bubble.chat-user, .chat-bubble:not(.chat-reply)', { scale: .94, y: 16, opacity: 0, transformOrigin: 'top left' },
       { scale: 1, y: 0, opacity: 1, duration: .55, ease: 'back.out(1.2)' }, .55);
-    const text = JSON.parse(chat.dataset.chat).join('  ');
+    const lines = JSON.parse(chat.dataset.chat || '[]');
+    const prompt = lines[0] || '';
+    const reply = lines[1] || '';
     const target = chat.querySelector('.chat-text');
     const state = { characters: 0 };
     const typeStart = .85;
-    const typeDuration = Math.min(Math.max(text.length * 0.028, 1.6), Math.max(duration - 2.2, 1.6));
-    tl.to(state, { characters: text.length, duration: typeDuration, ease: 'none',
-      onUpdate: () => { target.textContent = text.slice(0, Math.floor(state.characters)); } }, typeStart);
-    const blinks = Math.max(6, Math.floor(typeDuration / .36));
-    reveal('.cursor', { opacity: 1 }, { opacity: 0, duration: .36, repeat: blinks, yoyo: true, ease: 'steps(1)' }, typeStart);
+    const actionAt = Number(pane?.dataset.actionAt);
+    const available = Number.isFinite(actionAt) && actionAt > typeStart + 0.4
+      ? Math.max(actionAt - typeStart - 0.2, 1.2)
+      : Math.min(Math.max(prompt.length * 0.022, 1.5), Math.max(duration - 2.2, 1.5));
+    const typeDuration = Math.min(Math.max(prompt.length * 0.022, 1.4), available);
+    tl.to(state, { characters: prompt.length, duration: typeDuration, ease: 'none',
+      onUpdate: () => { target.textContent = prompt.slice(0, Math.floor(state.characters)); } }, typeStart);
+    const blinks = Math.max(4, Math.floor(typeDuration / .36));
+    reveal('.chat-user .cursor, .chat-bubble:not(.chat-reply) .cursor', { opacity: 1 }, { opacity: 0, duration: .36, repeat: blinks, yoyo: true, ease: 'steps(1)' }, typeStart);
+
+    if (reply) {
+      const replyEl = scene.querySelector('.chat-reply');
+      const replyTarget = scene.querySelector('.chat-reply-text');
+      if (replyEl && replyTarget) {
+        const replyStart = typeStart + typeDuration + 0.35;
+        reveal('.chat-reply', { scale: .94, y: 12, opacity: 0, transformOrigin: 'top left' },
+          { scale: 1, y: 0, opacity: 1, duration: .45, ease: 'back.out(1.15)' }, replyStart);
+        const rstate = { characters: 0 };
+        const replyDur = Math.min(Math.max(reply.length * 0.018, 1.8), Math.max(duration - replyStart - 0.4, 1.5));
+        tl.to(rstate, { characters: reply.length, duration: replyDur, ease: 'none',
+          onUpdate: () => { replyTarget.textContent = reply.slice(0, Math.floor(rstate.characters)); } }, replyStart + 0.2);
+        const rblinks = Math.max(4, Math.floor(replyDur / .36));
+        reveal('.reply-cursor', { opacity: 1 }, { opacity: 0, duration: .36, repeat: rblinks, yoyo: true, ease: 'steps(1)' }, replyStart + 0.2);
+      }
+    }
   }
 
   // Trace the real architecture in order; the traveling packet is a schematic.

@@ -57,6 +57,10 @@ h1{font-size:150px}
 .pane-label{display:flex;justify-content:space-between;color:var(--cyan);font-size:12px;font-weight:700;letter-spacing:.15em;border-bottom:1px solid var(--line);padding-bottom:22px}.pane-label span{color:#7994a6}
 .chat-status{font-size:10px;letter-spacing:.14em;color:var(--gold);margin-top:22px;line-height:1.6}
 .chat-bubble{margin-top:14px;padding:16px 15px;background:rgba(62,230,255,.10);border:1px solid rgba(62,230,255,.25);border-radius:3px 16px 16px 16px;color:#e2f7ff;font-size:15px;line-height:1.45;min-height:96px;max-height:430px;overflow:auto;flex:1}.cursor{color:var(--cyan);font-size:14px}
+.chat-role{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:rgba(111,201,223,.72);margin-bottom:8px}
+.chat-bubble.chat-reply{background:rgba(255,196,92,.08);border-color:rgba(255,196,92,.28);border-radius:16px 3px 16px 16px;min-height:72px;flex:1.15}
+.chat-bubble.chat-user{flex:0.9;min-height:72px}
+
 .chat-hint{margin-top:16px;color:#7895a9;font-size:12px;line-height:1.45}
 .lower-third{position:absolute;left:610px;top:859px;display:flex;gap:18px;align-items:center}.lower-number{display:grid;place-items:center;width:52px;height:52px;border:1px solid rgba(245,192,74,.55);color:var(--gold);font-size:16px;font-weight:700}.lower-third b{display:block;font-size:23px}.lower-third small{display:block;color:#87a5b6;font-size:12px;font-weight:700;letter-spacing:.17em;margin-top:5px}
 .vo-slot{position:absolute;left:115px;bottom:119px;color:#7895a9;font-size:13px;font-weight:700;letter-spacing:.07em}

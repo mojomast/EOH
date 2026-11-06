@@ -24,3 +24,7 @@ Each scene has three separate slots: the named `footage/*.mp4`, `shots/*.png`, a
 | **Captions, all scenes** 00:00–01:29 / 89s | `captions.json` | After recording the final VO, transcribe the actual audio and time each caption against the full 89-second timeline. | UTF-8 JSON; seconds from film start; burned in at 1920×1080 | Use the approved recorded words, not the draft automatically. See `captions.example.json`. |
 
 Video sources should be H.264 MP4, 30 fps and at least the scene length, cropped to the GEV map pane; screenshot sources are PNG of that same pane. Record or export VO as PCM WAV, 48 kHz, mono or stereo. Timing is approximate editorial guidance; revise the script and cue timing to match the real take. No sound or music is bundled.
+
+
+## v2 timing (PR follow-up)
+Footage scenes freeze on the pre-transition frame while the mock prompt types, then play from each take's `first_map_change`. Scene 02 adds a simulated Hermes reply grounded in the rotating whole-Earth view. VO slots unchanged/swappable. Timeline ~99.6s.

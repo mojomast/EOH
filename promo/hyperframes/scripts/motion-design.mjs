@@ -23,10 +23,17 @@ export function placeholderInstrument() {
 
 
 /** Mock Hermes dark-mode chat pane. Typed by scene-motion.js from data-chat.
- *  Used as a designed overlay; real footage is the cropped GEV map pane only. */
-export function mockHermesChat({ label = '01', prompt }) {
-  const dataChat = JSON.stringify([prompt]).replace(/&/g, '&amp;').replace(/'/g, '&#39;');
-  return `<div class="chat-pane"><div class="pane-label">HERMES CHAT <span>${label}</span></div><div class="chat-status">SHOT DIRECTION / DRAFT PROMPT · MOCK</div><div class="chat-bubble" data-chat='${dataChat}'><span class="chat-text"></span><span class="cursor">▌</span></div><div class="chat-hint">Mock terminal · footage is GEV map pane only</div></div>`;
+ *  Used as a designed overlay; real footage is the cropped GEV map pane only.
+ *  Optional data-reply becomes a second bubble typed after the prompt.
+ *  data-action-at marks when the map transition begins (prompt must finish first). */
+export function mockHermesChat({ label = '01', prompt, reply = '', actionAt = '' }) {
+  const lines = reply ? [prompt, reply] : [prompt];
+  const dataChat = JSON.stringify(lines).replace(/&/g, '&amp;').replace(/'/g, '&#39;');
+  const actionAttr = actionAt !== '' && actionAt != null ? ` data-action-at="${actionAt}"` : '';
+  const replyBubble = reply
+    ? `<div class="chat-bubble chat-reply" data-chat-reply="1"><span class="chat-role">HERMES</span><span class="chat-text chat-reply-text"></span><span class="cursor reply-cursor">▌</span></div>`
+    : '';
+  return `<div class="chat-pane"${actionAttr}><div class="pane-label">HERMES CHAT <span>${label}</span></div><div class="chat-status">LIVE PROMPT · MOCK</div><div class="chat-bubble chat-user" data-chat='${dataChat}'><span class="chat-role">YOU</span><span class="chat-text"></span><span class="cursor">▌</span></div>${replyBubble}<div class="chat-hint">Mock terminal · footage is GEV map pane only</div></div>`;
 }
 
 export function decorateScene(body, number) {
@@ -39,8 +46,11 @@ export function decorateScene(body, number) {
   body = body.replace(/<div\s+data-mock-hermes-chat\s+([^>]*)><\/div>/g, (_, attrs) => {
     const label = /data-label="([^"]*)"/.exec(attrs)?.[1] || '01';
     const prompt = /data-prompt="([^"]*)"/.exec(attrs)?.[1];
+    const reply = /data-reply="([^"]*)"/.exec(attrs)?.[1] || '';
+    const actionAt = /data-action-at="([^"]*)"/.exec(attrs)?.[1] || '';
     if (!prompt) throw new Error(`data-mock-hermes-chat missing data-prompt (label ${label})`);
-    return mockHermesChat({ label, prompt: prompt.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&') });
+    const decode = (s) => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+    return mockHermesChat({ label, prompt: decode(prompt), reply: decode(reply), actionAt });
   });
   body = body.replace('<!-- OPTICS -->', optics());
   body = body.replaceAll('<div class="arch-link">→</div>', '<div class="arch-link" aria-label="to"><span class="link-line"></span><span class="link-packet" aria-hidden="true"></span><span class="link-arrow">›</span></div>');

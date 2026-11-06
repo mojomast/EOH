@@ -27,6 +27,8 @@ fs.copyFileSync(path.join(root, 'node_modules/gsap/dist/gsap.min.js'), path.join
 for (const file of ['style.css', 'motion.js']) fs.copyFileSync(path.join(root, file), path.join(build, file));
 
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const compositionDuration = Number(/id="film"[^>]*data-duration="([\d.]+)"/.exec(html)?.[1]);
+if (!Number.isFinite(compositionDuration)) throw new Error('Could not read composition data-duration');
 const scenePattern = /<section id="scene-(\d+)"[^>]*data-start="([\d.]+)"[^>]*data-duration="([\d.]+)"[^>]*>([\s\S]*?)<\/section>/g;
 const scenes = [...html.matchAll(scenePattern)].map(match => ({
   number: match[1], start: Number(match[2]), duration: Number(match[3]),
@@ -75,8 +77,8 @@ if (exists('captions.json')) {
   let lastEnd = 0;
   const captions = cues.map((cue, index) => {
     const { start, end, text } = cue;
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start < lastEnd || end <= start || end > 89 || typeof text !== 'string' || !text.trim()) {
-      throw new Error(`Invalid caption ${index + 1}: use ordered, non-overlapping {start,end,text} cues within 0–89 seconds.`);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < lastEnd || end <= start || end > compositionDuration + 0.05 || typeof text !== 'string' || !text.trim()) {
+      throw new Error(`Invalid caption ${index + 1}: use ordered, non-overlapping {start,end,text} cues within 0–${compositionDuration} seconds.`);
     }
     lastEnd = end;
     return `<p id="caption-${index + 1}" class="clip caption-cue" data-start="${start}" data-duration="${end - start}" data-track-index="3" data-track-kind="captions"><span>${escapeHtml(text)}</span></p>`;
