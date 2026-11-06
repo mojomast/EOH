@@ -1,0 +1,21 @@
+{
+  "sourceCommit": "edcb673",
+  "duration": 112.318,
+  "fps": 30,
+  "captionsSha256": "cd6c479f3b0e3f3a53d2b0a585067023eaac0df024efa61667a484db1e888b01",
+  "scenes": [
+    {"id":"01","name":"01-cold-open","start":0,"duration":5.967},
+    {"id":"02","name":"02-hook","start":5.967,"duration":7.1,"actionAt":2.6,"prompt":"What am I looking at on the globe?","reply":"You're looking at Earth from space — a full-globe view about 18,000 km out, looking straight down. The globe is rotating."},
+    {"id":"03","name":"03-hermes-globe","start":13.067,"duration":7.6,"actionAt":2.6,"prompt":"Fly to Tokyo and switch to night vision."},
+    {"id":"04","name":"04-feeds","start":20.667,"duration":8.6,"actionAt":3.133,"prompt":"Fly to the San Francisco Ferry Building and turn on flights, ships, satellites, and weather."},
+    {"id":"05","name":"05-pin-research","start":29.267,"duration":9.267,"actionAt":2.767,"prompt":"Fly to the Sydney Opera House. Pin it, research it, and open its pin drawer."},
+    {"id":"06","name":"06-director","start":38.534,"duration":8.267,"actionAt":3.267,"prompt":"Create a Director scene of Tokyo Tower with a north-east approach and overhead shot, then play it."},
+    {"id":"07","name":"07-fire-check","start":46.801,"duration":13.467,"actionAt":3.476,"prompt":"Zoom into the 2021 Caldor Fire and show the CAL FIRE perimeter. Then compare the forest before versus after."},
+    {"id":"08","name":"08-transit-follow","start":60.268,"duration":7.867,"actionAt":2.867,"prompt":"Find the nearest public aircraft near Toronto Pearson and follow it on the globe."},
+    {"id":"09","name":"09-imagery-time","start":68.135,"duration":11,"actionAt":2.992,"prompt":"Compare Hollywood Park's racetrack with SoFi Stadium — before and after, side by side."},
+    {"id":"10","name":"10-overlays","start":79.135,"duration":12.333,"actionAt":3.333,"prompt":"Near Richmond, pin Kew, Richmond, and Hampton. Add a Kew-to-Park route and open the Overlays sidebar."},
+    {"id":"11","name":"11-architecture","start":91.468,"duration":7.4},
+    {"id":"12","name":"12-stats","start":98.868,"duration":5.7},
+    {"id":"13","name":"13-outro","start":104.568,"duration":7.75}
+  ]
+}

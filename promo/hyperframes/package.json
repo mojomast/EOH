@@ -2,19 +2,25 @@
   "name": "eoh-hyperframes-promo",
   "private": true,
   "version": "1.0.0",
-  "description": "Eye Of Hermes HyperFrames promo (~112s, Ash VO v6 Caldor/SoFi)",
+  "description": "Eye Of Hermes — Cartographer's field instrument (locked v6 edit)",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:proof": "node scripts/build.mjs --proof",
+    "qc:proof": "npm run build:proof && node scripts/qc.mjs",
+    "verify:delivery": "node scripts/verify-render.mjs",
+    "preview:proof": "npm run build:proof && hyperframes preview .proof --no-open",
     "preview": "npm run build && hyperframes preview .build --no-open",
     "lint": "npm run build && hyperframes lint .build",
     "check": "npm run build && hyperframes check .build",
-    "render": "npm run build && hyperframes render .build --fps 30 --quality draft --output out/scaffold-preview.mp4"
+    "render": "npm run build && hyperframes render .build --fps 30 --quality delivery --workers 1 --output out/eoh-restyle-1080p.mp4",
+    "render:proof": "npm run build:proof && hyperframes render .proof --fps 30 --quality delivery --workers 1 --output out/eoh-restyle-design-proof-1080p.mp4"
   },
   "devDependencies": {
     "gsap": "3.15.1",
-    "hyperframes": "0.9.19"
+    "hyperframes": "0.9.19",
+    "puppeteer-core": "25.16.0"
   }
 }
