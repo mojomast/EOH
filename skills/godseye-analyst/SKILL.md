@@ -69,7 +69,7 @@ Pane chrome and the look of the globe. Needs the pane.
 
 Public facts. Most ops work with the pane closed. One op per call. `detail: "full"` for rows or an image. A bbox is `{south, west, north, east}` or `{place, radius_km}`. A four-number list is accepted only when one order is a real box.
 
-Hazards: `earthquakes`, `fires` (needs `area`), `launches`, `flood`, `cyclones`, `fire_perimeters` (needs `area`).
+Hazards: `earthquakes`, `fires` (needs `area`), `launches`, `flood`, `cyclones`, `fire_perimeters` (needs `area`), `fire_check` (place, bbox, or the open pane).
 Aircraft: `aircraft_in_area` (`area`), `find_aircraft`, `aircraft_track` (`icao24`), `aircraft_info`.
 Ships: `vessels_in_area` (`area`), `find_vessel`, `vessel_track` (`mmsi`).
 Satellites: `next_pass` and `overhead` take `location` and do not need the pane. `iss_pass` and `satellite_pass` (`target`) use the pane catalog.
@@ -88,11 +88,12 @@ Pins and drawings on the open pane.
 | `annotate` | `annotations` required, or `source` (a `.jsonl`, `.csv`, or `.json` path), or `records` (`[{lat, lon, label, description_md, images, links, tags, category, id}]`). Pass `intent` whenever you create pins. `replace: true` updates a pin with the same `id` or within 25 m. Exact duplicates are skipped. |
 | `clear` | Erase marks. Only when the user asks. |
 | `draw` | `action: "start"` and `kind` (`box`, `polygon`, `line`) hands the pane to the user. `action: "add"` draws your own shape from `points`. |
-| `list` | Stored marks for this chat. `detail: "full"` includes title, description, images, links, and tags. |
+| `list` | Stored marks for this chat. `detail: "full"` includes title, description, images, links, and tags. Clips are included either way when the pin has them. |
 | `delete` | One mark (`id`) or several (`ids`). |
 | `update` | Patch `label`, `description_md`, `images`, `links`, or `tags` on one pin. No redraw. |
 | `filter` | Category, rating, open-now chips. `action`: `set`, `state`, `expand`. |
 | `drawer` | Open or close one pin drawer (`op=drawer`). `action`: `open`, `close`, `state`. Pick the pin by `id`, `label`, or lat/lon. |
+| `clip` | Attach a YouTube or X status URL to a stored pin. `url` required. `title` optional. YouTube accepts `start_sec` (seconds, or a clock such as `1m30s`, or `t=` / `start=` on the URL). The same URL updates in place. At most 4 clips. List returns them. The drawer shows a youtube-nocookie or X embed plus the https link. Other hosts are refused. |
 | `research` | Fill drawers (`op=research`) from Wikipedia, Wikidata, Commons, OSM tags, and a site's meta description. `mode`: `light` or `full`. Never invent facts. This plugin cannot call Hermes `web_search`. Pass verified snippets as `agent_notes`. |
 
 ## godseye_nav
@@ -136,7 +137,14 @@ Named investigations, the live scene, tours, and export. Files land under `plugi
 | `tour` | `stops` required, or the same `source` / `records` row schema as annotate. Returns a `jobId` immediately. |
 | `tour_status` | `jobId` required. |
 | `tour_stop` | Cancel a tour. |
-| `playback` | Cinematic scene. `action`: `list`, `play`, `stop`, `next`, `status`. Not an investigation. |
+| `playback` | Built-in cinematic scene. `action`: `list`, `play`, `stop`, `next`, `status`. Not an investigation. This does not create a scene. |
+| `director` | Build a Director Mode scene from `brief` (approach, overhead, detail) or from `scene` / `shots`, then apply it. `place`, or `lat` and `lon`, or the open pane. The same title keeps the same id and replaces that scene. Other Director scenes stay. A local `scene-assets` path needs `attribution` and `license`. YouTube and X come back as `third_party_media`; attach them with `godseye_annotate` `op=clip`. |
+| `director_update` | `id` required. Replace that scene and apply it again. A new `brief` rebuilds the shots. |
+| `director_list` | Scenes on the pane. Hermes scenes that were not applied are included with `applied: false`. |
+| `director_play` | `id` required (scene id or title). Returns immediately. Stop with `director_stop`. |
+| `director_stop` | Stop Director playback. |
+
+If the pane has no `sceneDirector`, these ops return `director_unavailable` (or `director_import_unavailable` / `director_project_unreadable`) with `code`, `message`, and `fix`. Do not say the scene played.
 
 ## godseye_watch
 
@@ -215,6 +223,15 @@ Read the `EOH pane=` line. `godseye_query` `{op:"context"}`. Answer from `focus`
 **"Show me how this area changed from 2016 to 2024."**
 `godseye_nav` `{op:"timeline", timeline:"set", mode:"wayback", from:"2016-01-01", to:"2024-12-31", transition:"swipe"}`, then `{op:"timeline", timeline:"play"}` or `{op:"timeline", timeline:"step", by:1}`. `{op:"timeline", timeline:"state"}` reads the release on screen. `{op:"timeline", timeline:"list_dates", from:"2016-01-01", to:"2024-12-31"}` lists the releases first. Imagery is for viewing only.
 
+**"Make a Director scene of the fire over Austin."**
+`godseye_scene` `{op:"director", brief:"night fire approach over the basin", place:"Austin"}`. Then `{op:"director_list"}`, `{op:"director_play", id:"hermes-night-fire-approach-over-the-basin"}`, and `{op:"director_stop"}`. A structured `scene` or `shots` array works too. If the result is `director_unavailable`, say the pane has no Director. Do not invent an endpoint.
+
+**"Put this YouTube clip on the basin pin."**
+Annotate the pin, then `godseye_annotate` `{op:"clip", id:"a1", url:"https://youtu.be/abcdefghijk", title:"Basin", start_sec:30}`. `{op:"list"}` returns `clips`. Open the drawer to see the embed and the link. An X status URL works the same way, without a start time.
+
+**"Check this area for fire."**
+`godseye_feeds` `{op:"fire_check", place:"Los Angeles"}`, or `/gev fire Los Angeles`, or the same call inside `godseye_admin` `op=batch`. The sequence is FIRMS hotspots, the clearest recent image, then imagery before/after. It does not create a watch or a pin. No hotspots is a successful empty check. Say `summary`.
+
 **"Replay fires here over the last 7 days."**
 `godseye_nav` `{op:"timeline", timeline:"set", mode:"events", feeds:["fires"]}`, then `{op:"timeline", timeline:"play"}`. Omit `from` and `to` for the last 7 days, and omit `area` to use the open view. Pins show when the playhead reaches them. Open one with `godseye_annotate` `{op:"drawer", id:"..."}`. NASA FIRMS covers the last 10 days; older fires come from stored watch alerts.
 
@@ -227,7 +244,7 @@ Read the `EOH pane=` line. `godseye_query` `{op:"context"}`. Answer from `focus`
 `{op:"export", name:"Montreal Ramen", format:"pack"}` writes GeoJSON and KML, plus a zip. Omit `name` to export the current scene. Google photoreal tile imagery is not included.
 Delete only with `{op:"delete", name:"Montreal Ramen", confirm:true}`.
 
-Slash command: `/gev fly`, `layers`, `status`, `brief`, `home`, `share`, `doctor`, `research`, `save`, `list`, `load`, `delete`, `report`, `export`.
+Slash command: `/gev fly`, `layers`, `status`, `brief`, `fire`, `home`, `share`, `doctor`, `research`, `save`, `list`, `load`, `delete`, `report`, `export`. `/gev fire` with no place uses the open pane.
 
 ## Internal mapping
 

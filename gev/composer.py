@@ -503,7 +503,7 @@ def format_doctor(d: dict) -> str:
 
 # -- /gev ----------------------------------------------------------------------------------------
 HELP = ("/gev fly <place> · /gev layers [on|off <names>] · /gev status · /gev brief <place> · "
-        "/gev home [set] · /gev share · /gev doctor · /gev research [light|full] · "
+        "/gev fire [place] · /gev home [set] · /gev share · /gev doctor · /gev research [light|full] · "
         "/gev save <name> · /gev list · /gev load <name> · /gev delete <name> --confirm · "
         "/gev report [name] · /gev export [name] [geojson|kml|both|pack]")
 
@@ -561,6 +561,17 @@ def gev_command(raw: str, live=None, mcp=None) -> str:
         bad = [c["check"] for c in d["checks"] if not c["ok"]]
         lines.append("Health: all checks pass" if not bad else "Health: needs attention: " + ", ".join(bad) + " (run /gev doctor)")
         return "\n".join(lines)
+    if cmd == "fire":
+        from .ext_firecheck import fire_check
+        place = " ".join(rest).strip()
+        try:
+            out = json.loads(fire_check({"place": place} if place else {"place": "here"}))
+        except (TypeError, ValueError) as exc:
+            return f"⚠️ Fire check failed: {exc}"
+        if not isinstance(out, dict) or not out.get("ok"):
+            message = out.get("message") or out.get("error") if isinstance(out, dict) else "fire check failed"
+            return f"⚠️ {message}"
+        return out.get("summary") or "Fire check finished."
     if cmd == "brief":
         if not rest:
             return "Usage: /gev brief <place>"

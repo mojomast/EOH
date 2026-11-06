@@ -213,6 +213,43 @@ def test_brief_pins_carry_drawer_content():
     assert "Distance: 3.2 km" in composer.hit_drawer({"section": "aircraft", "label": "A", "lat": 1, "lon": 2, "distance_km": 3.21}, "Here")["description_md"]
 
 
+@needs_node
+def test_drawer_embeds_youtube_and_x_and_drops_other_hosts():
+    r = run_js(r"""
+      const P = window.__hermesPins
+      P.add('p1', 30.2, -97.7, { label: 'Basin', clips: [
+        { provider: 'youtube', url: 'https://youtu.be/abcdefghijk', title: 'Look', start_sec: 30,
+          embed: 'https://evil.example/iframe' },
+        { url: 'https://evil.example/watch', embed: 'https://evil.example/iframe', title: 'nope' },
+        { url: 'https://x.com/nasa/status/12345', title: 'Post' },
+      ]})
+      const opened = P.command({ action: 'open', id: 'p1' })
+      const drawer = document.body.children.find((el) => el.id === 'hermes-gev-drawer')
+      const body = drawer.querySelector('.body')
+      const frames = []
+      const walk = (el) => {
+        if (!el) return
+        if (el.tagName === 'iframe') frames.push({ src: el.src, sandbox: el.attrs && el.attrs.sandbox })
+        if (el.tagName === 'a') frames.push({ href: el.href, text: el.textContent })
+        for (const child of el.children || []) walk(child)
+      }
+      walk(body)
+      console.log(JSON.stringify({ clips: opened.pin.clips, frames }))
+    """)
+    urls = [clip["url"] for clip in r["clips"]]
+    assert urls == ["https://www.youtube.com/watch?v=abcdefghijk", "https://x.com/i/status/12345"]
+    assert r["clips"][0]["embed"] == "https://www.youtube-nocookie.com/embed/abcdefghijk?start=30"
+    assert r["clips"][0]["start_sec"] == 30
+    assert all("evil.example" not in json.dumps(item) for item in r["frames"])
+    iframes = [item for item in r["frames"] if "src" in item]
+    assert [item["src"] for item in iframes] == [
+        "https://www.youtube-nocookie.com/embed/abcdefghijk?start=30",
+        "https://platform.twitter.com/embed/Tweet.html?id=12345",
+    ]
+    assert all(item["sandbox"] == "allow-scripts allow-presentation" for item in iframes)
+    assert {item["href"] for item in r["frames"] if "href" in item} == set(urls)
+
+
 def test_relay_records_user_click_drawer_for_the_panes_scene(tmp_path):
     from gev import live
     r = live.Relay()

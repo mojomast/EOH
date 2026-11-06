@@ -194,6 +194,31 @@
 
   // ---- drawer content: sanitize everything ------------------------------------------------
   const httpUrl = (u) => { try { const x = new URL(String(u || '')); return (x.protocol === 'https:' || x.protocol === 'http:') ? x.href : null } catch { return null } }
+  const YT_ID = /(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,16})/i
+  const X_ID = /(?:twitter\.com|x\.com)\/(?:[^/?#]+\/status|i\/status)\/(\d+)/i
+  // Rebuild the embed from the public URL. A stored embed host is never trusted.
+  const clipOf = (item) => {
+    const raw = typeof item === 'string' ? item : item && item.url
+    const url = httpUrl(raw)
+    if (!url || !url.startsWith('https:')) return null
+    const yt = url.match(YT_ID)
+    const status = url.match(X_ID)
+    if (!yt && !status) return null
+    const title = String((item && item.title) || (yt ? 'YouTube' : 'X')).slice(0, 120)
+    if (yt) {
+      const given = item && item.start_sec
+      const start = Number.isInteger(given) && given > 0 && given <= 86400 ? given : null
+      return {
+        provider: 'youtube', url: `https://www.youtube.com/watch?v=${yt[1]}`,
+        embed: `https://www.youtube-nocookie.com/embed/${yt[1]}${start ? `?start=${start}` : ''}`,
+        title, ...(start ? { start_sec: start } : {}),
+      }
+    }
+    return {
+      provider: 'x', url: `https://x.com/i/status/${status[1]}`,
+      embed: `https://platform.twitter.com/embed/Tweet.html?id=${status[1]}`, title,
+    }
+  }
   const drawerMeta = (spec, label) => ({
     title: String(spec.title ?? label ?? '').slice(0, 120),
     md: typeof spec.description_md === 'string' ? spec.description_md.slice(0, 4000) : '',
@@ -204,7 +229,8 @@
     links: (Array.isArray(spec.links) ? spec.links : []).slice(0, 12)
       .map((l) => (typeof l === 'string' ? { url: l } : l || {}))
       .map((l) => ({ url: httpUrl(l.url), label: String(l.label ?? l.title ?? '').slice(0, 120) }))
-      .filter((l) => l.url)
+      .filter((l) => l.url),
+    clips: (Array.isArray(spec.clips) ? spec.clips : []).slice(0, 4).map(clipOf).filter(Boolean),
   })
   const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
   // Minimal markdown -> HTML. Input is HTML-escaped FIRST, so raw HTML/script shows as text; the
@@ -283,7 +309,10 @@
       #hermes-gev-drawer figcaption{font-size:11px;color:#9fd9c3;margin-top:3px}
       #hermes-gev-drawer .broken{padding:10px;border:1px dashed rgba(255,200,120,.5);border-radius:4px;color:#ffd27a;font-size:12px}
       #hermes-gev-drawer .links{list-style:none;padding:0;margin:10px 0 0;display:flex;flex-direction:column;gap:6px}
-      #hermes-gev-drawer .links a{display:block;padding:6px 9px;border:1px solid rgba(127,216,255,.35);border-radius:4px;text-decoration:none;word-break:break-all}`
+      #hermes-gev-drawer .links a{display:block;padding:6px 9px;border:1px solid rgba(127,216,255,.35);border-radius:4px;text-decoration:none;word-break:break-all}
+      #hermes-gev-drawer .clip{margin:0 0 12px}
+      #hermes-gev-drawer .clip iframe{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:4px;background:#06121c}
+      #hermes-gev-drawer .clip a{display:inline-block;margin-top:4px}`
     document.head.appendChild(st)
     drawer = document.createElement('aside')
     drawer.id = 'hermes-gev-drawer'
@@ -344,7 +373,26 @@
       body.appendChild(fig)
     }
     if (m.md) { const md = document.createElement('div'); md.className = 'md'; md.innerHTML = renderMarkdown(m.md); body.appendChild(md) }
-    if (!m.md && !m.images.length && !m.links.length) { const e = document.createElement('p'); e.textContent = 'No details for this pin.'; e.style.opacity = '.7'; body.appendChild(e) }
+    for (const clip of m.clips || []) {
+      const fig = document.createElement('figure'); fig.className = 'clip'
+      if (clip.embed) {
+        const frame = document.createElement('iframe')
+        frame.title = clip.title || 'Clip'
+        frame.loading = 'lazy'
+        frame.referrerPolicy = 'no-referrer'
+        frame.setAttribute('sandbox', 'allow-scripts allow-presentation')
+        frame.setAttribute('allow', 'fullscreen; picture-in-picture')
+        frame.setAttribute('allowfullscreen', '')
+        frame.src = clip.embed
+        fig.appendChild(frame)
+      }
+      const a = document.createElement('a')
+      a.href = clip.url; a.target = '_blank'; a.rel = 'noopener noreferrer'
+      a.textContent = clip.title || clip.url
+      fig.appendChild(a)
+      body.appendChild(fig)
+    }
+    if (!m.md && !m.images.length && !m.links.length && !(m.clips || []).length) { const e = document.createElement('p'); e.textContent = 'No details for this pin.'; e.style.opacity = '.7'; body.appendChild(e) }
     if (m.links.length) {
       const ul = document.createElement('ul'); ul.className = 'links'
       for (const l of m.links) {
@@ -356,9 +404,14 @@
       body.appendChild(ul)
     }
   }
-  const pinInfo = (p) => p && {
-    id: p.id, label: p.label || p.meta.title, latitude: p.lat, longitude: p.lon,
-    title: p.meta.title, description_md: p.meta.md, images: p.meta.images, links: p.meta.links, tags: p.tags,
+  const pinInfo = (p) => {
+    if (!p) return p
+    const info = {
+      id: p.id, label: p.label || p.meta.title, latitude: p.lat, longitude: p.lon,
+      title: p.meta.title, description_md: p.meta.md, images: p.meta.images, links: p.meta.links, tags: p.tags,
+    }
+    if (p.meta.clips && p.meta.clips.length) info.clips = p.meta.clips
+    return info
   }
   const find = (q) => {
     if (!q) return null
@@ -409,7 +462,11 @@
       const p = find(args)
       if (!p) return { ok: false, action: 'hermes_pin_update', error: 'not_found' }
       if (args.label) p.label = String(args.label).slice(0, 80)
-      p.meta = drawerMeta({ ...p.meta, title: args.title || p.meta.title, description_md: args.description_md ?? p.meta.md, images: args.images || p.meta.images, links: args.links || p.meta.links, label: p.label }, p.label)
+      p.meta = drawerMeta({
+        ...p.meta, title: args.title || p.meta.title, description_md: args.description_md ?? p.meta.md,
+        images: args.images || p.meta.images, links: args.links || p.meta.links,
+        clips: Array.isArray(args.clips) ? args.clips : p.meta.clips, label: p.label,
+      }, p.label)
       if (args.tags && typeof args.tags === 'object') p.tags = pinTags({ tags: args.tags })
       const label = p.ents && p.ents[0] && p.ents[0].label
       if (label && p.label) label.text = p.label

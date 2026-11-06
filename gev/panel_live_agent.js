@@ -276,7 +276,7 @@
   const ptName = (pt) => pt?.target ?? pt?.name ?? null
   const hasCoords = (pt) => Number.isFinite(pt?.latitude) && Number.isFinite(pt?.longitude)
   // Rewrite Hermes-only annotation features into upstream specs; remember what to add afterwards.
-  const DRAWER_KEYS = ['description_md', 'images', 'links', 'tags']  // tags = POI facets for filters
+  const DRAWER_KEYS = ['description_md', 'images', 'links', 'tags', 'clips']  // tags = POI facets; clips = YouTube/X
   const PIN_TYPES = new Set(['pin', 'marker', 'point', 'highlight', 'card'])
   const prepAnnotate = (args) => {
     const extras = []
@@ -667,6 +667,17 @@
       if (m.name === 'hermes_timeline') {
         await ready()
         payload = window.__hermesTimeline ? window.__hermesTimeline.command(m.args || {}) : { ok: false, error: 'timeline not loaded' }
+        return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
+      }
+      if (m.name === 'hermes_director') {
+        await ready()
+        payload = window.__hermesDirector
+          ? await window.__hermesDirector.command(m.args || {})
+          : {
+            ok: false, error: 'director_unavailable', code: 'director_unavailable',
+            message: 'Director helper is not loaded in this pane.',
+            fix: 'Reload the Eye Of Hermes pane and retry godseye_scene op=director.',
+          }
         return window.parent.postMessage({ type: 'hermes-gev:result', id: m.id, payload }, '*')
       }
       // Street hops and route chunks yield the main thread. They must not sit under the 45s abort.

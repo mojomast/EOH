@@ -221,3 +221,23 @@ The `godseye_admin` `op=doctor` report includes `catalog_age`, which reads
 `generated_at` from `gev/feature_snapshot.json` (ok under 30 days, warn
 otherwise) and points at `scripts/snapshot_tools.sh`. It also reports any
 extension module that failed to import.
+
+Shipped extension ops stay on the eleven tools:
+
+| Tool | Op | What it does |
+| --- | --- | --- |
+| `godseye_scene` | `director` | Build a Director scene from a brief or a scene document and apply it on the pane. |
+| `godseye_scene` | `director_update` | Replace one scene by id and apply it again. |
+| `godseye_scene` | `director_list` | Scenes on the pane, plus Hermes scenes that were not applied. |
+| `godseye_scene` | `director_play` | Play one scene. Playback returns immediately. |
+| `godseye_scene` | `director_stop` | Stop Director playback. |
+| `godseye_annotate` | `clip` | Attach a YouTube or X clip to a pin drawer. List returns it. |
+| `godseye_feeds` | `fire_check` | FIRMS hotspot, clearest recent image, then imagery before/after. |
+
+`op=playback` is still the built-in `control_scene` list/play/stop/next/status.
+Director create uses `window.__godsEyeView.sceneDirector.importProjectFile` and
+keeps the pane's other scenes. A pane without Director returns
+`director_unavailable` and does not claim the scene played. YouTube and X are
+not Director media packs. Attach them with `godseye_annotate` `op=clip`.
+`/gev fire [place]` runs `fire_check`. The same op is a normal
+`godseye_feeds` call, so `godseye_admin` `op=batch` can run it.

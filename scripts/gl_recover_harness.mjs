@@ -1,7 +1,7 @@
 // Headless check: force WEBGL_lose_context and require the viewer to come back
 // in the same container with the camera and pins from SceneStore.restore_commands.
 // Listens on 127.0.0.1:4233 only. SwiftShader is used when the machine has no GPU.
-import { spawnSync } from 'node:child_process'
+import { spawnSync, execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -11,7 +11,36 @@ import { fileURLToPath } from 'node:url'
 const PORT = 4233
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
-const CHROME = process.env.CHROME_PATH || '/usr/bin/google-chrome'
+
+function defaultLookup(name) {
+  try {
+    const found = execFileSync('which', [name], { encoding: 'utf8' }).trim()
+    return found || ''
+  } catch {
+    return ''
+  }
+}
+
+/** Chrome when it is installed, otherwise Chromium. CHROME_PATH wins. */
+export function resolveChrome(env = process.env, exists = fs.existsSync, lookup = defaultLookup) {
+  if (env.CHROME_PATH) return env.CHROME_PATH
+  const candidates = [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ]
+  for (const candidate of candidates) {
+    if (exists(candidate)) return candidate
+  }
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    const found = lookup(name)
+    if (found) return found
+  }
+  return ''
+}
+
+const CHROME = resolveChrome()
 
 function commandsFromPython() {
   const py = spawnSync('python3', ['-c', [
@@ -205,8 +234,8 @@ function loadPuppeteer() {
 }
 
 async function main() {
-  if (!fs.existsSync(CHROME)) {
-    console.error('Chrome not found at ' + CHROME)
+  if (!CHROME || !fs.existsSync(CHROME)) {
+    console.error('Chrome or Chromium not found. Set CHROME_PATH or install chromium.')
     process.exit(1)
   }
   const puppeteer = loadPuppeteer()
@@ -259,7 +288,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error && error.stack || error)
-  process.exit(1)
-})
+const invoked = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (invoked) {
+  main().catch((error) => {
+    console.error(error && error.stack || error)
+    process.exit(1)
+  })
+}

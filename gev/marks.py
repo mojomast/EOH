@@ -10,7 +10,7 @@ from .watch import haversine_km
 
 REPLACE_M = 25.0
 DUP_M = 1.0
-_PATCH = ("label", "title", "description_md", "images", "links", "tags", "category")
+_PATCH = ("label", "title", "description_md", "images", "links", "tags", "category", "clips")
 
 
 def image_status(response_status, loaded: bool = False, error: str = "") -> str:
@@ -60,6 +60,7 @@ def public_meta(spec: dict) -> dict:
     images = spec.get("images") if isinstance(spec.get("images"), list) else []
     links = spec.get("links") if isinstance(spec.get("links"), list) else []
     tags = spec.get("tags") if isinstance(spec.get("tags"), dict) else {}
+    clips = spec.get("clips") if isinstance(spec.get("clips"), list) else []
     out = {
         "title": spec.get("title") or spec.get("label") or "",
         "description_md": spec.get("description_md") or "",
@@ -67,6 +68,8 @@ def public_meta(spec: dict) -> dict:
         "links": links[:12],
         "tags": tags,
     }
+    if clips:
+        out["clips"] = clips[:4]
     if spec.get("category"):
         out["category"] = spec.get("category")
     if _client(spec):
