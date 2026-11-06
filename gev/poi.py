@@ -607,6 +607,75 @@ def poi_details(args: dict) -> dict:
     return out
 
 
+
+def osm_query_fallback(args: dict, out: dict, *, view: dict | None = None) -> dict:
+    """When the pane returns OVERPASS_NOT_CONFIGURED, run the same public Overpass
+    mirrors find_places uses (polite timeouts via overpass_chain / TOTAL_BUDGET_S)."""
+    if not isinstance(out, dict):
+        return out
+    blob = json.dumps(out)
+    if "OVERPASS_NOT_CONFIGURED" not in blob:
+        return out
+    what = str(args.get("what") or "").strip()
+    if not what:
+        return remediate("osm_query", out)
+    fp: dict = {
+        "query": what,
+        "category": what,
+        "limit": max(1, min(int(args.get("limit") or 25), 100)),
+    }
+    bbox = None
+    if isinstance(view, dict):
+        cam = view.get("camera") if isinstance(view.get("camera"), dict) else view
+        for key in ("bbox", "rect", "rectangle"):
+            raw = cam.get(key) if isinstance(cam, dict) else None
+            if isinstance(raw, (list, tuple)) and len(raw) == 4:
+                bbox = list(raw)
+                break
+            if isinstance(raw, dict) and all(k in raw for k in ("south", "west", "north", "east")):
+                bbox = [raw["south"], raw["west"], raw["north"], raw["east"]]
+                break
+        if bbox is None and isinstance(cam, dict):
+            try:
+                lat = float(cam.get("lat") if cam.get("lat") is not None else cam.get("latitude"))
+                lon = float(cam.get("lon") if cam.get("lon") is not None else cam.get("longitude"))
+                bbox = list(bbox_around(lat, lon, 3000))
+            except (TypeError, ValueError):
+                pass
+    if bbox is not None:
+        fp["bbox"] = bbox
+    else:
+        # No area: still refuse rather than querying the whole planet.
+        rem = remediate("osm_query", out)
+        rem["fix"] = (
+            (rem.get("fix") or "")
+            + " Pass areaId or fly the pane to a place first so a view bbox is available for the public-mirror fallback."
+        ).strip()
+        return rem
+    try:
+        result = find_places(fp)
+    except Exception as exc:
+        rem = remediate("osm_query", out)
+        rem["fallbackError"] = str(exc)[:200]
+        return rem
+    if not isinstance(result, dict) or result.get("ok") is False:
+        rem = remediate("osm_query", out)
+        if isinstance(result, dict):
+            rem["fallback"] = result
+        return rem
+    result = dict(result)
+    result["ok"] = True
+    result["fallback"] = "public_overpass"
+    result["degraded"] = (
+        "In-pane Overpass was not configured (OVERPASS_NOT_CONFIGURED); "
+        "used the same public mirrors as godseye_query op=find_places."
+    )
+    if args.get("countOnly"):
+        result["countOnly"] = True
+        result["places"] = []
+    return result
+
+
 # --- remediation for pane errors -------------------------------------------
 def remediate(name: str, out: dict) -> dict:
     blob = json.dumps(out)

@@ -252,7 +252,16 @@ def make_live_handler(name: str):
             if name == "resolve_area":
                 out = poi.resolve_area_fallback(args, out, lambda a: composer.live_call(
                     name, a, session_id=kw.get("session_id"), fanout=fanout))
-            out = poi.remediate(name, out) if isinstance(out, dict) else out
+            if name == "osm_query" and isinstance(out, dict) and "OVERPASS_NOT_CONFIGURED" in json.dumps(out):
+                view = None
+                try:
+                    view = composer.live_call(
+                        "get_current_view_state", {}, session_id=kw.get("session_id"), fanout=False)
+                except Exception:
+                    view = None
+                out = poi.osm_query_fallback(args, out, view=view if isinstance(view, dict) else None)
+            else:
+                out = poi.remediate(name, out) if isinstance(out, dict) else out
         if not isinstance(out, dict):
             out = {"ok": False, "error": str(out)[:500]}
         out = errors.annotate(out, tool=name)
