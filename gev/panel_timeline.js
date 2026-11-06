@@ -2,8 +2,8 @@
 //
 // wayback: scrub Esri World Imagery Wayback releases over the current view, with a swipe
 // or a fade between the two dates the playhead sits between. The layers are for viewing.
-// Photorealistic 3D tiles are hidden while that imagery is up, same as the compare swipe,
-// and are not sampled.
+// Photorealistic 3D tiles yield the globe via compare_surface (GEV imagery-comparison lease
+// or Esri fallback) so wayback layers drape on a visible surface instead of a black globe.
 // events: USGS quakes and NASA FIRMS fires (plus stored watch alerts) as pins that appear
 // when the playhead reaches their time. Clicking one opens the same drawer as any pin.
 (() => {
@@ -23,6 +23,7 @@
   let frac = 0
   let layers = []
   let hiddenTiles = null
+  let surfaceLease = null
   let timer = null
   let postTimer = null
 
@@ -82,7 +83,40 @@
     layers = []
     try { if (v?.scene) v.scene.splitPosition = 0.5 } catch {}
   }
+  async function releaseSurface() {
+    const lease = surfaceLease
+    surfaceLease = null
+    try { if (lease && typeof lease.release === 'function') await Promise.resolve(lease.release()) } catch {}
+    if (hiddenTiles) {
+      try { if (g().tileset) g().tileset.show = true } catch {}
+      hiddenTiles = null
+    }
+  }
+  async function ensureSurface() {
+    if (surfaceLease && surfaceLease.ok !== false) return surfaceLease
+    const Surf = window.__hermesCompareSurface
+    const Ce = C()
+    if (!Surf || typeof Surf.acquire !== 'function') {
+      // Legacy: refuse hide-only black globe when photoreal/globe-hidden.
+      const need = (g().tileset && g().tileset.show) || (g().viewer?.scene?.globe?.show === false)
+      if (need) {
+        return { ok: false, error: 'no_visible_surface', fix: 'compare_surface helper missing' }
+      }
+      surfaceLease = { ok: true, mode: 'noop', release: () => {} }
+      return surfaceLease
+    }
+    if (!Surf.needsPrep(g())) {
+      surfaceLease = { ok: true, mode: 'noop', release: () => {} }
+      return surfaceLease
+    }
+    const out = await Surf.acquire(g(), { owner: 'hermes-timeline', Cesium: Ce })
+    if (!out || out.ok === false) return out || Surf.noSurfaceResult('hermes_timeline')
+    surfaceLease = out
+    if (g().tileset && !g().tileset.show) hiddenTiles = true
+    return out
+  }
   function hideTiles(on) {
+    // Kept for events-mode restore; wayback uses ensureSurface/releaseSurface.
     const tiles = g().tileset
     if (!tiles) return
     if (on) {
@@ -144,15 +178,23 @@
     }
     return layer
   }
-  function paintImagery() {
-    if (mode !== 'wayback') { dropLayers(); hideTiles(false); return }
+  async function paintImagery() {
+    if (mode !== 'wayback') {
+      dropLayers()
+      await releaseSurface()
+      return { ok: true }
+    }
     const Ce = C()
-    if (!Ce || !g().viewer) return
-    hideTiles(true)
-    try { window.__hermesContext?.compare?.({ action: 'stop' }) } catch {}
+    if (!Ce || !g().viewer) return { ok: false, error: 'viewer not ready' }
+    const surf = await ensureSurface()
+    if (!surf || surf.ok === false) {
+      dropLayers()
+      return surf || { ok: false, error: 'no_visible_surface' }
+    }
+    try { await Promise.resolve(window.__hermesContext?.compare?.({ action: 'stop' })) } catch {}
     const older = releases[index]
     const newer = frac > 0 ? releases[Math.min(index + 1, releases.length - 1)] : older
-    if (!older) { dropLayers(); return }
+    if (!older) { dropLayers(); return { ok: true } }
     const a = layerFor(older)
     const b = newer && newer.release !== older.release ? layerFor(newer) : null
     const left = Ce.SplitDirection?.LEFT ?? -1
@@ -173,19 +215,27 @@
     }
     try { g().viewer.scene.splitPosition = transition === 'swipe' && b ? 1 - frac : 0.5 } catch {}
     try { g().viewer.scene.requestRender?.() } catch {}
+    const Surf = window.__hermesCompareSurface
+    if (Surf && !Surf.surfaceVisible(g())) {
+      dropLayers()
+      await releaseSurface()
+      return Surf.noSurfaceResult('hermes_timeline')
+    }
+    return { ok: true, surfaceMode: surf.mode || 'noop' }
   }
 
-  function applyHead() {
+  async function applyHead() {
     if (mode === 'wayback' && releases.length) {
       index = clamp(index, 0, releases.length - 1)
       at = releases[index].date
     }
-    paintImagery()
+    const painted = await paintImagery()
     syncPins()
     render()
+    return painted
   }
 
-  function stepBy(delta, fromPlay) {
+  async function stepBy(delta, fromPlay) {
     if (!mode || !delta) return reply()
     if (!fromPlay) {
       playing = false
@@ -217,15 +267,15 @@
       index = 0
       frac = 0
     }
-    applyHead()
+    await applyHead()
     tellSoon()
     return reply()
   }
 
-  function seek(t) {
+  async function seek(t) {
     if (mode !== 'wayback' || releases.length < 2) {
       frac = 0
-      applyHead()
+      await applyHead()
       return
     }
     const span = Math.max(1, releases.length - 1)
@@ -233,16 +283,16 @@
     index = clamp(Math.floor(x + 1e-6), 0, releases.length - 1)
     frac = index >= releases.length - 1 ? 0 : x - index
     at = releases[index].date
-    applyHead()
+    await applyHead()
   }
-  function seekEvents(t) {
+  async function seekEvents(t) {
     if (!from || !to) return
     const a = Date.parse(from + 'T00:00:00Z')
     const b = Date.parse(to + 'T00:00:00Z')
-    if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) { at = from; applyHead(); return }
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) { at = from; await applyHead(); return }
     const ms = a + clamp(Number(t) || 0, 0, 1) * (b - a)
     at = new Date(ms).toISOString().slice(0, 10)
-    applyHead()
+    await applyHead()
   }
 
   function stopTimer() {
@@ -273,10 +323,10 @@
     return reply()
   }
 
-  function stopAll() {
+  async function stopAll() {
     pause()
     dropLayers()
-    hideTiles(false)
+    await releaseSurface()
     dropPins()
     mode = null
     if (bar) bar.style.display = 'none'
@@ -347,7 +397,7 @@
     document.body.appendChild(bar)
   }
 
-  function setState(args) {
+  async function setState(args) {
     mode = args.mode === 'events' ? 'events' : 'wayback'
     transition = args.transition === 'fade' ? 'fade' : 'swipe'
     from = day(args.from)
@@ -365,6 +415,7 @@
       if (!from) from = releases[0]?.date || at
       if (!to) to = releases[releases.length - 1]?.date || at
     } else {
+      await releaseSurface()
       at = day(args.at || args.date) || from
       if (at < from) at = from
       if (to && at > to) at = to
@@ -372,18 +423,23 @@
       frac = 0
     }
     mount()
-    applyHead()
+    const painted = await applyHead()
     tellSoon()
+    if (painted && painted.ok === false) {
+      mode = null
+      if (bar) bar.style.display = 'none'
+      return { ...reply(), ok: false, error: painted.error || 'no_visible_surface', fix: painted.fix, code: painted.code || painted.error }
+    }
     return reply()
   }
 
-  const command = (args = {}) => {
+  const command = async (args = {}) => {
     const action = String(args.action || 'state')
     if (action === 'state') return reply()
     if (action === 'stop') return pause()
     if (action === 'clear') return stopAll()
     if (action === 'play') {
-      if (!mode || args.releases || args.events || args.mode) setState(args)
+      if (!mode || args.releases || args.events || args.mode) await setState(args)
       return play()
     }
     if (action === 'step') {
@@ -393,8 +449,8 @@
     if (action === 'position') {
       playing = false
       stopTimer()
-      if (mode === 'events') seekEvents(args.position)
-      else seek(args.position)
+      if (mode === 'events') await seekEvents(args.position)
+      else await seek(args.position)
       tellSoon()
       return reply()
     }
@@ -408,8 +464,11 @@
           at = releases[index]?.date || want
         } else at = day(args.at || args.date)
         playing = Boolean(args.playing)
-        applyHead()
+        const painted = await applyHead()
         tellSoon()
+        if (painted && painted.ok === false) {
+          return { ...reply(), ok: false, error: painted.error || 'no_visible_surface', fix: painted.fix }
+        }
         return reply()
       }
     }
@@ -418,6 +477,7 @@
 
   const detach = () => {
     stopTimer()
+    try { releaseSurface() } catch {}
     layers = []
     hiddenTiles = null
   }

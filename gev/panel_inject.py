@@ -109,6 +109,7 @@ def prepare(html: str, full_ui: bool = True, perf: str | None = "embed", config:
     head += _script((_HERE / "panel_worker_shim.js").read_text())
     head += _script((_HERE / "panel_oh.js").read_text())
     head += _script((_HERE / "panel_pins.js").read_text())
+    head += _script((_HERE / "compare_surface.js").read_text())
     head += _script((_HERE / "panel_context.js").read_text())
     head += _script((_HERE / "panel_timeline.js").read_text())
     head += _script((_HERE / "gl_recover.js").read_text())

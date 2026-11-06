@@ -200,10 +200,11 @@
     layer.splitDirection = which === 'left' ? Ce.SplitDirection.LEFT : Ce.SplitDirection.RIGHT
     return layer
   }
-  const stopCompare = () => {
+  const stopCompare = async () => {
     if (!cmp) return { ok: true, action: 'hermes_compare', active: false }
     const v = g().viewer
     for (const l of [cmp.l, cmp.r]) if (l) try { v.imageryLayers.remove(l, true) } catch {}
+    try { if (cmp.surface && typeof cmp.surface.release === 'function') await Promise.resolve(cmp.surface.release()) } catch {}
     try { if (cmp.tiles != null && g().tileset) g().tileset.show = cmp.tiles } catch {}
     try { v.scene.splitPosition = 0.5 } catch {}
     try { cmp.el.remove() } catch {}
@@ -218,10 +219,10 @@
     cmp.el.style.left = `${cmp.pos * 100}%`
     try { g().viewer.scene.requestRender?.() } catch {}
   }
-  const compare = (args = {}) => {
+  const compare = async (args = {}) => {
     const action = String(args.action || 'start')
     if (action === 'stop') return stopCompare()
-    if (action === 'state') return { ok: true, action: 'hermes_compare', active: Boolean(cmp), ...(cmp ? { left: cmp.left.label, right: cmp.right.label, position: cmp.pos } : {}) }
+    if (action === 'state') return { ok: true, action: 'hermes_compare', active: Boolean(cmp), ...(cmp ? { left: cmp.left.label, right: cmp.right.label, position: cmp.pos, surfaceMode: cmp.surface?.mode } : {}) }
     if (action === 'position' || action === 'toggle') {
       if (!cmp) return { ok: false, error: 'no compare active' }
       setPos(action === 'toggle' ? (cmp.pos > 0.5 ? 0 : 1) : Number(args.position ?? 0.5))
@@ -230,17 +231,41 @@
     const Ce = C(), v = g().viewer
     if (!Ce || !v) return { ok: false, error: 'viewer not ready' }
     if (!Ce.SplitDirection) return { ok: false, error: 'this Cesium build has no imagery split support' }
-    stopCompare()
+    await stopCompare()
     const left = args.left || { kind: 'current', label: 'Current view' }, right = args.right || { kind: 'current', label: 'Current view' }
+    const Surf = window.__hermesCompareSurface
+    let surface = null
+    if (Surf && typeof Surf.acquire === 'function') {
+      surface = await Surf.acquire(g(), { owner: 'hermes-compare', Cesium: Ce })
+      if (!surface || surface.ok === false) {
+        return Surf.noSurfaceResult ? Surf.noSurfaceResult('hermes_compare') : { ok: false, error: 'no_visible_surface', action: 'hermes_compare' }
+      }
+    } else {
+      // Legacy path without helper: refuse photoreal hide-only (black globe).
+      if (g().tileset && g().tileset.show) {
+        return { ok: false, error: 'no_visible_surface', fix: 'compare_surface helper missing; cannot hide photoreal without a globe host', action: 'hermes_compare' }
+      }
+      try {
+        if (g().viewer?.scene?.globe?.show === false) {
+          return { ok: false, error: 'no_visible_surface', fix: 'globe is hidden and compare_surface helper is missing', action: 'hermes_compare' }
+        }
+      } catch {}
+      surface = { ok: true, mode: 'noop', release: () => {} }
+    }
     let l = null, r = null, tiles = null
     try {
-      // photoreal 3D tiles sit on top of imagery and would hide both sides: hide them while comparing
-      if (g().tileset && g().tileset.show) { tiles = true; g().tileset.show = false }
+      // tileset already handled by surface lease/fallback; keep flag for reporting
+      if (g().tileset && !g().tileset.show) tiles = true
       l = mkLayer(left, 'left'); r = mkLayer(right, 'right')
     } catch (e) {
       for (const x of [l, r]) if (x) try { v.imageryLayers.remove(x, true) } catch {}
-      if (tiles) try { g().tileset.show = true } catch {}
+      try { if (surface?.release) await Promise.resolve(surface.release()) } catch {}
       return { ok: false, error: String(e?.message || e) }
+    }
+    if (Surf && !Surf.surfaceVisible(g())) {
+      for (const x of [l, r]) if (x) try { v.imageryLayers.remove(x, true) } catch {}
+      try { if (surface?.release) await Promise.resolve(surface.release()) } catch {}
+      return Surf.noSurfaceResult('hermes_compare')
     }
     const el = document.createElement('div')
     el.id = 'hermes-gev-swipe'
@@ -253,9 +278,18 @@
     el.addEventListener('pointermove', (e) => { if (drag) setPos(e.clientX / (window.innerWidth || 1)) })
     el.addEventListener('pointerup', () => { drag = false })
     document.body.appendChild(el)
-    cmp = { l, r, left, right, el, tiles, pos: 0.5 }
+    cmp = { l, r, left, right, el, tiles, pos: 0.5, surface }
     setPos(Number(args.position ?? 0.5))
-    return { ok: true, action: 'hermes_compare', active: true, left: left.label, right: right.label, position: cmp.pos, hidPhotorealTiles: Boolean(tiles) }
+    return {
+      ok: true,
+      action: 'hermes_compare',
+      active: true,
+      left: left.label,
+      right: right.label,
+      position: cmp.pos,
+      hidPhotorealTiles: Boolean(tiles) || surface.mode === 'lease' || surface.mode === 'fallback',
+      surfaceMode: surface.mode || 'noop',
+    }
   }
 
   // ---- toolbar + Ask Hermes ----------------------------------------------------------------
