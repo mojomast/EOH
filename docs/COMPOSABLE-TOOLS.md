@@ -20,7 +20,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 | `godseye_query` | `find_places`, `osm`, `context`, `what_is_here`, `brief`, `brief_and_show`, `analyst`, `military`, `poi`, `resolve_area`, `entity`, `terrain`, `features` |
 | `godseye_layers` | `visibility`, `menu`, `panel`, `context_mode`, `style`, `sonar`, `detection`, `stack`, `post` |
 | `godseye_feeds` | `earthquakes`, `fires`, `launches`, `aircraft_in_area`, `find_aircraft`, `aircraft_track`, `aircraft_info`, `vessels_in_area`, `find_vessel`, `vessel_track`, `next_pass`, `overhead`, `find_cctv`, `cctv_snapshot`, `alpr`, `traffic`, `weather`, `imagery`, `cables`, `infrastructure`, `flood`, `cyclones`, `fire_perimeters`, `military_sites`, `imagery_live`, `iss_pass`, `satellite_pass`, `cctv_control`, `radio` |
-| `godseye_annotate` | `annotate`, `clear`, `draw`, `list`, `delete`, `update`, `filter`, `drawer`, `research` |
+| `godseye_annotate` | `annotate`, `clear`, `draw`, `list`, `delete`, `update`, `filter`, `drawer`, `research`, `overlays` |
 | `godseye_nav` | `measure`, `isochrone`, `fly_route`, `street_walk`, `street_level`, `itinerary`, `compare`, `timeline` |
 | `godseye_track` | `track`, `stop`, `select_nearest`, `frame`, `cockpit` |
 | `godseye_scene` | `save`, `list`, `load`, `delete`, `report`, `export`, `restore`, `tour`, `tour_status`, `tour_stop`, `playback` |
@@ -136,6 +136,7 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_live_filter_pins` | `godseye_annotate` | `filter` | B | category, rating, open-now chips |
 | `godseye_live_pin_drawer` | `godseye_annotate` | `drawer` | B | open or close one pin drawer |
 | `godseye_research_pins` | `godseye_annotate` | `research` | B | fill drawers from free sources |
+| `godseye_overlays` | `godseye_annotate` | `overlays` | B | sidebar tree for pins, routes, areas, watches, and scenes |
 | `godseye_measure` | `godseye_nav` | `measure` | B | argument measure is distance, area, or route so it does not collide with op |
 | `godseye_isochrone` | `godseye_nav` | `isochrone` | B | minutes of reach |
 | `godseye_live_fly_route` | `godseye_nav` | `fly_route` | B | dolly along an existing route; dense lines are thinned and chunked; not a camera fly |

@@ -109,7 +109,7 @@ export function watchPaneVisibility(el, onChange) {
 // Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
 // frame, and post the results back. Each pane polls with its own id and session ids.
 // Returns { onMessage, stop }.
-export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null, label = null, onConfigApplied = null }) {
+export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null, label = null, onConfigApplied = null, onOverlays = null }) {
   let stopped = false
   let fresh = true  // first poll of a new frame: the relay restores this session's scene
   let paneLabel = typeof label === 'function' ? label() : label
@@ -198,6 +198,10 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
           transition: tl.transition === 'fade' ? 'fade' : 'swipe',
           index: Number.isFinite(tl.index) ? tl.index : 0,
           clear: Boolean(tl.clear) } } }).catch(() => {})
+        return true
+      }
+      if (event.data?.type === 'hermes-gev:overlays') {  // globe Overlays button toggles the sidebar
+        onOverlays?.(event.data.detail || {})
         return true
       }
       if (event.data?.type === 'hermes-gev:filters') {  // a filter chip was toggled: persist it with the scene
@@ -443,6 +447,94 @@ function ControlRoom({ room, busy, error, onClose, onAction }) {
   })
 }
 
+function OverlaySidebar({ ctx, paneId, onClose }) {
+  const [tree, setTree] = useState(null)
+  const [err, setErr] = useState('')
+  const [collapsed, setCollapsed] = useState({})
+  const [editing, setEditing] = useState(null)
+  const [draft, setDraft] = useState({ label: '', title: '', description: '' })
+  const [cats, setCats] = useState('')
+  const sessions = () => paneSessions().join(',')
+  const load = () => ctx.rest('/overlays?pane=' + encodeURIComponent(paneId || '') + '&sessions=' + encodeURIComponent(sessions()))
+    .then((r) => { setTree(r); setErr(r && r.ok === false ? (r.message || r.error || '') : '') })
+    .catch((e) => setErr(String(e?.message || e)))
+  useEffect(() => { load() }, [paneId])
+  const act = async (extra) => {
+    setErr('')
+    try {
+      const r = await ctx.rest('/overlays', { method: 'POST', body: { pane: paneId, sessions: paneSessions(), ...extra } })
+      if (!r || r.ok === false) setErr(r?.message || r?.error || 'Request failed')
+      await load()
+    } catch (e) { setErr(String(e?.message || e)) }
+  }
+  const toggleNode = (id) => setCollapsed((cur) => ({ ...cur, [id]: !cur[id] }))
+  const row = (node, depth) => {
+    if (!node) return null
+    const kids = node.children || []
+    const open = collapsed[node.id] !== true
+    const pad = { paddingLeft: 8 + depth * 12 }
+    return jsxs('div', { key: node.id, children: [
+      jsxs('div', { className: 'flex items-center gap-1 py-0.5', style: pad, children: [
+        kids.length ? jsx('button', { type: 'button', className: 'w-4', onClick: () => toggleNode(node.id), children: open ? '▼' : '▶' }) : jsx('span', { className: 'w-4' }),
+        jsx('input', { type: 'checkbox', checked: node.shown !== false, 'aria-label': 'Show ' + (node.label || node.id),
+          onChange: () => act({ action: node.shown === false ? 'show' : 'hide', id: node.id }) }),
+        jsx('span', { className: 'truncate flex-1', children: (node.label || node.id) + (node.count != null ? ' (' + node.count + ')' : '') }),
+        node.role === 'entry' ? jsx('button', { type: 'button', onClick: () => { setEditing(node.id); setDraft({ label: node.label || '', title: node.title || '', description: node.description || '' }) }, children: 'edit' }) : null,
+        jsx('button', { type: 'button', onClick: () => act({ action: 'delete', id: node.id, confirm: true }), children: 'del' })
+      ] }),
+      open ? kids.map((child) => row(child, depth + 1)) : null,
+      editing === node.id ? jsxs('div', { className: 'flex flex-col gap-1 py-1', style: pad, children: [
+        jsx('input', { value: draft.label, placeholder: 'label', onChange: (e) => setDraft({ ...draft, label: e.target.value }) }),
+        jsx('input', { value: draft.title, placeholder: 'title', onChange: (e) => setDraft({ ...draft, title: e.target.value }) }),
+        jsx('textarea', { value: draft.description, placeholder: 'description', onChange: (e) => setDraft({ ...draft, description: e.target.value }) }),
+        jsx(Button, { size: 'sm', onClick: () => { act({ action: 'update', id: node.id, label: draft.label, title: draft.title, description_md: draft.description }); setEditing(null) }, children: 'Save' })
+      ] }) : null
+    ] })
+  }
+  const filters = tree?.filters || {}
+  return jsxs('aside', {
+    id: 'hermes-overlays', className: 'flex w-80 shrink-0 flex-col gap-2 overflow-auto border-l border-(--ui-border) p-2 text-xs',
+    children: [
+      jsxs('div', { className: 'flex items-center justify-between', children: [
+        jsx('strong', { children: 'Overlays' }),
+        jsx(Button, { size: 'sm', variant: 'ghost', onClick: onClose, children: 'Close' })
+      ] }),
+      jsxs('div', { className: 'flex gap-2', children: [
+        jsx('input', { type: 'file', accept: 'application/json,.json', 'aria-label': 'Import overlays', onChange: async (ev) => {
+          const file = ev.target.files && ev.target.files[0]
+          if (!file) return
+          try {
+            const document = JSON.parse(await file.text())
+            await act({ action: 'import', document, replace: true })
+          } catch (e) { setErr(String(e?.message || e)) }
+        } }),
+        jsx(Button, { size: 'sm', onClick: async () => {
+          const r = await ctx.rest('/overlays', { method: 'POST', body: { action: 'export', pane: paneId, sessions: paneSessions(), includeDocument: true } })
+          if (!r || r.ok === false) { setErr(r?.message || r?.error || 'Export failed'); return }
+          const blob = new Blob([JSON.stringify(r.document || r, null, 2)], { type: 'application/json' })
+          const link = document.createElement('a')
+          link.href = URL.createObjectURL(blob)
+          link.download = 'eoh-overlays.json'
+          link.click()
+          if (r.path) setErr('Saved ' + r.path)
+        }, children: 'Export' })
+      ] }),
+      err ? jsx('p', { children: err }) : null,
+      tree?.migration ? jsx('p', { className: 'text-(--ui-text-tertiary)', children: tree.migration }) : null,
+      (tree?.groups || []).map((group) => row(group, 0)),
+      jsxs('div', { className: 'mt-2 flex flex-col gap-1', children: [
+        jsx('span', { children: 'Pin filters' }),
+        jsx('input', { value: cats, placeholder: 'categories', 'aria-label': 'Pin categories', onChange: (e) => setCats(e.target.value) }),
+        jsxs('label', { children: [
+          jsx('input', { type: 'checkbox', checked: Boolean(filters.open_now), onChange: (e) => act({ action: 'filters', open_now: e.target.checked, categories: cats.split(',').map((c) => c.trim()).filter(Boolean) }) }),
+          ' Open now'
+        ] }),
+        jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => { setCats(''); act({ action: 'filters', clear: true }) }, children: 'Reset filters' })
+      ] })
+    ]
+  })
+}
+
 function GlobePane({ ctx }) {
   const [status, setStatus] = useState(null)
   const [src, setSrc] = useState(null)
@@ -453,6 +545,7 @@ function GlobePane({ ctx }) {
   const [homeView, setHomeView] = useState(undefined)
   const [gl, setGl] = useState(null)
   const [roomOpen, setRoomOpen] = useState(false)
+  const [overlaysOpen, setOverlaysOpen] = useState(false)
   const [room, setRoom] = useState(null)
   const [roomBusy, setRoomBusy] = useState('')
   const [roomErr, setRoomErr] = useState('')
@@ -535,6 +628,7 @@ function GlobePane({ ctx }) {
     const live = createLiveRelay({
       ctx, frame, paneId: paneIdRef.current, onReload, label: () => labelRef.current,
       onConfigApplied: () => stopCfg(),
+      onOverlays: () => setOverlaysOpen((v) => !v),
     })
     const onGl = (e) => {
       const kind = glEvent(e, frame())
@@ -585,6 +679,7 @@ function GlobePane({ ctx }) {
           jsx('span', { children: status?.appUp ? 'live' : `app not running (${base})` }),
           jsx('span', { className: 'truncate', title: paneIdRef.current,
             children: (status?.panes || []).find((p) => p.id === paneIdRef.current)?.label || paneIdRef.current }),
+          jsx(Button, { size: 'sm', variant: 'ghost', 'aria-expanded': overlaysOpen, 'aria-controls': 'hermes-overlays', onClick: () => setOverlaysOpen((v) => !v), children: overlaysOpen ? 'Hide overlays' : 'Overlays' }),
           jsx(Button, { size: 'sm', variant: 'ghost', 'aria-expanded': roomOpen, onClick: () => setRoomOpen((v) => !v), children: roomOpen ? 'Hide control room' : 'Control room' }),
           jsx(Button, { size: 'sm', variant: 'ghost', onClick: askHud, children: 'HUD (Hermes)' }),
           status?.patched?.fullUi === false ? jsx('span', { title: 'Full UI needs patches/0002 on your God\'s Eye View checkout', children: 'globe only' }) : jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => setFullUi((v) => !v), children: fullUi ? 'Globe only' : 'Full UI' }),
@@ -595,18 +690,21 @@ function GlobePane({ ctx }) {
       roomOpen ? jsx(ControlRoom, {
         room, busy: roomBusy, error: roomErr, onClose: () => setRoomOpen(false), onAction: controlAction
       }) : null,
-      gl
-        ? jsxs('div', {
-          className: 'flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm', style: { minHeight: 520 },
-          children: [
-            jsx('div', { children: gl === 'failed' ? 'The browser could not start 3D graphics (too many WebGL contexts in use).' : 'Graphics reset: the browser dropped the 3D context. Automatic recovery is off or stopped after repeated failures.' }),
-            jsx(Button, { size: 'sm', onClick: reloadGraphics, children: 'Click to reload the globe' }),
-            jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: 'If it fails again, close other 3D/map tabs or reopen this browser tab.' })
-          ]
-        })
-        : src && homeView !== undefined
-        ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "Eye Of Hermes (EOH)", className: 'w-full flex-1 border-0', style: { minHeight: 520 } })
-        : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading Eye Of Hermes (EOH)…' })
+      jsxs('div', { className: 'flex min-h-0 flex-1', children: [
+        gl
+          ? jsxs('div', {
+            className: 'flex min-w-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-sm', style: { minHeight: 520 },
+            children: [
+              jsx('div', { children: gl === 'failed' ? 'The browser could not start 3D graphics (too many WebGL contexts in use).' : 'Graphics reset: the browser dropped the 3D context. Automatic recovery is off or stopped after repeated failures.' }),
+              jsx(Button, { size: 'sm', onClick: reloadGraphics, children: 'Click to reload the globe' }),
+              jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: 'If it fails again, close other 3D/map tabs or reopen this browser tab.' })
+            ]
+          })
+          : src && homeView !== undefined
+          ? jsx(SandboxedFrame, { key: `${fullUi ? 'f' : 'g'}-${nonce}`, ref, src, title: "Eye Of Hermes (EOH)", className: 'min-w-0 w-full flex-1 border-0', style: { minHeight: 520 } })
+          : jsx('div', { className: 'p-3 text-sm', children: err || 'Loading Eye Of Hermes (EOH)…' }),
+        overlaysOpen ? jsx(OverlaySidebar, { ctx, paneId: paneIdRef.current, onClose: () => setOverlaysOpen(false) }) : null
+      ] })
     ]
   })
 }

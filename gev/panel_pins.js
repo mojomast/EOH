@@ -499,6 +499,7 @@
   function openState(p) { if (!p.tags.hours || !OH()) return null; return OH().isOpen(p.tags.hours, nowOverride ? new Date(nowOverride) : new Date()) }
   const passes = (p) => {
     const f = filters
+    if (p.overlayOn === false) return false
     if (p.tags.alert) return true
     if (f.categories.length && !p.tags.cats.some((c) => f.categories.includes(c))) return false
     if (f.min_rating != null) { if (p.tags.rating == null) { if (!f.include_unknown) return false } else if (p.tags.rating < f.min_rating) return false }
@@ -522,7 +523,8 @@
   const camSig = () => { try { const c = g().viewer.camera, pc = c.positionCartographic; return [pc.longitude, pc.latitude, pc.height, c.heading, c.pitch].map((x) => Math.round(x * 1e4)).join(',') } catch { return '' } }
   function refreshView(force) {
     if (!ds) return
-    const sig = camSig() + '|' + pins.size + '|' + JSON.stringify(filters)
+    const sig = camSig() + '|' + pins.size + '|' + JSON.stringify(filters) + '|' +
+      [...pins.values()].map((p) => (p.overlayOn === false ? '0' : '1')).join('')
     if (!force && sig === lastSig) return
     lastSig = sig
     const Ce = C()
@@ -571,44 +573,22 @@
     try { v.camera.flyTo({ destination: Ce.Rectangle.fromDegrees(w - pad, s - pad, e + pad, n + pad), duration: 1.0 }) } catch {}
     return { ok: true, expanded: id, count: ms.length, bbox: [s, w, n, e] }
   }
-  // ---- filter bar (chips) ------------------------------------------------------------------
+  // The bottom-middle category chip strip was retired. Those groups, plus routes,
+  // areas, watches, and scenes, are edited in the Overlays sidebar (Hermes Desktop
+  // pane → Overlays). filterCommand still applies the same category, rating, and
+  // open-now state, and tells the host so the scene keeps it.
   let bar = null
   const tellFilters = () => { try { window.parent.postMessage({ type: 'hermes-gev:filters', detail: { filters: { ...filters } } }, '*') } catch {} }
   function renderBar() {
-    if (typeof document === 'undefined' || !document.body) return
-    const cats = new Map()
-    for (const p of pins.values()) for (const c of p.tags.cats) cats.set(c, (cats.get(c) || 0) + 1)
-    const anyRating = [...pins.values()].some((p) => p.tags.rating != null)
-    const anyHours = [...pins.values()].some((p) => p.tags.hours)
-    if (!pins.size || (!cats.size && !anyRating && !anyHours)) { if (bar) bar.style.display = 'none'; return }
-    if (!bar) {
-      const st = document.createElement('style')
-      st.textContent = `#hermes-gev-filters{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:2147483646;display:flex;flex-wrap:wrap;gap:6px;max-width:min(720px,92vw);
-        padding:6px 8px;background:rgba(3,14,11,.86);border:1px solid rgba(120,255,200,.35);border-radius:8px;font:12px/1 ui-monospace,Menlo,monospace}
-        #hermes-gev-filters button{background:rgba(120,255,200,.06);color:#bfffe6;border:1px solid rgba(120,255,200,.35);border-radius:12px;padding:5px 9px;cursor:pointer;font:inherit}
-        #hermes-gev-filters button.on{background:#38f2c8;color:#06121c;border-color:#38f2c8;font-weight:700}
-        #hermes-gev-filters .n{opacity:.65;margin-left:4px} #hermes-gev-filters .sum{color:#7fbfa8;align-self:center;padding:0 4px}`
-      document.head.appendChild(st)
-      bar = document.createElement('div'); bar.id = 'hermes-gev-filters'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Pin filters')
-      bar.addEventListener?.('click', (ev) => {
-        const b = ev.target?.closest?.('button[data-f]'); if (!b) return
-        const f = b.getAttribute('data-f'), val = b.getAttribute('data-v')
-        if (f === 'cat') { const s = new Set(filters.categories); s.has(val) ? s.delete(val) : s.add(val); setFilters({ categories: [...s] }) }
-        else if (f === 'rating') setFilters({ min_rating: filters.min_rating == null ? 4 : null })
-        else if (f === 'open') setFilters({ open_now: !filters.open_now })
-        else if (f === 'reset') setFilters({ categories: [], min_rating: null, open_now: false })
-        tellFilters()
-      })
-      document.body.appendChild(bar)
-    }
-    bar.style.display = 'flex'
-    const shown = [...pins.values()].filter((p) => p.visible).length
-    const chip = (f, v, text, on, n) => `<button type="button" data-f="${f}" data-v="${esc(v)}" class="${on ? 'on' : ''}" aria-pressed="${on}">${esc(text)}${n != null ? `<span class="n">${n}</span>` : ''}</button>`
-    bar.innerHTML = [...cats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => chip('cat', c, c.replace(/_/g, ' '), filters.categories.includes(c), n)).join('') +
-      (anyRating || filters.min_rating != null ? chip('rating', '', `★ ≥ ${filters.min_rating ?? 4}`, filters.min_rating != null) : '') +
-      (anyHours ? chip('open', '', 'Open now', filters.open_now) : '') +
-      ((filters.categories.length || filters.min_rating != null || filters.open_now) ? chip('reset', '', 'Reset', false) : '') +
-      `<span class="sum">${shown}/${pins.size}</span>`
+    if (bar) { try { bar.remove() } catch {} ; bar = null }
+  }
+  function setOverlay(id, on) {
+    const key = String(id || '')
+    const pin = pins.get(key)
+    if (!pin) return false
+    pin.overlayOn = on !== false
+    refreshView(true)
+    return true
   }
   function setFilters(f = {}) {
     if (f.clear) f = { categories: [], min_rating: null, open_now: false, include_unknown: true, cluster: true }
@@ -621,6 +601,7 @@
     if ('now' in f) nowOverride = f.now ? String(f.now) : null
     filters = n
     refreshView(true)
+    tellFilters()
     return filterState()
   }
   const filterState = () => {
@@ -637,7 +618,7 @@
     return setFilters(args)
   }
   window.__hermesPins = { add, remove, clear, detach, open, close, command, renderMarkdown, heightFor, syncWithBoard, labelOffsets,
-    setFilters, filterCommand, filterState, expandCluster, refreshView,
+    setFilters, setOverlay, filterCommand, filterState, expandCluster, refreshView,
     state: () => ({ open: openId, filters: { ...filters }, clusters: [...clusters.values()].map((c) => ({ id: c.id, count: c.ids.length })),
       pins: [...pins.values()].map((p) => ({ ...pinInfo(p), h: p.h, visible: p.visible !== false, clustered: Boolean(p.clustered) })) }) }
 })()

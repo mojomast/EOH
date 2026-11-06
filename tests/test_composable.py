@@ -251,6 +251,7 @@ def test_every_phase_a_op_and_alias_use_the_same_handler(monkeypatch):
         ("godseye_annotate", "filter"): {"action": "set"},
         ("godseye_annotate", "drawer"): {"action": "open"},
         ("godseye_annotate", "research"): {"mode": "light"},
+        ("godseye_annotate", "overlays"): {"action": "tree"},
         ("godseye_nav", "measure"): {"measure": "distance", "points": [{"lat": 1, "lon": 2}, {"lat": 3, "lon": 4}]},
         ("godseye_nav", "isochrone"): {"minutes": [10], "mode": "walk"},
         ("godseye_nav", "fly_route"): {},
@@ -504,7 +505,7 @@ def test_measure_schemas_shrinks_the_catalog():
     import measure_schemas
     report = measure_schemas.measure()
     assert report["after"]["tools"] == 11
-    assert report["baseline"]["tools"] == 94
+    assert report["baseline"]["tools"] == 95  # phase-B reconstruction, including godseye_overlays
     assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert report["after"]["bytes"] < report["baseline"]["bytes"]
     assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]

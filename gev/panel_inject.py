@@ -5,7 +5,8 @@ renderer): a <base> for the data: document, the opt-in GEV_EMBED_FULL_UI flag, E
 (gev/panel_brand.js), a Cesium worker
 shim (gev/panel_worker_shim.js), an opening_hours subset parser (gev/panel_oh.js), the grounded pin layer + info drawer + clusters/filters (gev/panel_pins.js), the context/draw/measure/compare
 layer (gev/panel_context.js), the time slider (gev/panel_timeline.js), the Director bridge
-(gev/panel_director.js) and the live-globe agent (gev/panel_live_agent.js).
+(gev/panel_director.js), the overlay button (gev/panel_overlays.js) and the live-globe agent
+(gev/panel_live_agent.js).
 """
 from __future__ import annotations
 
@@ -113,6 +114,7 @@ def prepare(html: str, full_ui: bool = True, perf: str | None = "embed", config:
     head += _script((_HERE / "gl_recover.js").read_text())
     head += _script((_HERE / "panel_route.js").read_text())
     head += _script((_HERE / "panel_director.js").read_text())
+    head += _script((_HERE / "panel_overlays.js").read_text())
     head += _script((_HERE / "panel_live_agent.js").read_text())
     m = re.search(r"<head[^>]*>", html, re.I)
     return html[: m.end()] + head + html[m.end():] if m else head + html

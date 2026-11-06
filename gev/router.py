@@ -169,6 +169,8 @@ CATALOG: tuple[Target, ...] = (
     _t("godseye_live_filter_pins", "godseye_annotate", "filter", "extra", "B", "category, rating, open-now chips"),
     _t("godseye_live_pin_drawer", "godseye_annotate", "drawer", "extra", "B", "open or close one pin drawer"),
     _t("godseye_research_pins", "godseye_annotate", "research", "extra", "B", "fill drawers from free sources"),
+    _t("godseye_overlays", "godseye_annotate", "overlays", "extra", "B",
+       "sidebar tree for pins, routes, areas, watches, and scenes"),
     # --- godseye_nav ---
     _t("godseye_measure", "godseye_nav", "measure", "extra", "B",
        "argument measure is distance, area, or route so it does not collide with op"),
@@ -1162,7 +1164,8 @@ _LEADS = {
         "One op per call. CCTV and ALPR are public or mapped cameras, not a way to identify a person."
     ),
     "godseye_annotate": (
-        "Pins, drawings, filters, and pin drawers on the open pane. One op per call. "
+        "Pins, routes, areas, drawings, filters, and the overlay sidebar. One op per call. "
+        "op=overlays lists the tree (show, hide, delete, update, import, export). "
         "source is a .jsonl, .csv, or .json path. records is a list of {lat, lon, label, description_md, images, links, tags, category, id}."
     ),
     "godseye_nav": (

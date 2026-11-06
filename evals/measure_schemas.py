@@ -8,8 +8,9 @@ unregistered, phase B names are registered again, and only godseye_view
 and godseye_query are added. The slider's absorbed name is one of those
 phase B tools. view and query also include
 show, state, terrain, and features. Control-room names, street_walk, pin
-update, street_level, itinerary, pane capture, batch, and keys are phase B,
-so this reconstruction registers them too. The registered catalog stays at eleven.
+update, street_level, itinerary, pane capture, batch, keys, and the overlay
+sidebar are phase B, so this reconstruction registers them too. The registered
+catalog stays at eleven.
 The pull request records the feat/v0.2 measurement separately.
 
 Token counts use tiktoken (o200k_base and cl100k_base). No network. No secrets.

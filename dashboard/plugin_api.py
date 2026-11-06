@@ -195,6 +195,24 @@ async def live_filters(body: dict):
     return await asyncio.to_thread(live.call, "/filters", bridge.ensure_token(), body, 15)
 
 
+@router.get("/overlays")
+async def overlays_tree(pane: str = "", sessions: str = ""):
+    """Overlay sidebar tree. Does not change marks."""
+    import asyncio
+    from gev import live
+    body = {"action": "tree", "pane": pane[:80],
+            "sessions": [item for item in sessions.split(",") if item][:8]}
+    return await asyncio.to_thread(live.call, "/overlays", bridge.ensure_token(), body, 20)
+
+
+@router.post("/overlays")
+async def overlays_op(body: dict):
+    """Show, hide, edit, delete, import, or export Hermes overlays."""
+    import asyncio
+    from gev import live
+    return await asyncio.to_thread(live.call, "/overlays", bridge.ensure_token(), body or {}, 30)
+
+
 @router.post("/live/drawer")
 async def live_drawer(body: dict):
     import asyncio
