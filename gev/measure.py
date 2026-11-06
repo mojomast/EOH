@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import threading
 import time
 import urllib.parse
@@ -362,9 +363,21 @@ def _reverse_ring(lat: float, lon: float, r: float) -> list[dict]:
 # Tile images are for the pane to display; this function only reads the JSON catalog.
 WAYBACK_TTL_S = 6 * 3600
 WAYBACK_MIN_GAP_S = 2.0
+_TILE_RE = re.compile(r"/tile/(\d+)/", re.I)
+_RELEASE_FIELDS = ("tileRelease", "tile_release", "releaseId", "release_id",
+                   "canonicalRelease", "canonical_release")
+_REDIRECT_FIELDS = ("redirectTo", "redirect_to", "redirectRelease", "redirect_release",
+                    "redirect", "canonical")
+_URL_FIELDS = ("itemURL", "itemUrl", "tileURL", "tileUrl", "url")
+_WAYBACK_FIX = ("Retry godseye_nav op=compare action=list_dates once. If it still fails, compare left=osm "
+                "or left=current instead of a wayback date.")
+_IMAGERY_FIX = ("Retry godseye_nav op=compare once with a date from action=list_dates. If it still fails, use "
+                "left=current or left=osm; do not treat the wayback layer as applied.")
 _wb_lock = threading.Lock()
 _wb_cache: dict = {"at": 0.0, "rows": None}
 _wb_last = [0.0]
+_wb_allowed: set[int] = set()   # ids present in the latest waybackconfig.json
+_wb_stale: set[int] = set()     # catalog keys that redirect to a different served release
 
 
 def reset_wayback_cache() -> None:
@@ -372,6 +385,51 @@ def reset_wayback_cache() -> None:
         _wb_cache["at"] = 0.0
         _wb_cache["rows"] = None
         _wb_last[0] = 0.0
+        _wb_allowed.clear()
+        _wb_stale.clear()
+
+
+def _int_id(value) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def _release_from_entry(key: int, item, redirects: dict) -> int:
+    """The tile release a config entry points at (never blindly its catalog key)."""
+    item = item if isinstance(item, dict) else {}
+    for field in _RELEASE_FIELDS:
+        n = _int_id(item.get(field))
+        if n:
+            return n
+    for field in _URL_FIELDS:
+        matched = _TILE_RE.search(str(item.get(field) or ""))
+        if matched:
+            return int(matched.group(1))
+    for field in _REDIRECT_FIELDS:
+        value = item.get(field)
+        n = _int_id(value)
+        if n:
+            return n
+        matched = _TILE_RE.search(str(value or ""))
+        if matched:
+            return int(matched.group(1))
+    return redirects.get(key) or key
+
+
+def _resolve_release(key: int, aliases: dict) -> int | None:
+    """Follow alias/redirect chains; None when the chain loops."""
+    target, seen = key, set()
+    while target in aliases:
+        if target in seen:
+            return None
+        seen.add(target)
+        target = aliases[target]
+    return target
 
 
 def _fetch_wayback() -> list[dict]:
@@ -380,15 +438,52 @@ def _fetch_wayback() -> list[dict]:
         cfg = json.loads(body or "{}") if status == 200 else {}
     except Exception:
         return []
-    out = []
-    for rid, v in (cfg.items() if isinstance(cfg, dict) else []):
-        title = str((v or {}).get("itemTitle") or "")
-        date = title.split("Wayback")[-1].strip(" ()") if "Wayback" in title else ""
-        try:
-            out.append({"release": int(rid), "date": date, "title": title})
-        except ValueError:
+    cfg = cfg if isinstance(cfg, dict) else {}
+    raw = cfg.get("releases") if isinstance(cfg.get("releases"), dict) else cfg
+    redirects: dict[int, int] = {}
+    for name in ("redirects", "aliases"):
+        block = cfg.get(name)
+        if isinstance(block, dict):
+            for old, new in block.items():
+                old_id, new_id = _int_id(old), _int_id(new)
+                if new_id is None:
+                    matched = _TILE_RE.search(str(new or ""))
+                    new_id = int(matched.group(1)) if matched else None
+                if old_id and new_id:
+                    redirects[old_id] = new_id
+    entries = {}
+    for rid, v in raw.items():
+        if rid in ("releases", "redirects", "aliases"):
             continue
-    return sorted(out, key=lambda r: r["date"], reverse=True)
+        key = _int_id(rid)
+        if key is None:
+            continue
+        item = v if isinstance(v, dict) else {}
+        title = str(item.get("itemTitle") or "")
+        date = title.split("Wayback")[-1].strip(" ()") if "Wayback" in title else ""
+        entries[key] = {"release": _release_from_entry(key, item, redirects), "date": date, "title": title}
+    aliases = {key: row["release"] for key, row in entries.items() if row["release"] != key}
+    resolved = {}
+    for key in entries:
+        target = _resolve_release(key, aliases)
+        if target is not None:
+            resolved[key] = target
+    canonical: dict[int, dict] = {}
+    for key in sorted(resolved):  # prefer the entry whose key is the served release
+        if resolved[key] == key:
+            canonical[key] = entries[key]
+    for key in sorted(resolved):  # a redirect-only alias fills a gap but never replaces the canonical row
+        if resolved[key] not in canonical:
+            canonical[resolved[key]] = entries[key]
+    out = sorted(canonical.values(), key=lambda r: (r["date"], r["release"]), reverse=True)
+    allowed = set(entries) | set(resolved.values())
+    stale = {key for key, target in resolved.items() if key != target}
+    with _wb_lock:
+        _wb_allowed.clear()
+        _wb_allowed.update(allowed)
+        _wb_stale.clear()
+        _wb_stale.update(stale)
+    return out
 
 
 def wayback_releases() -> list[dict]:
@@ -418,16 +513,88 @@ def wayback_releases() -> list[dict]:
     return [dict(r) for r in cached] if cached else []
 
 
+def _dated_releases(releases) -> list[dict]:
+    """Rows that can still be served: valid ids, not catalog keys that redirect elsewhere."""
+    out = []
+    for row in releases or []:
+        if not isinstance(row, dict):
+            continue
+        release = _int_id(row.get("release"))
+        if release is None or release in _wb_stale or not row.get("date"):
+            continue
+        out.append(row)
+    return out
+
+
 def pick_release(releases: list[dict], when: str) -> dict | None:
-    """Closest release on or before ``when`` (YYYY, YYYY-MM or YYYY-MM-DD); else the oldest after it."""
-    if not releases:
+    """Closest release on or before ``when`` (YYYY, YYYY-MM or YYYY-MM-DD); else the oldest after it.
+
+    Only ids from the current waybackconfig mapping are eligible; redirected catalog keys are skipped.
+    """
+    rows = _dated_releases(releases)
+    if not rows:
         return None
     w = str(when).strip()
     w = (w + "-12-31")[:10] if len(w) == 4 else (w + "-31")[:10] if len(w) == 7 else w[:10]
-    before = [r for r in releases if r["date"] and r["date"] <= w]
+    before = [r for r in rows if str(r["date"]) <= w]
     if before:
-        return max(before, key=lambda r: r["date"])
-    return min((r for r in releases if r["date"]), key=lambda r: r["date"], default=None)
+        return max(before, key=lambda r: str(r["date"]))
+    return min(rows, key=lambda r: str(r["date"]), default=None)
+
+
+def _release_ids(releases) -> set[int]:
+    out = set()
+    for row in releases or []:
+        if isinstance(row, dict):
+            release = _int_id(row.get("release"))
+            if release is not None:
+                out.add(release)
+    return out
+
+
+def wayback_tile_url(release, releases=None) -> str | None:
+    """Tile template for a served release; None for a stale/redirected or unknown id."""
+    rel = _int_id(release)
+    if rel is None or rel in _wb_stale:
+        return None
+    rows = wayback_releases() if releases is None else releases
+    if rel not in _release_ids(rows):
+        return None
+    return WAYBACK_TILES.replace("{release}", str(rel))
+
+
+def check_imagery_layer(layer: dict, releases=None) -> dict:
+    """Confirm a resolved layer can serve tiles. ``ok:false`` carries a code and a fix."""
+    if not isinstance(layer, dict):
+        return {"ok": False, "error": "imagery_failed", "message": "The imagery layer is missing.",
+                "fix": _IMAGERY_FIX}
+    if layer.get("kind") != "xyz":
+        return {"ok": True}
+    url = str(layer.get("url") or "")
+    release = _int_id(layer.get("release"))
+    is_wayback = release is not None or "wayback" in url.lower() or "maptiles.arcgis.com" in url.lower()
+    if not is_wayback:
+        return {"ok": True}
+    rows = wayback_releases() if releases is None else releases
+    ids = _release_ids(rows)
+    if not ids:
+        return {"ok": False, "error": "wayback_unavailable",
+                "message": "Esri World Imagery Wayback is unreachable; historical imagery cannot be confirmed.",
+                "fix": _WAYBACK_FIX}
+    if release is None:
+        return {"ok": False, "error": "imagery_failed",
+                "message": "Wayback imagery has no resolved release id; tiles cannot be confirmed.",
+                "fix": _IMAGERY_FIX}
+    if release in _wb_stale or release not in ids:
+        return {"ok": False, "error": "imagery_failed",
+                "message": f"Wayback release {release} is not in the current catalog mapping; its tiles would "
+                           "redirect and could leave the globe black.",
+                "fix": _IMAGERY_FIX}
+    if not url.startswith("https://") or f"/tile/{release}/" not in url:
+        return {"ok": False, "error": "imagery_failed",
+                "message": "The Wayback tile URL does not target the resolved release, so it cannot be confirmed.",
+                "fix": _IMAGERY_FIX}
+    return {"ok": True, "release": release, "url": url}
 
 
 def compare_layer(spec) -> dict:
@@ -444,9 +611,19 @@ def compare_layer(spec) -> dict:
         rels = wayback_releases()
         if not rels:
             return {"kind": "error", "error": "wayback_unavailable",
-                    "message": "Esri World Imagery Wayback is unreachable; historical imagery cannot be shown right now."}
+                    "message": "Esri World Imagery Wayback is unreachable; historical imagery cannot be shown right now.",
+                    "fix": _WAYBACK_FIX}
         r = pick_release(rels, when) if when else rels[-1]
-        return {"kind": "xyz", "label": f"Esri Wayback {r['date']}", "release": r["release"], "date": r["date"],
-                "url": WAYBACK_TILES.replace("{release}", str(r["release"])), "credit": "Esri World Imagery Wayback",
-                "maxZoom": 19, "requested": when or "oldest"}
+        release = _int_id((r or {}).get("release"))
+        if release is None:
+            return {"kind": "error", "error": "wayback_unavailable",
+                    "message": "No served Esri Wayback release matches that date.",
+                    "fix": _WAYBACK_FIX}
+        layer = {"kind": "xyz", "label": f"Esri Wayback {r['date']}", "release": release, "date": r["date"],
+                 "url": WAYBACK_TILES.replace("{release}", str(release)), "credit": "Esri World Imagery Wayback",
+                 "maxZoom": 19, "requested": when or "oldest"}
+        status = check_imagery_layer(layer, rels)
+        if not status.get("ok"):
+            return {"kind": "error", **status}
+        return layer
     return {"kind": "stack", "label": s, "stack": s}
