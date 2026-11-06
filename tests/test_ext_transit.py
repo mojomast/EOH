@@ -191,13 +191,53 @@ def test_a_failed_analyst_read_is_reported(monkeypatch):
     assert "transit layer" in out["message"]
 
 
-def test_follow_vehicle_tracks_the_transit_entity(monkeypatch):
+def test_follow_vehicle_is_unsupported_without_live_transit_tracking(monkeypatch):
     calls = []
     monkeypatch.setattr(ext_transit, "live", _fake_live(calls))
 
     out = json.loads(_handler("godseye_track")({
         "op": "follow_vehicle", "vehicle_id": "rio-bus-1001",
     }, session_id="chat-8"))
+
+    assert out["ok"] is False
+    assert out["error"] == "unsupported"
+    assert out["code"] == "unsupported"
+    assert out["action"] == "follow_vehicle"
+    assert out["vehicle_id"] == "rio-bus-1001"
+    assert out["layer"] == "transit"
+    assert "transit" in out["message"].lower()
+    assert out["fix"]
+    assert out["supported_layers"] == ["ais-live-vessels", "flights", "military", "satellites"]
+    assert calls == []
+
+
+def test_follow_vehicle_missing_vehicle_id_stays_bad_args(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ext_transit, "live", _fake_live(calls))
+
+    out = json.loads(_handler("godseye_track")({
+        "op": "follow_vehicle",
+    }, session_id="chat-8b"))
+
+    assert out["ok"] is False
+    assert out["error"] == "bad_args"
+    assert out["code"] == "bad_args"
+    assert out["fix"]
+    assert calls == []
+
+
+def test_bundled_live_contract_does_not_advertise_transit_tracking():
+    assert ext_transit.TRANSIT_LAYER not in ext_transit.supported_track_layers()
+    assert ext_transit.supports_transit_track() is False
+
+
+def test_follow_vehicle_tracks_when_the_live_pane_advertises_transit(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ext_transit, "live", _fake_live(calls))
+
+    out = ext_transit.follow_vehicle({
+        "vehicle_id": "rio-bus-1001",
+    }, live=ext_transit.live, session_id="chat-8c", track_layers={"transit"})
 
     assert out["ok"] is True
     assert out["action"] == "follow_vehicle"
@@ -206,7 +246,21 @@ def test_follow_vehicle_tracks_the_transit_entity(monkeypatch):
     names = [call["name"] for call in calls]
     assert names == ["set_layer_visibility", "track_entity"]
     assert calls[1]["args"] == {"query": "rio-bus-1001", "layerId": "transit"}
-    assert calls[1]["session_id"] == "chat-8"
+    assert calls[1]["session_id"] == "chat-8c"
+
+
+def test_handler_follows_transit_when_capability_is_present(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ext_transit, "live", _fake_live(calls))
+    monkeypatch.setattr(ext_transit, "supported_track_layers",
+                        lambda: frozenset({"transit", "flights"}))
+
+    out = json.loads(_handler("godseye_track")({
+        "op": "follow_vehicle", "vehicle_id": "rio-bus-1001",
+    }, session_id="chat-8d"))
+
+    assert out["ok"] is True
+    assert [call["name"] for call in calls] == ["set_layer_visibility", "track_entity"]
 
 
 def test_follow_vehicle_surfaces_a_track_failure(monkeypatch):
@@ -214,13 +268,14 @@ def test_follow_vehicle_surfaces_a_track_failure(monkeypatch):
     failed = {"ok": False, "error": "not_found", "message": "No such transit vehicle."}
     monkeypatch.setattr(ext_transit, "live", _fake_live(calls, track_result=failed))
 
-    out = json.loads(_handler("godseye_track")({
-        "op": "follow_vehicle", "vehicle_id": "missing",
-    }, session_id="chat-9"))
+    out = ext_transit.follow_vehicle({
+        "vehicle_id": "missing",
+    }, live=ext_transit.live, session_id="chat-9", track_layers={"transit"})
 
     assert out["ok"] is False
     assert out["error"] == "not_found"
     assert out["vehicle_id"] == "missing"
+    assert out["fix"]
 
 
 def test_stop_stays_on_the_existing_stop_op():

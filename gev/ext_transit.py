@@ -5,8 +5,13 @@ module turns that layer on with the live ``set_layer_visibility`` action and
 reads its records through the live ``analyst_query`` surface (``layers:
 ["transit"]`` with a ``region`` or ``radius`` scope). ``get_entity_context``
 does not list ``transit`` in its ``layerId`` enum, so the analyst path is the
-one that exists. Following a vehicle uses live ``track_entity``; stopping stays
-on the existing ``godseye_track`` op=stop (``stop_tracking``).
+one that exists. The live pane has no transit follow action: ``track_entity``
+only accepts flights, military, AIS vessels, and satellites. ``follow_vehicle``
+therefore checks the bundled live contract and returns an ``unsupported`` error
+with a ``fix`` instead of reporting a false ok. If a future pane advertises
+``transit`` in ``track_entity``'s ``layerId`` contract, the same follow path is
+used. Stopping stays on the existing ``godseye_track`` op=stop
+(``stop_tracking``).
 
 ``live`` and ``now`` are module-level hooks. Tests monkeypatch them; the
 functions below take them as explicit arguments and never call the network.
@@ -18,12 +23,20 @@ import math
 import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .ext_ops import ExtOp
 
 TRANSIT_LAYER = "transit"
 MAX_VEHICLES = 50
 MAX_ROUTES = 50
+
+LIVE_SNAPSHOT = Path(__file__).with_name("live_tools_snapshot.json")
+TRACK_TOOL = "track_entity"
+
+# The layerId contract shipped by the live pane. It is the fallback when the
+# snapshot cannot be read, and it deliberately excludes transit.
+DEFAULT_TRACK_LAYERS = frozenset({"flights", "military", "ais-live-vessels", "satellites"})
 
 # The only GTFS-RT feed upstream ships today. Bounds are the city of Rio de
 # Janeiro, not the whole state.
@@ -64,6 +77,48 @@ def _fail(error: str, message: str, fix: str | None = None, **extra) -> dict:
         out["fix"] = fix
     out.update(extra)
     return out
+
+
+def _track_contract(path: Path | None = None) -> tuple[frozenset[str], str]:
+    """Read the live ``track_entity`` layerId contract from the bundled catalog."""
+    try:
+        catalog = json.loads((path or LIVE_SNAPSHOT).read_text())
+    except (OSError, TypeError, ValueError):
+        return DEFAULT_TRACK_LAYERS, ""
+    tool = next((item for item in catalog if isinstance(item, dict)
+                 and item.get("name") == TRACK_TOOL), None)
+    if not isinstance(tool, dict):
+        return DEFAULT_TRACK_LAYERS, ""
+    parameters = tool.get("parameters")
+    properties = parameters.get("properties") if isinstance(parameters, dict) else None
+    prop = properties.get("layerId") if isinstance(properties, dict) else None
+    if not isinstance(prop, dict):
+        return DEFAULT_TRACK_LAYERS, ""
+    description = str(prop.get("description") or "")
+    enum = prop.get("enum")
+    if isinstance(enum, list) and enum:
+        layers = {str(item).strip().lower() for item in enum if str(item).strip()}
+        if layers:
+            return frozenset(layers), description
+    layers = set(DEFAULT_TRACK_LAYERS)
+    if re.search(r"\btransit\b", description, re.I):
+        layers.add(TRANSIT_LAYER)
+    return frozenset(layers), description
+
+
+def supported_track_layers() -> frozenset[str]:
+    """Layer ids the bundled live ``track_entity`` contract advertises."""
+    layers, _description = _track_contract()
+    return layers
+
+
+def supports_transit_track(layers=None) -> bool:
+    """True when the live track contract advertises transit following."""
+    if layers is None:
+        layers = supported_track_layers()
+    if isinstance(layers, str):
+        layers = (layers,)
+    return TRANSIT_LAYER in {str(layer).strip().lower() for layer in layers}
 
 
 def _covered_names() -> list[str]:
@@ -360,8 +415,8 @@ def transit(args: dict, *, live=None, now=None, session_id=None) -> dict:
     return common
 
 
-def follow_vehicle(args: dict, *, live=None, session_id=None) -> dict:
-    """Follow one transit vehicle on the open pane."""
+def follow_vehicle(args: dict, *, live=None, session_id=None, track_layers=None) -> dict:
+    """Follow one transit vehicle when the live pane supports it."""
     caller = live if live is not None else globals()["live"]
     args = dict(args or {})
     vehicle_id = args.get("vehicle_id")
@@ -370,10 +425,26 @@ def follow_vehicle(args: dict, *, live=None, session_id=None) -> dict:
                      "Pass a vehicle id from godseye_feeds op=transit action=vehicles.")
     vehicle_id = str(vehicle_id).strip()
 
+    layers = supported_track_layers() if track_layers is None else track_layers
+    if not supports_transit_track(layers):
+        supported = sorted({str(layer).strip().lower() for layer in layers if str(layer).strip()})
+        return _fail(
+            "unsupported",
+            "The live pane cannot follow transit vehicles. track_entity supports "
+            "flights, military, AIS vessels, and satellites only.",
+            "Read current bus positions with godseye_feeds op=transit action=vehicles, "
+            "or follow a flight, military contact, vessel, or satellite with "
+            "godseye_track op=track.",
+            action="follow_vehicle", vehicle_id=vehicle_id,
+            layer=TRANSIT_LAYER, supported_layers=supported)
+
     failed = _enable_transit(caller, session_id)
     if failed:
         failed.update({"action": "follow_vehicle", "vehicle_id": vehicle_id,
                        "layer": TRANSIT_LAYER})
+        if not failed.get("fix"):
+            failed["fix"] = ("Turn on the transit layer with godseye_layers op=visibility, "
+                             "or retry godseye_feeds op=transit action=vehicles.")
         return failed
 
     raw = caller("track_entity", {"query": vehicle_id, "layerId": TRANSIT_LAYER},
@@ -382,6 +453,10 @@ def follow_vehicle(args: dict, *, live=None, session_id=None) -> dict:
         out = _live_failure(raw, f"Could not follow transit vehicle {vehicle_id!r}.")
         out.update({"action": "follow_vehicle", "vehicle_id": vehicle_id,
                     "layer": TRANSIT_LAYER})
+        if not out.get("fix"):
+            out["fix"] = ("Check vehicle_id with godseye_feeds op=transit action=vehicles, "
+                          "or use godseye_track op=track for flights, military, AIS vessels, "
+                          "and satellites.")
         return out
 
     out = {"ok": True, "action": "follow_vehicle", "vehicle_id": vehicle_id,
@@ -442,6 +517,6 @@ EXT_OPS = [
                                "Stop with godseye_track op=stop.",
             },
         },
-        blurb="Follow one transit vehicle; stop with godseye_track op=stop.",
+        blurb="Follow one transit vehicle when the live pane supports it; otherwise returns unsupported with a fix. Stop with godseye_track op=stop.",
     ),
 ]
