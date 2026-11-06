@@ -80,16 +80,20 @@
   reveal('.catalog-line,.hackathon', { y: 14, opacity: 0 },
     { y: 0, opacity: 1, duration: .75, stagger: .18, ease: 'power3.out' }, 1.45);
 
+  // Mock Hermes terminal: type the scene prompt, finishing before/as map action settles.
   const chat = scene.querySelector('.chat-bubble');
   if (chat) {
     reveal('.chat-bubble', { scale: .94, y: 16, opacity: 0, transformOrigin: 'top left' },
-      { scale: 1, y: 0, opacity: 1, duration: .6, ease: 'back.out(1.2)' }, .8);
+      { scale: 1, y: 0, opacity: 1, duration: .55, ease: 'back.out(1.2)' }, .55);
     const text = JSON.parse(chat.dataset.chat).join('  ');
     const target = chat.querySelector('.chat-text');
     const state = { characters: 0 };
-    tl.to(state, { characters: text.length, duration: Math.min(3.4, duration - 1.5), ease: 'none',
-      onUpdate: () => { target.textContent = text.slice(0, Math.floor(state.characters)); } }, 1.15);
-    reveal('.cursor', { opacity: 1 }, { opacity: 0, duration: .38, repeat: 11, yoyo: true, ease: 'steps(1)' }, 1.15);
+    const typeStart = .85;
+    const typeDuration = Math.min(Math.max(text.length * 0.028, 1.6), Math.max(duration - 2.2, 1.6));
+    tl.to(state, { characters: text.length, duration: typeDuration, ease: 'none',
+      onUpdate: () => { target.textContent = text.slice(0, Math.floor(state.characters)); } }, typeStart);
+    const blinks = Math.max(6, Math.floor(typeDuration / .36));
+    reveal('.cursor', { opacity: 1 }, { opacity: 0, duration: .36, repeat: blinks, yoyo: true, ease: 'steps(1)' }, typeStart);
   }
 
   // Trace the real architecture in order; the traveling packet is a schematic.

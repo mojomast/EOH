@@ -21,12 +21,26 @@ export function placeholderInstrument() {
   </div>`;
 }
 
+
+/** Mock Hermes dark-mode chat pane. Typed by scene-motion.js from data-chat.
+ *  Used as a designed overlay; real footage is the cropped GEV map pane only. */
+export function mockHermesChat({ label = '01', prompt }) {
+  const dataChat = JSON.stringify([prompt]).replace(/&/g, '&amp;').replace(/'/g, '&#39;');
+  return `<div class="chat-pane"><div class="pane-label">HERMES CHAT <span>${label}</span></div><div class="chat-status">SHOT DIRECTION / DRAFT PROMPT · MOCK</div><div class="chat-bubble" data-chat='${dataChat}'><span class="chat-text"></span><span class="cursor">▌</span></div><div class="chat-hint">Mock terminal · footage is GEV map pane only</div></div>`;
+}
+
 export function decorateScene(body, number) {
   // Preserve emphasis, manual line breaks, and natural word wrapping in the source.
   body = body.replace(/<(h[12])>([\s\S]*?)<\/\1>/g, (_, tag, text) => {
     const words = text.split(/(<[^>]+>)/g).map(part => part.startsWith('<') ? part :
       part.replace(/\S+/g, word => `<span class="word-mask" data-layout-allow-overflow><span class="title-word">${word}</span></span>`)).join('');
     return `<${tag} data-motion-blur="off">${words}</${tag}>`;
+  });
+  body = body.replace(/<div\s+data-mock-hermes-chat\s+([^>]*)><\/div>/g, (_, attrs) => {
+    const label = /data-label="([^"]*)"/.exec(attrs)?.[1] || '01';
+    const prompt = /data-prompt="([^"]*)"/.exec(attrs)?.[1];
+    if (!prompt) throw new Error(`data-mock-hermes-chat missing data-prompt (label ${label})`);
+    return mockHermesChat({ label, prompt: prompt.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&') });
   });
   body = body.replace('<!-- OPTICS -->', optics());
   body = body.replaceAll('<div class="arch-link">→</div>', '<div class="arch-link" aria-label="to"><span class="link-line"></span><span class="link-packet" aria-hidden="true"></span><span class="link-arrow">›</span></div>');

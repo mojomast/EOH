@@ -60,7 +60,7 @@ fs.mkdirSync(path.join(build, 'compositions'), { recursive: true });
 const sceneMotion = fs.readFileSync(path.join(root, 'scene-motion.js'), 'utf8');
 html = html.replace(scenePattern, (whole, number, start, duration, body) => {
   const id = `scene-${number}`;
-  const feature = Number(number) >= 3 && Number(number) <= 10 ? ' feature' : '';
+  const feature = Number(number) >= 2 && Number(number) <= 10 ? ' feature' : '';
   const composition = `<template>\n<section id="${id}" class="scene${feature}" data-composition-id="${id}" data-width="1920" data-height="1080">${decorateScene(body, number)}</section>\n<script>\n${sceneMotion.replaceAll('__SCENE_ID__', id).replaceAll('__SCENE_DURATION__', duration)}\n</script>\n</template>\n`;
   fs.writeFileSync(path.join(build, 'compositions', `${id}.html`), composition);
   return `<div id="${id}" class="clip scene-host" data-composition-id="${id}" data-composition-src="compositions/${id}.html" data-start="${start}" data-duration="${duration}" data-track-index="1" data-track-kind="graphics" data-width="1920" data-height="1080"></div>`;

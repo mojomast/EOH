@@ -53,11 +53,11 @@ h1{font-size:150px}
 .slot-card strong{color:#d4f6ff;font-size:22px;line-height:1.3;overflow-wrap:anywhere}
 .slot-card [data-slot]{font-size:15px;color:#9cb6c8;overflow-wrap:anywhere}.slot-card small{font-size:14px;color:#7894a7}
 .slot-media{position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:contain;background:#050b17}
-.split-display{display:flex;gap:14px}.split-display .chat-pane{width:295px;flex:none;padding:24px}.split-display .hud-frame{flex:1;min-width:0}
+.split-display{display:flex;gap:14px}.split-display .chat-pane{width:318px;flex:none;padding:22px 20px;display:flex;flex-direction:column}.split-display .hud-frame{flex:1;min-width:0}
 .pane-label{display:flex;justify-content:space-between;color:var(--cyan);font-size:12px;font-weight:700;letter-spacing:.15em;border-bottom:1px solid var(--line);padding-bottom:22px}.pane-label span{color:#7994a6}
-.chat-status{font-size:10px;letter-spacing:.14em;color:var(--gold);margin-top:35px;line-height:1.6}
-.chat-bubble{margin-top:18px;padding:19px 18px;background:rgba(62,230,255,.10);border:1px solid rgba(62,230,255,.25);border-radius:3px 16px 16px 16px;color:#e2f7ff;font-size:20px;line-height:1.45;min-height:125px}.cursor{color:var(--cyan);font-size:16px}
-.chat-hint{margin-top:26px;color:#7895a9;font-size:13px;line-height:1.5}
+.chat-status{font-size:10px;letter-spacing:.14em;color:var(--gold);margin-top:22px;line-height:1.6}
+.chat-bubble{margin-top:14px;padding:16px 15px;background:rgba(62,230,255,.10);border:1px solid rgba(62,230,255,.25);border-radius:3px 16px 16px 16px;color:#e2f7ff;font-size:15px;line-height:1.45;min-height:96px;max-height:430px;overflow:auto;flex:1}.cursor{color:var(--cyan);font-size:14px}
+.chat-hint{margin-top:16px;color:#7895a9;font-size:12px;line-height:1.45}
 .lower-third{position:absolute;left:610px;top:859px;display:flex;gap:18px;align-items:center}.lower-number{display:grid;place-items:center;width:52px;height:52px;border:1px solid rgba(245,192,74,.55);color:var(--gold);font-size:16px;font-weight:700}.lower-third b{display:block;font-size:23px}.lower-third small{display:block;color:#87a5b6;font-size:12px;font-weight:700;letter-spacing:.17em;margin-top:5px}
 .vo-slot{position:absolute;left:115px;bottom:119px;color:#7895a9;font-size:13px;font-weight:700;letter-spacing:.07em}
 .callout-ring{position:absolute;left:67%;top:42%;width:80px;height:80px;border:2px solid rgba(245,192,74,.9);border-radius:50%;box-shadow:0 0 24px rgba(245,192,74,.32);z-index:3;pointer-events:none}
