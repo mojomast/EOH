@@ -11,19 +11,6 @@ if str(ROOT) not in sys.path:
 
 from gev import ext_ops, ext_weather, hermes_tools, router  # noqa: E402
 
-
-class _RealExtensionOps(list):
-    """Keep the generic discovery-isolation test's empty-catalog assumption."""
-
-    def __iter__(self):
-        blocked = any(
-            name.startswith("gev.ext_") and module is None
-            for name, module in list(sys.modules.items()))
-        return iter(()) if blocked else super().__iter__()
-
-
-ext_weather.EXT_OPS = _RealExtensionOps(ext_weather.EXT_OPS)
-
 FIXTURE = Path(__file__).with_name("fixtures") / "cyclones.json"
 
 

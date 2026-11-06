@@ -141,6 +141,30 @@ def test_gl_recover_js_unit():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required for the WebGL harness")
+def test_gl_recover_harness_accepts_chromium_when_chrome_is_missing():
+    script = r"""
+import { resolveChrome } from './scripts/gl_recover_harness.mjs'
+const exists = (p) => p === '/usr/bin/chromium'
+const lookup = (name) => name === 'chromium-browser' ? '/usr/bin/chromium-browser' : ''
+const picked = resolveChrome({}, exists, lookup)
+if (picked !== '/usr/bin/chromium') {
+  console.error('picked ' + picked)
+  process.exit(1)
+}
+const fromEnv = resolveChrome({ CHROME_PATH: '/opt/chrome' }, () => false, () => '')
+if (fromEnv !== '/opt/chrome') process.exit(2)
+const fromPath = resolveChrome({}, () => false, (name) => name === 'chromium' ? '/opt/bin/chromium' : '')
+if (fromPath !== '/opt/bin/chromium') process.exit(3)
+console.log('ok')
+"""
+    proc = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=ROOT, capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stdout + "\n" + proc.stderr
+    assert proc.stdout.strip() == "ok"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is required for the WebGL harness")
 def test_gl_recover_harness_forces_lose_context():
     proc = subprocess.run(
         ["node", "scripts/gl_recover_harness.mjs"],

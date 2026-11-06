@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import sys
 from datetime import date, datetime, timedelta, timezone
 
 from . import areas
@@ -25,17 +24,6 @@ ID_KEYS = ("id", "key", "scene_id", "sceneId", "granule_id", "granule",
            "product_id", "image_id", "identifier", "name")
 PRODUCT_KEYS = ("product", "sensor", "source", "platform", "dataset")
 DAY = re.compile(r"^(\d{4}-\d{2}-\d{2})")
-
-
-_MISSING = object()
-
-
-def __getattr__(name):
-    if name != "EXT_OPS":
-        raise AttributeError(name)
-    if sys.modules.get("gev.ext_broken", _MISSING) is None:
-        return []
-    return _EXT_OPS
 
 
 def mcp(name: str, args: dict):
@@ -491,7 +479,7 @@ def handler(args: dict, **kw) -> str:
     }, ensure_ascii=False)
 
 
-_EXT_OPS = [
+EXT_OPS = [
     ExtOp(
         tool="godseye_nav",
         op="imagery_ab",

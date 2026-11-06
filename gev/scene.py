@@ -24,6 +24,9 @@ def _public_annotation(ann: dict, full: bool) -> dict:
     item = {"id": ann["id"], "type": spec.get("type", "pin"),
             "label": spec.get("label") or spec.get("target"),
             "latitude": spec.get("latitude"), "longitude": spec.get("longitude")}
+    clips = spec.get("clips") if isinstance(spec.get("clips"), list) else []
+    if clips:
+        item["clips"] = clips[:4]
     if full:
         from .marks import public_meta
         item.update(public_meta(spec))
