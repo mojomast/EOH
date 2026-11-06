@@ -396,18 +396,38 @@ def invoke(spec: Target, args: dict, **kw) -> str:
     from . import hermes_tools as tools
 
     if isinstance(spec, ext_ops.ExtOp):
-        return spec.handler(args, **kw)
-    if spec.kind == "live":
-        return tools.make_live_handler(spec.bare)(args, **kw)
-    if spec.kind == "mcp":
-        return tools.make_handler(spec.bare)(args, **kw)
-    if spec.kind == "extra":
-        return tools.extra_handler(spec.legacy)(args, **kw)
-    if spec.kind == "hud":
+        text = spec.handler(args, **kw)
+    elif spec.kind == "live":
+        text = tools.make_live_handler(spec.bare)(args, **kw)
+    elif spec.kind == "mcp":
+        text = tools.make_handler(spec.bare)(args, **kw)
+    elif spec.kind == "extra":
+        text = tools.extra_handler(spec.legacy)(args, **kw)
+    elif spec.kind == "hud":
         if _HUD is None:
             return json.dumps({"ok": False, "error": "hud is not bound", "code": "tool_failed"})
-        return _HUD(args, **kw)
-    raise RuntimeError(f"{spec.legacy} ({spec.kind}) has no handler")
+        text = _HUD(args, **kw)
+    else:
+        raise RuntimeError(f"{spec.legacy} ({spec.kind}) has no handler")
+    return _capture_detail(spec, args, text)
+
+
+def _capture_detail(spec: Target, args: dict, text: str) -> str:
+    """Apply capture op=pane's concise default after the pane returns its PNG."""
+    if isinstance(spec, ext_ops.ExtOp) or spec.composable != "godseye_capture" or spec.op != "pane":
+        return text
+    from . import detail
+
+    mode = detail.pop_detail(dict(args or {}))
+    if mode == "full":
+        return text
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        return text
+    if not isinstance(payload, dict):
+        return text
+    return detail.render_obj(payload, mode)
 
 
 def prepare(composable: str, args: dict, session_id=None):
@@ -580,7 +600,17 @@ def _prepare_generic(spec: Target, args: dict):
     allowed = set(props)
     if spec.kind == "live":
         allowed.add("fanout")
+    if spec.composable == "godseye_capture" and spec.op == "pane":
+        allowed.add("detail")
     forwarded = {key: value for key, value in args.items() if key in allowed}
+    if (spec.composable == "godseye_capture" and spec.op == "pane"
+            and forwarded.get("detail") not in (None, "concise", "full")):
+        return None, None, None, {
+            "ok": False,
+            "error": "bad_args",
+            "message": f"{spec.composable} op={spec.op} detail={forwarded['detail']!r} is not one of concise, full.",
+            "fix": f"Retry {spec.composable} op={spec.op} with detail set to one of: concise, full.",
+        }
     required = list(params.get("required") or [])
     if spec.composable == "godseye_annotate" and spec.op == "annotate" and (args.get("source") or args.get("records") is not None):
         required = [key for key in required if key != "annotations"]
@@ -1177,12 +1207,18 @@ _LEADS = {
     "godseye_track": "Follow an entity, frame overhead traffic, or open the cockpit. One op per call.",
     "godseye_scene": "Save, load, export, restore, tour, or play back a scene. One op per call.",
     "godseye_watch": "Create, list, pause, or delete a watch. One op per call. list check=<id> runs one watch now.",
-    "godseye_capture": "HUD layout, a one-line caption, or a PNG of the pane. One op per call.",
+    "godseye_capture": (
+        "HUD layout, a one-line caption, or a PNG of the pane. One op per call. "
+        "pane: detail=concise (default) omits the image; detail=full returns it."
+    ),
     "godseye_admin": (
         "Health check, control room, app start/stop/restart, batch, key install, panel rebuild, pane reload, or the desktop preview tab. "
         "One op per call. Start, stop, and restart run only when you call them. keys takes a file path and never a secret value."
     ),
 }
+
+
+_CAPTURE_DETAIL = {"type": "string", "enum": ["concise", "full"], "default": "concise"}
 
 
 def generic_schema(name: str) -> dict:
@@ -1194,7 +1230,10 @@ def generic_schema(name: str) -> dict:
         description = "\n".join(
             [_LEADS[name]] + [f"op={record.op}: {record.blurb}" for record in ext_records]
         ) + f"\n\n{policy.POLICY}"
-    return _schema(name, description, props)
+    schema = _schema(name, description, props)
+    if name == "godseye_capture":
+        schema["parameters"]["patternProperties"] = {"^detail$": dict(_CAPTURE_DETAIL)}
+    return schema
 
 
 def register_composable(ctx) -> None:
