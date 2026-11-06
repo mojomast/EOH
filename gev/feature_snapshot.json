@@ -1,0 +1,80 @@
+{
+ "generated_at": "2026-11-05T23:46:18Z",
+ "gev_rev": "f557b3e99fb91502eeeaa0d9972a6b4d0981ba56",
+ "gev_version": "0.3.0",
+ "features": {
+  "recent_imagery": {
+   "present": true,
+   "evidence": [
+    "src/voice/imageryActions.js",
+    "src/layers/recentImagery",
+    "find_imagery",
+    "recent-imagery",
+    "src/app/constructCatalog.js"
+   ]
+  },
+  "weather_stack": {
+   "present": true,
+   "evidence": [
+    "src/layers/wind",
+    "src/layers/weather",
+    "src/layers/cyclones",
+    "weather-radar",
+    "src/app/constructCatalog.js",
+    "weather-satellite",
+    "weather-cyclones",
+    "src/app/sourceComposition.js",
+    "esri-imagery",
+    "src/keySetup.js"
+   ]
+  },
+  "transit": {
+   "present": true,
+   "evidence": [
+    "src/data/gtfsRealtime.js",
+    "src/data/transitFeeds.js",
+    "GTFS-Realtime",
+    "src/sources/transitService.js",
+    "smtr-rio-onibus",
+    "dados.mobilidade.rio",
+    "src/data/rioRouteNames.js"
+   ]
+  },
+  "fire_perimeters": {
+   "present": true,
+   "evidence": [
+    "server/providers/firePerimeters.js",
+    "src/layers/perimeters",
+    "WFIGS",
+    "src/data/dataCredits.js",
+    "get_fire_perimeters",
+    "src/tools/queries/environment.js"
+   ]
+  },
+  "local_adsb": {
+   "present": true,
+   "evidence": [
+    "src/layers/localAdsb",
+    "local-adsb",
+    "src/app/catalog.js"
+   ]
+  },
+  "director": {
+   "present": true,
+   "evidence": [
+    "src/director/playback.js",
+    "src/director/packs/manifest.js",
+    "Director",
+    "src/agent/worldPacket.js"
+   ]
+  },
+  "cyber_hud": {
+   "present": true,
+   "evidence": [
+    "src/cyberSonarScene.js",
+    "src/hud.js",
+    "cyber-sonar"
+   ]
+  }
+ }
+}

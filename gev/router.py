@@ -17,7 +17,7 @@ import json
 import re
 from dataclasses import dataclass
 
-from . import policy
+from . import ext_ops, policy
 
 _HERE = {
     "me", "here", "nearby", "near me", "around here", "around me", "my location",
@@ -318,7 +318,8 @@ _HUD = None
 
 def phase_a_ops(composable: str) -> list[str]:
     """Ops registered on this composable tool. The name is historical: phase B is included."""
-    return [t.op for t in CATALOG if t.composable == composable and t.phase in ("A", "B")]
+    base = [t.op for t in CATALOG if t.composable == composable and t.phase in ("A", "B")]
+    return base + [record.op for record in ext_ops.ops_for(composable) if record.op not in base]
 
 
 def absorbed(legacy: str) -> bool:
@@ -392,6 +393,8 @@ def invoke(spec: Target, args: dict, **kw) -> str:
     """Call the handler the legacy tool already uses."""
     from . import hermes_tools as tools
 
+    if isinstance(spec, ext_ops.ExtOp):
+        return spec.handler(args, **kw)
     if spec.kind == "live":
         return tools.make_live_handler(spec.bare)(args, **kw)
     if spec.kind == "mcp":
@@ -428,6 +431,9 @@ def prepare(composable: str, args: dict, session_id=None):
         return None, None, None, {
             "ok": False, "error": "unknown_op", "message": message, "fix": fix,
         }
+    record = ext_ops.find(composable, op)
+    if record is not None:
+        return _prepare_ext(record, args)
     spec = next(t for t in CATALOG if t.composable == composable and t.op == op and t.phase in ("A", "B"))
     extra: dict = {}
     if op == "fly" and composable == "godseye_view":
@@ -511,6 +517,36 @@ def _enum_values(prop: dict) -> list | None:
     if isinstance(prop.get("enum"), list):
         return list(prop["enum"])
     return None
+
+
+def _prepare_ext(record: ext_ops.ExtOp, args: dict):
+    """Whitelist and enum-check one discovered extension op."""
+    props = record.props or {}
+    forwarded = {key: value for key, value in args.items() if key in props}
+    required = [key for key, prop in props.items()
+                if isinstance(prop, dict) and prop.get("required") is True]
+    missing = [key for key in required if forwarded.get(key) in (None, "")]
+    if missing:
+        return None, None, None, {
+            "ok": False,
+            "error": "bad_args",
+            "message": f"{record.tool} op={record.op} needs {', '.join(missing)}.",
+            "fix": f"Retry {record.tool} op={record.op} with {', '.join(missing)} set.",
+        }
+    for key, prop in props.items():
+        if key not in forwarded:
+            continue
+        choices = _enum_values(prop)
+        if not choices or forwarded[key] in choices:
+            continue
+        shown = ", ".join(str(item) for item in choices if item is not None)
+        return None, None, None, {
+            "ok": False,
+            "error": "bad_args",
+            "message": f"{record.tool} op={record.op} {key}={forwarded[key]!r} is not one of {shown}.",
+            "fix": f"Retry {record.tool} op={record.op} with {key} set to one of: {shown}.",
+        }
+    return record, forwarded, {}, None
 
 
 def _prepare_generic(spec: Target, args: dict):
@@ -848,8 +884,9 @@ def _schema(name: str, description: str, properties: dict) -> dict:
 
 def _tool_description(composable: str, lead: str) -> str:
     lines = [lead, ""]
+    ext_blurbs = {record.op: record.blurb for record in ext_ops.ops_for(composable)}
     for op in phase_a_ops(composable):
-        blurb = _BLURB.get((composable, op))
+        blurb = _BLURB.get((composable, op)) or ext_blurbs.get(op)
         lines.append(f"op={op}: {blurb}" if blurb else f"op={op}")
     lines.append("")
     lines.append(policy.POLICY)
@@ -955,6 +992,13 @@ def union_props(composable: str) -> dict:
                 _merge_prop(props[public], slim)
             else:
                 props[public] = slim
+    for record in ext_ops.ops_for(composable):
+        for key, prop in (record.props or {}).items():
+            slim = _slim(key, prop)
+            if key in props:
+                _merge_prop(props[key], slim)
+            else:
+                props[key] = slim
     for prop in props.values():
         prop.pop("_mixed", None)
     if any(_wants_detail(spec) for spec in CATALOG if spec.composable == composable):
@@ -1141,7 +1185,13 @@ _LEADS = {
 def generic_schema(name: str) -> dict:
     props = {"op": _prop("string", "Which action to run.", enum=phase_a_ops(name))}
     props.update(union_props(name))
-    return _schema(name, f"{_LEADS[name]}\n\n{policy.POLICY}", props)
+    description = f"{_LEADS[name]}\n\n{policy.POLICY}"
+    ext_records = ext_ops.ops_for(name)
+    if ext_records:
+        description = "\n".join(
+            [_LEADS[name]] + [f"op={record.op}: {record.blurb}" for record in ext_records]
+        ) + f"\n\n{policy.POLICY}"
+    return _schema(name, description, props)
 
 
 def register_composable(ctx) -> None:

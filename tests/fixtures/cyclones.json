@@ -1,0 +1,82 @@
+{
+  "cyclones": [
+    {
+      "name": "Hurricane Iris",
+      "classification": "HU",
+      "category": 4,
+      "basin": "North Atlantic",
+      "windKt": 130,
+      "pressureHpa": 940,
+      "latitude": 22.5,
+      "longitude": -88.0,
+      "movement": "WNW at 9 kt"
+    },
+    {
+      "name": "Hurricane Pax",
+      "classification": "HU",
+      "category": 3,
+      "basin": "North Atlantic",
+      "windKt": 115,
+      "pressureHpa": 960,
+      "latitude": 31.4,
+      "longitude": -58.2,
+      "movement": "NE at 11 kt"
+    },
+    {
+      "name": "Typhoon Kaito",
+      "classification": "TY",
+      "category": 3,
+      "basin": "Northwest Pacific",
+      "windKt": 105,
+      "pressureHpa": 955,
+      "latitude": 18.2,
+      "longitude": 130.5,
+      "movement": "NNW at 12 kt"
+    },
+    {
+      "name": "Hurricane Marco",
+      "classification": "HU",
+      "category": 2,
+      "basin": "North Atlantic",
+      "windKt": 90,
+      "pressureHpa": 972,
+      "latitude": 26.0,
+      "longitude": -75.0,
+      "movement": "N at 6 kt"
+    },
+    {
+      "name": "Cyclone Nisha",
+      "classification": "TC",
+      "category": 1,
+      "basin": "North Indian",
+      "windKt": 70,
+      "pressureHpa": 985,
+      "latitude": -15.0,
+      "longitude": 80.0,
+      "movement": "SW at 10 kt"
+    },
+    {
+      "name": "Tropical Storm Luna",
+      "classification": "TS",
+      "category": null,
+      "basin": "North Atlantic",
+      "windKt": 55,
+      "pressureHpa": 995,
+      "latitude": 14.0,
+      "longitude": -45.0,
+      "movement": "W at 14 kt"
+    },
+    {
+      "name": "Depression Orin",
+      "classification": "TD",
+      "category": null,
+      "basin": "North Indian",
+      "windKt": 30,
+      "pressureHpa": 1002,
+      "latitude": 12.0,
+      "longitude": 60.0,
+      "movement": "NW at 5 kt"
+    }
+  ],
+  "count": 7
+}

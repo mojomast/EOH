@@ -20,7 +20,7 @@ from . import measure as M
 from . import watch
 
 MODES = ("wayback", "events")
-FEEDS = ("earthquakes", "fires")
+FEEDS = ("earthquakes", "fires", "fire_perimeters")
 TRANSITIONS = ("swipe", "fade")
 MAX_RELEASES = 48
 MAX_EVENTS = 80
@@ -127,7 +127,7 @@ def _event_row(row: dict) -> dict | None:
         "feed": feed, "lat": round(lat, 5), "lon": round(lon, 5), "time": stamp, "title": title,
         "description_md": str(row.get("description_md") or "")[:1500],
         "links": _http_links(row.get("links")),
-        "color": "red" if feed == "fires" else "amber",
+        "color": "red" if feed in ("fires", "fire_perimeters") else "amber",
     }
 
 
@@ -311,6 +311,31 @@ def _alert_events(watches, session_id, area, start: str, end: str, feeds: list[s
     return out
 
 
+def _perimeter_events(item: dict, feed: str, area: dict, start: str, end: str) -> list[dict]:
+    dates: list[tuple[str, str]] = []
+    for kind, value in (("discovered", item.get("discovered")), ("updated", item.get("updated"))):
+        stamp = parse_when(value)
+        if stamp:
+            dates.append((day_of(stamp), kind))
+    if not dates:
+        stamp = parse_when(item.get("time"))
+        if stamp:
+            dates.append((day_of(stamp), "updated"))
+    out, used = [], set()
+    for day, kind in dates:
+        if day in used or not (start <= day <= end):
+            continue
+        used.add(day)
+        if not watch.contains(area, item.get("lat"), item.get("lon")):
+            continue
+        out.append({**item, "feed": feed, "time": f"{day}T00:00:00Z",
+                    "id": f"{item.get('id')}:{kind}",
+                    "title": f"{item.get('title') or feed} ({kind})",
+                    "description_md": item.get("description_md") or f"**Updated:** {day}\n\nSource: WFIGS",
+                    "links": item.get("links") or []})
+    return out
+
+
 def _feed_events(area, start: str, end: str, feeds: list[str]) -> tuple[list[dict], list[dict]]:
     items, warnings = [], []
     cond = {"start": start, "end": end + "T23:59:59", "days": min(FIRMS_DAYS, _span_days(start, end)),
@@ -327,6 +352,9 @@ def _feed_events(area, start: str, end: str, feeds: list[str]) -> tuple[list[dic
                              **({"key": res["key"]} if res.get("key") else {})})
             continue
         for item in res.get("items") or []:
+            if feed == "fire_perimeters":
+                items.extend(_perimeter_events(item, feed, area, start, end))
+                continue
             stamp = parse_when(item.get("time"))
             if not stamp or not (start <= day_of(stamp) <= end):
                 continue

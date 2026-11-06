@@ -1,0 +1,54 @@
+{
+  "ok": true,
+  "result": {
+    "layer": "transit",
+    "count": 5,
+    "items": [
+      {
+        "id": "rio-bus-1001",
+        "routeId": "100",
+        "routeName": "100 Central - Copacabana",
+        "lat": -22.9711,
+        "lon": -43.1822,
+        "heading": 92,
+        "updated": "2026-11-05T23:40:00Z"
+      },
+      {
+        "id": "rio-bus-1002",
+        "routeId": "100",
+        "routeName": "100 Central - Copacabana",
+        "lat": -22.9684,
+        "lon": -43.1901,
+        "heading": 118,
+        "updated": "2026-11-05T23:40:12Z"
+      },
+      {
+        "id": "rio-bus-2017",
+        "routeId": "201",
+        "routeName": "201 Central - Barra",
+        "lat": -22.9847,
+        "lon": -43.2044,
+        "heading": 205,
+        "updated": "2026-11-05T23:39:54Z"
+      },
+      {
+        "id": "rio-bus-4831",
+        "routeId": "483",
+        "routeName": "483 Central - Ipanema",
+        "lat": -22.9799,
+        "lon": -43.2331,
+        "heading": 44,
+        "updated": "2026-11-05T23:40:05Z"
+      },
+      {
+        "id": "rio-bus-4832",
+        "routeId": "483",
+        "routeName": "483 Central - Ipanema",
+        "lat": -22.9752,
+        "lon": -43.2258,
+        "heading": 61,
+        "updated": "2026-11-05T23:40:08Z"
+      }
+    ]
+  }
+}
