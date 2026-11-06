@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.2 — 2026-11-06
+
+Polish sweep from the moltussy-1 feature pass (Orbit bees on `feat/polish-v0.2.2`):
+
+- Resolve Esri Wayback tile releases from `waybackconfig.json` so imagery no longer goes black after A/B, zoom, or pin drawers.
+- Fix Chicago geocoding and weather preset handling under `pane_busy` / `no_pane`.
+- Transit `follow_vehicle`: real follow path or a clear unsupported error (no false ok).
+- Fire watches: default `radius_km` for center areas; FIRMS retry/backoff.
+- Pin research grounding (Louvre vs homonyms) and stable pin IDs.
+- Overlays: HTTP fallback when the relay singleton lives in another process; action to open the Overlays sidebar.
+- Harden WebGL context recovery.
+- Prefer the most recently focused visible pane; cut pane command timeout to ~20–30s.
+- Skill + composer/scene: never re-enable user-disabled layers unless asked; do not `skill_manage` godseye-analyst.
+- Cesium pin warnings: `heightReference` / outline on terrain.
+- Clearer feed-down status and adsb.lol flights fallback note.
+- Document Hermes chat markdown table rendering (upstream).
+- `godseye_capture` accepts `detail` (`concise`|`full`).
+
+Still exactly 11 composable tools.
+
 ## Unreleased
 
 ### Added
