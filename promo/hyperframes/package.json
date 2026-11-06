@@ -2,7 +2,7 @@
   "name": "eoh-hyperframes-promo",
   "private": true,
   "version": "1.0.0",
-  "description": "Eye Of Hermes HyperFrames promo (~108s, Ash VO)",
+  "description": "Eye Of Hermes HyperFrames promo (~112s, Ash VO v6 Caldor/SoFi)",
   "engines": {
     "node": ">=22"
   },

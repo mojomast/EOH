@@ -56,73 +56,68 @@
       "text": "Open its research, with sources beside the map."
     },
     {
-      "start": 38.533,
-      "end": 42.021,
+      "start": 38.534,
+      "end": 42.022,
       "text": "Turn camera moves into a Director scene."
     },
     {
-      "start": 42.021,
-      "end": 46.033,
+      "start": 42.022,
+      "end": 46.034,
       "text": "Approach Tokyo Tower, then look straight down."
     },
     {
-      "start": 46.8,
-      "end": 52.9,
-      "text": "Check public fire detections near Los Angeles, alongside available imagery."
+      "start": 46.801,
+      "end": 53.601,
+      "text": "Trace the Caldor Fire perimeter, then compare the forest before and after."
     },
     {
-      "start": 56.467,
-      "end": 63.167,
+      "start": 60.268,
+      "end": 66.968,
       "text": "Find a public aircraft near Toronto Pearson, and follow it across the globe."
     },
     {
-      "start": 64.333,
-      "end": 70.569,
-      "text": "Compare Montr\u00e9al imagery, then play through the available releases."
+      "start": 68.135,
+      "end": 74.185,
+      "text": "Compare Hollywood Park's racetrack with the stadium that replaced it."
     },
     {
-      "start": 70.569,
-      "end": 73.733,
-      "text": "Release dates are not photo dates."
-    },
-    {
-      "start": 74.567,
-      "end": 83.317,
+      "start": 79.135,
+      "end": 87.885,
       "text": "Pin places near Richmond, draw a route, and keep it organized in the overlays sidebar."
     },
     {
-      "start": 86.9,
-      "end": 88.934,
+      "start": 91.468,
+      "end": 93.502,
       "text": "Hermes calls the plugin."
     },
     {
-      "start": 88.934,
-      "end": 93.85,
+      "start": 93.502,
+      "end": 98.418,
       "text": "Live actions pass through a local relay to the globe pane."
     },
     {
-      "start": 94.3,
-      "end": 96.55,
+      "start": 98.868,
+      "end": 101.118,
       "text": "Eleven composable tools."
     },
     {
-      "start": 96.55,
-      "end": 99.55,
+      "start": 101.118,
+      "end": 104.118,
       "text": "One conversation with the globe."
     },
     {
-      "start": 100.0,
-      "end": 101.363,
+      "start": 104.568,
+      "end": 105.931,
       "text": "Eye of Hermes."
     },
     {
-      "start": 101.363,
-      "end": 104.38,
+      "start": 105.931,
+      "end": 108.948,
       "text": "Built for the Hermes hackathon."
     },
     {
-      "start": 104.38,
-      "end": 107.3,
+      "start": 108.948,
+      "end": 111.868,
       "text": "Explore the project on GitHub."
     }
   ]
