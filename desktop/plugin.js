@@ -141,6 +141,24 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
     return '/live/next?' + q
   }
   const setLabel = (next) => { paneLabel = next ? String(next).slice(0, 80) : null }
+  async function postResult(cmd, payload) {
+    const body = { id: cmd.id, pane: paneId, payload }
+    const resultBytes = new TextEncoder().encode(JSON.stringify(body)).length
+    console.info('[EOH] result bytes', resultBytes)
+    try {
+      const response = await ctx.rest('/live/result', { method: 'POST', body })
+      if (response?.ok === false) throw new Error(response.code || 'result_upload_failed')
+    } catch {
+      console.error('[EOH] result upload failed', { id: cmd.id, resultBytes })
+      // A small completion reports the failure to the waiting tool, rather than a timeout.
+      try {
+        await ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId,
+          payload: { ok: false, error: 'result upload failed', code: 'result_upload_failed', resultBytes } } })
+      } catch {
+        console.error('[EOH] result error delivery failed', { id: cmd.id })
+      }
+    }
+  }
   async function loop() {
     await Promise.race([frameReady, new Promise((r) => setTimeout(r, 180000))])
     while (!stopped) {
@@ -148,7 +166,7 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
       try { cmd = (await ctx.rest(nextPath()))?.command; fresh = false } catch { await new Promise((r) => setTimeout(r, 3000)); continue }
       if (!cmd || stopped) continue
       if (cmd.name === 'hermes_reload') {  // pane-level: re-fetch /panel and rebuild the frame
-        await ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId, payload: { ok: true, action: 'hermes_reload', pane: paneId } } }).catch(() => {})
+        await postResult(cmd, { ok: true, action: 'hermes_reload', pane: paneId })
         stopped = true
         inflightName = ''
         onReload?.()
@@ -160,7 +178,7 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
       const payload = await Promise.race([done, new Promise((r) => setTimeout(() => r({ ok: false, error: 'pane timeout' }), PANE_COMMAND_MS))])
       inflightName = ''
       pending.delete(cmd.id)
-      ctx.rest('/live/result', { method: 'POST', body: { id: cmd.id, pane: paneId, payload } }).catch(() => {})
+      await postResult(cmd, payload)
     }
   }
   loop()

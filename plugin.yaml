@@ -1,5 +1,5 @@
 name: godseye
-version: "0.2.6"
+version: "0.2.7"
 description: >-
   Eye Of Hermes (EOH), built on God's Eye View: registers the God's Eye View public-data tools
   (aircraft, ships, satellites, quakes, fires, weather, infrastructure) as
@@ -48,4 +48,25 @@ requires_env:
       Optional. Mapillary token used when Google Street View misses or has no
       key. Leave unset to skip Mapillary lookups; the rest of EOH still loads.
     url: https://www.mapillary.com/dashboard/developers
+    secret: true
+  - name: CESIUM_ION_TOKEN
+    description: Optional. Browser-visible Cesium map token; limit to assets:read and assets:list.
+    secret: true
+  - name: FIRMS_MAP_KEY
+    description: Optional. NASA FIRMS active-fire feed credential.
+    secret: true
+  - name: FIRMS_API_KEY
+    description: Optional. Legacy alias for FIRMS_MAP_KEY.
+    secret: true
+  - name: FIRMS_KEY
+    description: Optional. Legacy alias for FIRMS_MAP_KEY.
+    secret: true
+  - name: NASA_FIRMS_KEY
+    description: Optional. Legacy alias for FIRMS_MAP_KEY.
+    secret: true
+  - name: AISSTREAM_API_KEY
+    description: Optional. AISStream vessel feed credential.
+    secret: true
+  - name: TOMTOM_API_KEY
+    description: Optional. TomTom traffic feed credential.
     secret: true

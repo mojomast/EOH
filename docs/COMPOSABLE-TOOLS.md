@@ -26,7 +26,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 | `godseye_scene` | `save`, `list`, `load`, `delete`, `report`, `export`, `restore`, `tour`, `tour_status`, `tour_stop`, `playback` |
 | `godseye_watch` | `create`, `list`, `pause`, `delete` |
 | `godseye_capture` | `hud`, `summary`, `pane` |
-| `godseye_admin` | `doctor`, `batch`, `keys`, `rebuild`, `reload`, `preview`, `status`, `app_start`, `app_stop`, `app_restart` |
+| `godseye_admin` | `doctor`, `batch`, `rebuild`, `reload`, `preview`, `status`, `app_start`, `app_stop`, `app_restart` |
 
 `op=fly` accepts `style`. `nvg`, `night`, `night vision`, and `night-vision` mean `surveillance`. `flir`, `ir`, and `infrared` mean `thermal`. After a successful fly the router calls the existing `set_visual_style` handler. A failed fly does not change the style. `godseye_layers` `op=style` is the same handler. The same aliases are accepted there.
 
@@ -48,7 +48,7 @@ The starting table is in the 2026-11-05 research note, section 1. These rows dif
 - **`street_walk` is `godseye_nav`.** The sub-action is the argument `walk`, so it does not collide with `op`. It samples a saved route and opens the nearest Street View panorama at each point.
 - **`street_level` is `godseye_nav`.** The sub-action is the argument `street` (`at`, `next`, `prev`, `route`). One hop per call. `itinerary` builds a drive or walk through pins and can hand the line to the chunked dolly.
 - **`annotate` reads a dataset.** `source` is a `.jsonl`, `.csv`, or `.json` path. `records` is a list of `{lat, lon, label, description_md, images, links, tags, category, id}`. `replace: true` matches a stable `id` or a pin within 25 m. Exact duplicates are skipped. `op=update` patches one pin without a redraw. `op=delete` accepts `ids`.
-- **Boxes take named keys.** `{south, west, north, east}` is accepted everywhere a bbox is taken. A four-number list is checked and rejected when neither order is a real box. `area: {place, radius_km}` is geocoded. `op=doctor` with `probe: true` calls each keyed provider once, including TomTom. `op=keys` reads a path and never a secret value. `op=batch` runs up to 16 composable calls. `op=pane` returns a PNG of the pane.
+- **Boxes take named keys.** `{south, west, north, east}` is accepted everywhere a bbox is taken. A four-number list is checked and rejected when neither order is a real box. `area: {place, radius_km}` is geocoded. `op=doctor` with `probe: true` calls each keyed provider once, including TomTom. Key-file import is removed; configure credentials through Hermes. `op=batch` runs up to 16 composable calls. `op=pane` returns a PNG of the pane.
 - **`resolve_area`, `poi_details`, and `get_entity_context` are query ops.** `resolve_area` is how `analyst` and `osm` get an `areaId`. `poi_details` is the one-venue step after `find_places`. Entity context is the "entity" role in the research note.
 - **`get_terrain_height` and `get_map_features` are query ops** (`terrain`, `features`). They are point lookups, not feeds.
 - **`show_in_gods_eye_view` is `godseye_view` `op=show`.** The registered schema keeps the argument names and drops the nested MCP descriptions, so the view tool stays small.
@@ -171,7 +171,6 @@ Phase `A` was the first cut (`godseye_view` and `godseye_query`, without `show`,
 | `godseye_live_get_current_view_state` | `godseye_view` | `state` | B | folded into view; the per-turn map line is the orientation path |
 | `godseye_doctor` | `godseye_admin` | `doctor` | B | health check; probe=true or detail=full calls each keyed provider once |
 | `godseye_batch` | `godseye_admin` | `batch` | B | calls is a list of {tool, args}; stop_on_error stops early |
-| `godseye_keys` | `godseye_admin` | `keys` | B | action install reads a KEY=VALUE path; values are never echoed |
 | `godseye_rebuild_panel` | `godseye_admin` | `rebuild` | B | rebuild dist/panel |
 | `godseye_live_reload_pane` | `godseye_admin` | `reload` | B | reload the open pane |
 | `godseye_preview_swap` | `godseye_admin` | `preview` | B | single desktop preview tab |

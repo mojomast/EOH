@@ -505,7 +505,7 @@ def test_measure_schemas_shrinks_the_catalog():
     import measure_schemas
     report = measure_schemas.measure()
     assert report["after"]["tools"] == 11
-    assert report["baseline"]["tools"] == 95  # phase-B reconstruction, including godseye_overlays
+    assert report["baseline"]["tools"] == 94  # phase-B reconstruction, including overlays; unsafe key import retired
     assert report["after"]["tools"] == len(yaml.safe_load((ROOT / "plugin.yaml").read_text())["provides_tools"])
     assert report["after"]["bytes"] < report["baseline"]["bytes"]
     assert report["after"]["tokens"]["o200k_base"] < report["baseline"]["tokens"]["o200k_base"]

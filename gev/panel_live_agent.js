@@ -193,32 +193,47 @@
     setTimeout(() => finish({ ok: false, error: 'capture timeout waiting for postRender' }), 2000)
   })
 
+  // Bounded capture: leave headroom for the JSON envelope under the 512 KiB relay cap.
+  const encodePaneCapture = (canvas, drawer) => {
+    const limit = 450 * 1024
+    const width = canvas.width || canvas.clientWidth || 1
+    const height = canvas.height || canvas.clientHeight || 1
+    const extra = drawer ? Math.min(360, Math.round(width * 0.34)) : 0
+    let scale = Math.min(1, 1600 / Math.max(width + extra, height))
+    for (let attempt = 0; attempt < 5; attempt++, scale *= 0.7) {
+      const shot = document.createElement('canvas')
+      shot.width = Math.max(1, Math.round((width + extra) * scale))
+      shot.height = Math.max(1, Math.round(height * scale))
+      const ctx = shot.getContext('2d')
+      if (!ctx) return { ok: false, error: 'no 2d context' }
+      ctx.fillStyle = '#02140f'
+      ctx.fillRect(0, 0, shot.width, shot.height)
+      ctx.drawImage(canvas, 0, 0, Math.round(width * scale), shot.height)
+      if (drawer) {
+        ctx.fillStyle = '#e8fff6'
+        ctx.font = `${Math.max(8, 14 * scale)}px ui-monospace, Menlo, monospace`
+        String(drawer.innerText || '').slice(0, 800).split(/\n/).slice(0, 24).forEach((line, index) =>
+          ctx.fillText(line.slice(0, 48), (width + 12) * scale, (28 + index * 18) * scale))
+      }
+      for (const quality of [0.85, 0.7, 0.55, 0.4]) {
+        const dataUrl = shot.toDataURL('image/jpeg', quality)
+        if (dataUrl?.startsWith('data:image/jpeg;') && dataUrl.length >= 32 && dataUrl.length <= limit) {
+          return { ok: true, action: 'hermes_pane_shot', mime: 'image/jpeg', dataUrl,
+            width: shot.width, height: shot.height, encodedBytes: dataUrl.length,
+            includesDrawer: Boolean(drawer), capturedAt: 'postRender' }
+        }
+      }
+    }
+    return { ok: false, action: 'hermes_pane_shot', error: 'result too large', code: 'result_too_large' }
+  }
+
   // PNG of the whole pane: the globe canvas plus the HTML drawer painted beside it.
   const paneShot = async () => {
     const drawer = document.querySelector('#hermes-gev-drawer.open, .hermes-drawer.open')
     return afterPostRender((canvas) => {
       if (!canvas) return { ok: false, action: 'hermes_pane_shot', error: 'no canvas' }
       try {
-        const shot = document.createElement('canvas')
-        const width = canvas.width || canvas.clientWidth || 1
-        const height = canvas.height || canvas.clientHeight || 1
-        const extra = drawer ? Math.min(360, Math.round(width * 0.34)) : 0
-        shot.width = width + extra
-        shot.height = height
-        const ctx = shot.getContext('2d')
-        if (!ctx) return { ok: false, action: 'hermes_pane_shot', error: 'no 2d context' }
-        ctx.drawImage(canvas, 0, 0, width, height)
-        if (drawer) {
-          ctx.fillStyle = '#02140f'
-          ctx.fillRect(width, 0, extra, height)
-          ctx.fillStyle = '#e8fff6'
-          ctx.font = '14px ui-monospace, Menlo, monospace'
-          const text = String(drawer.innerText || '').slice(0, 800)
-          text.split(/\n/).slice(0, 24).forEach((line, index) => ctx.fillText(line.slice(0, 48), width + 12, 28 + index * 18))
-        }
-        const dataUrl = shot.toDataURL('image/png')
-        if (!dataUrl || dataUrl.length < 32) return { ok: false, action: 'hermes_pane_shot', error: 'empty capture' }
-        return { ok: true, action: 'hermes_pane_shot', mime: 'image/png', dataUrl, width: shot.width, height: shot.height, includesDrawer: Boolean(drawer), capturedAt: 'postRender' }
+        return encodePaneCapture(canvas, drawer)
       } catch (e) {
         return { ok: false, action: 'hermes_pane_shot', error: String(e && e.message || e), note: 'Canvas may be tainted by cross-origin imagery.' }
       }

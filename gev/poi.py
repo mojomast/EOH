@@ -576,7 +576,8 @@ def poi_details(args: dict) -> dict:
     site = place.get("website")
     if site:
         try:
-            status, html = _http(site, timeout=12)
+            from .public_http import get as public_get
+            status, html = public_get(site, timeout=12, headers={"User-Agent": USER_AGENT})
             if status == 200 and html:
                 if not out["menu_url"]:
                     m = _MENU_LINK.search(html)
@@ -584,7 +585,7 @@ def poi_details(args: dict) -> dict:
                         out["menu_url"] = urllib.parse.urljoin(site, m.group(1))
                 page = html
                 if out["menu_url"] and out["menu_url"] != site:
-                    s2, h2 = _http(out["menu_url"], timeout=12)
+                    s2, h2 = public_get(out["menu_url"], timeout=12, headers={"User-Agent": USER_AGENT})
                     if s2 == 200 and h2:
                         page = h2
                 text = re.sub(r"\s+", " ", _TAGS.sub(" ", re.sub(r"(?is)<(script|style).*?</\1>", " ", page)))

@@ -18,7 +18,8 @@ def bind(state) -> None:
 
 
 def _file() -> Path:
-    home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
+    from hermes_constants import get_hermes_home
+    home = Path(get_hermes_home())
     return home / "plugin-data" / "godseye" / "home.json"
 
 

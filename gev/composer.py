@@ -6,6 +6,8 @@ import json
 import re
 import shlex
 import subprocess
+
+from .security import child_env
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -404,7 +406,7 @@ def encode_share(v: dict) -> dict:
     node, root = config.node_bin(), config.checkout()
     if not node or not root:
         raise RuntimeError("checkout or node missing")
-    out = subprocess.run([node, str(_SHARE_SCRIPT), str(root)], input=json.dumps(v), capture_output=True,
+    out = subprocess.run([node, str(_SHARE_SCRIPT), str(root)], input=json.dumps(v), env=child_env(), capture_output=True,
                          text=True, timeout=20, check=True)
     return json.loads(out.stdout)
 
@@ -444,7 +446,7 @@ def doctor(now=None) -> dict:
     ver = ""
     if node:
         try:
-            ver = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=5).stdout.strip()
+            ver = subprocess.run([node, "--version"], env=child_env(), capture_output=True, text=True, timeout=5).stdout.strip()
         except Exception:
             ver = ""
     major = int(re.sub(r"\D.*", "", ver.lstrip("v")) or 0) if ver else 0
@@ -735,7 +737,7 @@ CLIENT_KEYS = {  # baked into dist/panel at build time (build/vite.js define)
     "GOOGLE_MAPS_API_KEY": "Google basemaps, Places labels for the HUD",
     "MAPILLARY_CLIENT_TOKEN": "Mapillary street-level imagery",
 }
-# Server-only keys: checked for presence in the env file / process env; never baked, never printed.
+# Server-only keys: resolved by Hermes for the active profile; never baked, never printed.
 SERVER_KEYS = {
     "AISSTREAM_API_KEY": "AISStream live vessels",
     "FIRMS_MAP_KEY": "NASA FIRMS active fires (also accepted as FIRMS_API_KEY)",
@@ -764,27 +766,14 @@ def tour_op(op: str, session_id: str | None = None, **extra) -> dict:
 
 
 def env_file() -> Path:
-    import os
-    raw = os.environ.get("GODSEYE_ENV_FILE", "")
-    return Path(raw).expanduser() if raw else Path.home() / ".config" / "gods-eye-view.env"
+    """Retired location helper retained for caller compatibility; never read."""
+    from .security import plugin_data
+    return plugin_data() / "legacy-unused.env"
 
 
 def read_env(path: Path) -> dict:
-    out = {}
-    try:
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            k = k.strip().removeprefix("export ").strip()
-            v = v.strip()
-            if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
-                v = v[1:-1]
-            out[k] = v
-    except OSError:
-        pass
-    return out
+    """Retired compatibility helper: plugin code never reads credential files."""
+    return {}
 
 
 def panel_bundle(root: Path | None = None) -> Path | None:
@@ -812,7 +801,7 @@ def ion_scopes(token: str) -> list[str] | None:
 def service_started_at(unit: str = "gods-eye-view.service") -> float | None:
     try:
         out = subprocess.run(["systemctl", "--user", "show", "-p", "ActiveEnterTimestamp", "--value", unit],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
+                             env=child_env(), capture_output=True, text=True, timeout=5).stdout.strip()
         if not out or out == "n/a":
             return None
         from email.utils import parsedate_to_datetime  # noqa: F401 - format is "Thu 2026-11-05 09:53:27 EST"
@@ -826,26 +815,24 @@ def service_started_at(unit: str = "gods-eye-view.service") -> float | None:
 
 def _env_has(file_env: dict, key: str) -> tuple[bool, str]:
     """Return (present, where-label). Values are never returned."""
-    import os
-    aliases = SERVER_KEY_ALIASES.get(key, ())
-    for k in (key, *aliases):
-        if file_env.get(k):
-            return True, str(env_file())
-        if os.environ.get(k):
-            return True, "process env"
-    return False, str(env_file())
+    from .security import secret
+    for name in (key, *SERVER_KEY_ALIASES.get(key, ())):
+        if secret(name):
+            return True, "active Hermes profile"
+    return False, "active Hermes profile"
 
 
 def provider_key_checks(envf: Path | None = None) -> list[dict]:
-    """Presence of server-side provider keys in the env file / process env. Never prints values."""
+    """Presence of server-side provider keys in the active Hermes profile. Never prints values."""
     envf = envf or env_file()
-    file_env = read_env(envf)
+    from .security import secrets
+    file_env = secrets()
     out = []
     for key, what in SERVER_KEYS.items():
         ok, where = _env_has(file_env, key)
         out.append({"check": f"key {key}", "ok": ok, **({} if ok else {"code": "KEY_MISSING"}),
                     "detail": (f"set in {where} ({what})" if ok else f"not set in {where} ({what})"),
-                    "fix": f"Add {key}=... to {where} (chmod 600) and restart the God's Eye View app/service."})
+                    "fix": f"Configure {key} through Hermes for the active profile, then restart the God's Eye View app/service."})
     return out
 
 
@@ -965,9 +952,9 @@ def panel_checks(root: Path | None = None, envf: Path | None = None, started: fl
     root = root or config.checkout()
     envf = envf or env_file()
     out = []
-    fix_build = "Run godseye_admin op=rebuild (or: set -a; . %s; set +a; cd %s && PATH=~/.local/node24/bin:$PATH npm run build:panel), then godseye_admin op=reload." % (envf, root or "~/gods-eye-view")
+    fix_build = "Run godseye_admin op=rebuild with active Hermes profile credentials, then godseye_admin op=reload."
     fix_runtime = ("Open the Eye Of Hermes pane (or run godseye_admin op=rebuild). A current God's Eye View build "
-                   "reads dist/panel/config.json, which is rewritten from the env file when the pane is served, "
+                   "reads dist/panel/config.json, which is rewritten from Hermes-scoped credentials when the pane is served, "
                    "so a key change does not need a rebuild. chmod 600. Never print the value. Older builds still "
                    "need the rebuild.")
     bundle = panel_bundle(root)
@@ -977,8 +964,8 @@ def panel_checks(root: Path | None = None, envf: Path | None = None, started: fl
         out.append({"check": "panel bundle", "ok": False, "code": "PANEL_MISSING", "detail": "dist/panel is not built", "fix": fix_build})
         return out
     text = bundle.read_text(errors="ignore")
-    file_env = read_env(envf)
-    repo_env = read_env(root / ".env")
+    from .security import secrets
+    file_env = secrets()
     runtime = runtime_config.supports_runtime(root, text)
     cfg_path = root / "dist" / "panel" / "config.json"
     cfg = runtime_config.read_config(cfg_path) if cfg_path.is_file() else {}
@@ -987,39 +974,38 @@ def panel_checks(root: Path | None = None, envf: Path | None = None, started: fl
         if pub.is_file():
             cfg = runtime_config.read_config(pub)
             cfg_path = pub
-    bmt = bundle.stat().st_mtime
     stale = []
     if runtime:
         drifted = False
         for key, _what in CLIENT_KEYS.items():
-            val = file_env.get(key) or repo_env.get(key) or ""
+            val = file_env.get(key) or ""
             field = {"CESIUM_ION_TOKEN": "cesiumIonToken", "GOOGLE_MAPS_API_KEY": "googleMapsApiKey",
                      "MAPILLARY_CLIENT_TOKEN": "mapillaryToken"}[key]
             if val and cfg.get(field) != val and val not in text:
                 drifted = True
         if drifted:
-            stale.append("dist/panel/config.json does not match the env file")
+            stale.append("dist/panel/config.json does not match the active Hermes profile")
     else:
-        if envf.is_file() and envf.stat().st_mtime > bmt:
-            stale.append(f"{envf} is newer than the panel bundle")
-        if started and started > bmt and envf.is_file() and envf.stat().st_mtime > bmt:
-            stale.append("the app service restarted with that env after the bundle was built")
+        for key in CLIENT_KEYS:
+            if file_env.get(key) and file_env[key] not in text:
+                stale.append("panel bundle does not match the active Hermes profile")
+                break
     fix_fresh = fix_runtime if runtime else fix_build
     out.append({"check": "panel freshness", "ok": not stale, **({"code": "PANEL_STALE"} if stale else {}),
                 "detail": "; ".join(stale) or (
-                    "runtime config matches the env file" if runtime
-                    else f"bundle built after {envf.name if envf.is_file() else 'env'} changed"),
+                    "runtime config matches the active Hermes profile" if runtime
+                    else "panel bundle matches configured Hermes credentials"),
                 "fix": fix_fresh})
     for key, what in CLIENT_KEYS.items():
-        val = file_env.get(key) or repo_env.get(key) or ""
-        where = envf if key in file_env else (root / ".env" if key in repo_env else envf)
+        val = file_env.get(key) or ""
+        where = "active Hermes profile"
         field = {"CESIUM_ION_TOKEN": "cesiumIonToken", "GOOGLE_MAPS_API_KEY": "googleMapsApiKey",
                  "MAPILLARY_CLIENT_TOKEN": "mapillaryToken"}[key]
         if not val:
             ok = key != "CESIUM_ION_TOKEN"  # the one the photoreal stack hard-requires
             out.append({"check": f"key {key}", "ok": ok, **({} if ok else {"code": "KEY_MISSING"}),
                         "detail": f"not set in {where} ({what})",
-                        "fix": f"Add {key}=... to {where} (chmod 600). Never print the value. "
+                        "fix": f"Configure {key} through Hermes for the active profile. Never print the value. "
                                + (fix_runtime if runtime else "Then run godseye_admin op=rebuild.")})
             continue
         in_cfg = cfg.get(field) == val
@@ -1036,7 +1022,7 @@ def panel_checks(root: Path | None = None, envf: Path | None = None, started: fl
                 out.append({"check": "Cesium ion token scopes", "ok": False, "code": "ION_SCOPES",
                             "detail": f"token is shipped to the browser but claims {', '.join(extra)}",
                             "fix": "Create a token limited to assets:read (and assets:list) at https://ion.cesium.com/tokens "
-                                   "and put that one in the env file; see https://cesium.com/learn/ion/cesium-ion-access-tokens/"})
+                                   "and configure it through Hermes; see https://cesium.com/learn/ion/cesium-ion-access-tokens/"})
     return out
 
 
@@ -1045,13 +1031,12 @@ def pane_scene_info(session_id: str | None = None) -> dict:
 
 
 def rebuild_panel(session_id: str | None = None, runner=None, reload=True) -> dict:
-    """npm run build:panel with the app's env file exported (Node 24), then reload open panes."""
+    """Build with only Hermes-scoped client keys, then reload open panes."""
     import os
     root, node = config.checkout(), config.node_bin()
     if not root or not node:
         return {"ok": False, "error": "God's Eye View checkout or Node 24 not found"}
-    env = dict(os.environ)
-    env.update({k: v for k, v in read_env(env_file()).items()})
+    env = child_env(node, app_keys=tuple(CLIENT_KEYS) + ("GOOGLE_API_KEY",))
     env["PATH"] = str(Path(node).parent) + os.pathsep + env.get("PATH", "")
     t0 = time.time()
     run = runner or (lambda: subprocess.run(["npm", "run", "build:panel"], cwd=root, env=env, capture_output=True,
@@ -1062,13 +1047,13 @@ def rebuild_panel(session_id: str | None = None, runner=None, reload=True) -> di
         return {"ok": False, "error": f"build failed to run: {type(exc).__name__}"}
     if proc.returncode != 0:
         tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-8:])
-        for v in read_env(env_file()).values():  # never echo a key back
+        for v in env.values():  # never echo a key back
             if len(v) >= 8:
                 tail = tail.replace(v, "***")
         return {"ok": False, "error": "build:panel failed", "log": tail[-1500:]}
     try:
         from . import runtime_config
-        file_env = {**read_env(root / ".env"), **read_env(env_file())}
+        file_env = runtime_config.merged_env(None, None)
         for key in ("GOOGLE_MAPS_API_KEY", "CESIUM_ION_TOKEN", "MAPILLARY_CLIENT_TOKEN", "PHOTON_URL"):
             if env.get(key):
                 file_env[key] = env[key]
@@ -1082,8 +1067,8 @@ def rebuild_panel(session_id: str | None = None, runner=None, reload=True) -> di
     return out
 
 
-MAP_STACK_FIX = ("Put CESIUM_ION_TOKEN in ~/.config/gods-eye-view.env (or GODSEYE_ENV_FILE). "
-                 "A current God's Eye View build reads dist/panel/config.json, rewritten from that file when the "
+MAP_STACK_FIX = ("Configure CESIUM_ION_TOKEN through Hermes for the active profile. "
+                 "A current God's Eye View build reads dist/panel/config.json, rewritten from Hermes-scoped credentials when the "
                  "pane is served, so a key change does not need a rebuild. Older builds compile the key into the "
                  "bundle: call godseye_admin op=rebuild. godseye_admin op=doctor shows KEY_MISSING/PANEL_STALE. Never print the key.")
 

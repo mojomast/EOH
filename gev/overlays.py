@@ -841,13 +841,10 @@ def export_path(source: str | None) -> Path:
 
 
 def import_path(source: str) -> Path:
-    raw = Path(str(source or "")).expanduser()
+    from .security import import_file
+    raw = import_file(source, default_root=data_root())
     if not raw.is_file():
-        alt = data_root() / raw.name
-        if alt.is_file():
-            raw = alt
-        else:
-            raise ValueError(f"No overlay file at {source!r}.")
+        raise ValueError("Overlay import file was not found.")
     if raw.suffix.lower() != ".json":
         raise ValueError("Import source must be a .json file.")
     if raw.name.lower().startswith(".") or "env" in raw.name.lower():

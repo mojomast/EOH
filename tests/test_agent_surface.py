@@ -269,7 +269,7 @@ def test_fixit_errors_for_the_common_failures(monkeypatch):
 
     keys = errors.annotate({"ok": False, "code": "KEY_MISSING", "error": "KEY_MISSING",
                             "message": "CESIUM_ION_TOKEN is not set"}, tool="godseye_doctor")
-    assert keys["code"] == "KEY_MISSING" and "chmod" not in keys["fix"] and "0600" in keys["fix"]
+    assert keys["code"] == "KEY_MISSING" and "chmod" not in keys["fix"] and "Hermes" in keys["fix"]
     assert "never print" in keys["fix"].lower() or "Never print" in keys["fix"]
 
     over = errors.annotate({"ok": False, "code": "OSM_UNAVAILABLE",

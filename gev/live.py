@@ -24,6 +24,7 @@ from __future__ import annotations
 import hmac
 import itertools
 import json
+import logging
 import os
 import threading
 import time
@@ -982,6 +983,26 @@ def make_handler(relay: Relay, token: str):
         def do_POST(self):
             if not self._authed():
                 return self._send(401, {"error": "unauthorized"})
+            size = int(self.headers.get("Content-Length") or 0)
+            if self.path == "/result":
+                logging.getLogger(__name__).info("EOH result bytes=%d", size)
+            if size > MAX_BODY and self.path == "/result":
+                # Drain a bounded upload before replying, avoiding a broken pipe at the sender.
+                self.connection.settimeout(5)
+                try:
+                    self.rfile.read(min(size, 8 * 1024 * 1024))
+                except (OSError, TimeoutError):
+                    pass
+                error = {"ok": False, "error": "result too large", "code": "result_too_large",
+                         "resultBytes": size, "limitBytes": MAX_BODY}
+                try:
+                    cid = int(self.headers.get("X-Hermes-Command-Id", "0"))
+                    if cid > 0:
+                        relay.result(cid, error)
+                except (TypeError, ValueError):
+                    pass
+                self.close_connection = True
+                return self._send(413, error)
             try:
                 body = self._body()
             except Exception:
@@ -1046,10 +1067,17 @@ def start_in_thread(token: str) -> bool:
 def call(path: str, token: str, body: dict | None = None, timeout: float = RESULT_WAIT_S + 10) -> dict:
     url = f"http://127.0.0.1:{port()}{path}"
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data, {"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    if path == "/result" and body:
+        headers["X-Hermes-Command-Id"] = str(body.get("id", 0))
+    req = urllib.request.Request(url, data, headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 413:
+            return {"ok": False, "error": "result too large", "code": "result_too_large"}
+        return {"ok": False, "error": "relay_http_error", "code": "relay_http_error", "status": exc.code}
     except (urllib.error.URLError, OSError) as exc:
         return {"ok": False, "error": "relay_unavailable", "code": "relay_unavailable",
                 "message": f"The live-globe relay is not running ({type(exc).__name__}); restart the Hermes dashboard/gateway with the godseye plugin enabled.",

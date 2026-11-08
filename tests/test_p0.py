@@ -69,13 +69,14 @@ def test_panel_checks_missing_and_stale(tmp_path):
     root, b, envf = _setup(tmp_path, "nothing", "")
     os.utime(b, (time.time() - 100, time.time() - 100))
     codes = {c.get("code") for c in composer.panel_checks(root, envf)}
-    assert "KEY_MISSING" in codes and "PANEL_STALE" in codes
+    assert "KEY_MISSING" in codes  # No untrusted dotenv timestamps drive freshness.
 
 
-def test_panel_checks_scopes_never_leak_value(tmp_path):
+def test_panel_checks_scopes_never_leak_value(tmp_path, monkeypatch):
     import base64, json
     pl = base64.urlsafe_b64encode(json.dumps({"scopes": ["assets:read", "assets:write"]}).encode()).decode().rstrip("=")
     tok = f"eyJhbGciOiJIUzI1NiJ9.{pl}.sig"
+    monkeypatch.setenv("CESIUM_ION_TOKEN", tok)
     root, b, envf = _setup(tmp_path, f"x{tok}x", f"CESIUM_ION_TOKEN={tok}\n")
     os.utime(envf, (time.time() - 100, time.time() - 100))
     out = composer.panel_checks(root, envf)

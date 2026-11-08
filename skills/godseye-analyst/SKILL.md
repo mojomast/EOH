@@ -174,7 +174,6 @@ When the turn has "[EOH watch alert]" lines, tell the user. The new items are al
 | --- | --- |
 | `doctor` | Health check. It installs nothing. `probe: true` or `detail: "full"` makes one cheap call per keyed provider and returns `ok`, `invalid`, `quota`, or `unreachable`. A TomTom row says to reload the pane so a new key is picked up. |
 | `batch` | `calls` is `[{tool, args}, ...]`, at most 16. `stop_on_error` stops after the first failure. One result per call. |
-| `keys` | `action: "install"` and `file` set to a path. The file is `KEY=VALUE`. Values are never accepted as arguments and never come back in the result. |
 | `status` | Control room: app, relay, panes, WebGL, and feeds. Read-only. Missing keys are names only. |
 | `app_start` | Start the God's Eye View app. Linux only. User-triggered. Waits for HTTP 200. |
 | `app_stop` | Stop that app. Refuses when the port belongs to another process. |

@@ -437,7 +437,7 @@ def test_starttime_mismatch_does_not_signal(tmp_path):
 def test_process_start_waits_for_http_200_and_hides_child_env(tmp_path, monkeypatch):
     envf = tmp_path / "gods-eye-view.env"
     envf.write_text(f"AISSTREAM_API_KEY={SECRET}\n")
-    monkeypatch.setattr(composer, "env_file", lambda: envf)
+    monkeypatch.setenv("AISSTREAM_API_KEY", SECRET)
     seen = {"n": 0, "child_has_value": False}
 
     def opener(_url):

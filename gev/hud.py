@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+
+from .security import child_env
 from pathlib import Path
 
 from . import config
@@ -17,7 +19,7 @@ def build_prompt(context: dict) -> dict:
     if not node or not home:
         raise RuntimeError("God's Eye View checkout or Node 24 not found")
     out = subprocess.run([node, str(_SCRIPT), str(home)], input=json.dumps(context),
-                         capture_output=True, text=True, timeout=20, check=True)
+                         env=child_env(node), capture_output=True, text=True, timeout=20, check=True)
     return json.loads(out.stdout)
 
 

@@ -268,6 +268,10 @@ def make_live_handler(name: str):
         if name in detail.LARGE_LIVE:
             return detail.render_obj(out, mode)
         text = json.dumps(out, ensure_ascii=False)
+        # Capture is bounded in the pane and rendered by router._capture_detail.
+        # Never slice its JSON/base64 before concise/full serialization.
+        if name == "godseye_pane_shot":
+            return text
         return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
     return handler
 
@@ -359,7 +363,7 @@ EXTRA_TOOLS = {
     "godseye_doctor": (
         "Health check for Eye Of Hermes (EOH): Node 24, upstream checkout, app on :4173, upstream "
         "patches, live relay, connected panes, per-provider key presence (CESIUM_ION_TOKEN, "
-        "GOOGLE_MAPS_API_KEY, MAPILLARY_CLIENT_TOKEN, AISSTREAM_API_KEY, FIRMS_MAP_KEY) in the env file "
+        "GOOGLE_MAPS_API_KEY, MAPILLARY_CLIENT_TOKEN, AISSTREAM_API_KEY, FIRMS_MAP_KEY) in the active Hermes profile "
         "and panel bundle (values never printed), active map stack, layer feed states from "
         "feedProvenance, and annotation count. Every failed check includes fix text. Read-only.",
         {"type": "object", "properties": {"probe": {"type": "boolean"}}}, "🩺"),
@@ -428,7 +432,7 @@ EXTRA_TOOLS = {
             "confirm": {"type": "boolean"},
         }}, "🔄"),
     "godseye_rebuild_panel": (
-        "Rebuild God's Eye View's dist/panel bundle (npm run build:panel with ~/.config/gods-eye-view.env exported, "
+        "Rebuild God's Eye View's dist/panel bundle (npm run build:panel with only Hermes-scoped client keys, "
         "Node 24) and reload every open pane. A current build reads dist/panel/config.json, rewritten when the pane "
         "is served, so a CESIUM_ION_TOKEN change does not need this. Older builds still bake the key. Takes ~20-60 s.",
         {"type": "object", "properties": {}}, "🛠️"),
@@ -672,12 +676,6 @@ EXTRA_TOOLS = {
             "calls": {"type": "array", "items": {"type": "object"}},
             "stop_on_error": {"type": "boolean"},
         }, "required": ["calls"]}, "🧰"),
-    "godseye_keys": (
-        "Install provider keys from a KEY=VALUE file. Takes a path only. Values are never accepted or echoed.",
-        {"type": "object", "properties": {
-            "action": {"type": "string", "enum": ["install"]},
-            "file": {"type": "string"},
-        }, "required": ["action", "file"]}, "🔑"),
     "godseye_timeline": (
         "Time slider on the EOH pane. op=set arms it. mode=wayback scrubs Esri World Imagery Wayback "
         "release dates over the current view (transition swipe or fade). mode=events shows USGS quakes and "
@@ -963,19 +961,8 @@ def extra_handler(name: str):
                 from . import batching
                 out = batching.run(args, session_id=sid)
             elif name == "godseye_keys":
-                from .providers import install_keys
-                from . import runtime_config
-                from . import control_room
-                if str(args.get("action") or "") != "install":
-                    out = {"ok": False, "error": "bad_args", "message": "keys action must be install.",
-                           "fix": "Call godseye_admin op=keys with action=install and file set to a path."}
-                else:
-                    out = install_keys(
-                        str(args.get("file") or ""),
-                        restart=lambda: control_room.app_action("restart"),
-                        regen=runtime_config.write_checkout,
-                        invalidate=lambda: composer.live_call("hermes_invalidate_providers", {}, sid),
-                    )
+                out = {"ok": False, "error": "removed_operation",
+                       "message": "Key-file import is removed. Configure credentials through Hermes for the active profile."}
             elif name == "godseye_pane_shot":
                 out = composer.live_call("hermes_pane_shot", {}, sid, fanout=bool(args.get("fanout")))
             elif name == "godseye_timeline":
@@ -1071,6 +1058,10 @@ def extra_handler(name: str):
         if name in detail.LARGE_EXTRA:
             return detail.render_obj(out, mode)
         text = json.dumps(out, ensure_ascii=False)
+        # Capture is bounded in the pane and rendered by router._capture_detail.
+        # Never slice its JSON/base64 before concise/full serialization.
+        if name == "godseye_pane_shot":
+            return text
         return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
     return handler
 

@@ -23,6 +23,8 @@ import os
 import signal
 import socket
 import subprocess
+
+from .security import child_env
 import sys
 import threading
 import time
@@ -606,7 +608,7 @@ def socket_open(host: str, port: int, timeout: float = 0.3) -> bool:
 
 def default_systemctl(argv: list[str]) -> tuple[int, str]:
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(argv, env=child_env(), capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 1, type(exc).__name__
     text = composer.scrub_text(((proc.stdout or "") + (proc.stderr or ""))[:500])
@@ -727,13 +729,8 @@ def _dev_argv(node: str, checkout: str, bind: str, port: int) -> list[str] | dic
 
 
 def _child_env(node: str) -> dict:
-    env = dict(os.environ)
-    try:
-        env.update({k: v for k, v in composer.read_env(composer.env_file()).items() if k and v})
-    except Exception:
-        pass
-    env["PATH"] = str(Path(node).parent) + os.pathsep + env.get("PATH", "")
-    return env
+    from .security import child_env, SECRET_NAMES
+    return child_env(node, app_keys=SECRET_NAMES)
 
 
 def _spawn_default(argv: list[str], cwd: str, env: dict):

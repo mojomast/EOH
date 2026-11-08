@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+
+from .security import child_env
 import threading
 from concurrent.futures import Future
 from typing import Any
@@ -56,7 +58,8 @@ class StdioMcpClient:
                 return
             self._proc = subprocess.Popen(
                 self._command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, text=True, bufsize=1)
+                stderr=subprocess.DEVNULL, text=True, bufsize=1,
+                env=child_env(config.node_bin()))
             threading.Thread(target=self._reader, args=(self._proc,), daemon=True).start()
             self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                      "clientInfo": {"name": "hermes-godseye", "version": "0.2.0"}})

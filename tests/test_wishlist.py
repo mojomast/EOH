@@ -21,7 +21,8 @@ def _route(label, ident, lat=45.5):
     ]}
 
 
-def test_records_row_schema_jsonl_csv_and_inline(tmp_path):
+def test_records_row_schema_jsonl_csv_and_inline(tmp_path, monkeypatch):
+    monkeypatch.setenv("GODSEYE_IMPORT_ROOT", str(tmp_path))
     rows = [
         {"lat": 45.5, "lon": -73.6, "label": "29 Av", "description_md": "corner",
          "images": ["https://example.com/a.jpg"], "links": ["https://example.com"],
@@ -167,7 +168,7 @@ def test_named_bbox_place_radius_and_implausible_boxes():
     assert parsed["kind"] == "circle"
 
 
-def test_provider_probe_classifies_and_never_returns_the_key():
+def test_provider_probe_classifies_and_never_returns_the_key(monkeypatch):
     secret = "probe-" + SECRET
 
     def fetch(url, headers, timeout):
@@ -190,6 +191,9 @@ def test_provider_probe_classifies_and_never_returns_the_key():
             return 200, b"png"
         return 500, b"nope"
 
+    names = ("GOOGLE_MAPS_API_KEY", "MAPILLARY_CLIENT_TOKEN", "AISSTREAM_API_KEY", "FIRMS_MAP_KEY", "TOMTOM_API_KEY")
+    for name in names:
+        monkeypatch.setenv(name, secret)
     rows = providers.probe_providers(fetch=fetch, file_env={
         "GOOGLE_MAPS_API_KEY": secret,
         "MAPILLARY_CLIENT_TOKEN": secret,
@@ -202,6 +206,8 @@ def test_provider_probe_classifies_and_never_returns_the_key():
                   "tomtom": "ok", "tomtom-tile": "ok"}
     assert all(row.get("cache") == "reload the pane" for row in rows if row["provider"].startswith("tomtom"))
     assert secret not in json.dumps(rows)
+    for name in names:
+        monkeypatch.delenv(name)
     missing = providers.probe_providers(fetch=fetch, file_env={}, api_base="http://127.0.0.1:9")
     assert {row["status"] for row in missing} == {"missing"}
     assert providers.classify_probe(None, "") == "unreachable"
@@ -313,31 +319,15 @@ def test_reload_reports_unsaved_marks_and_snapshots_coordinates(tmp_path, monkey
     assert allowed["ok"] and held.reloaded is True
 
 
-def test_keys_install_takes_a_path_and_never_echoes_values(tmp_path, monkeypatch):
+def test_keys_install_is_removed_without_reading_files(tmp_path, monkeypatch):
     src = tmp_path / "keys.env"
-    src.write_text(f"TOMTOM_API_KEY={SECRET}\nNOT_A_KEY=leave-me\n")
-    dest = tmp_path / "env" / "gods-eye-view.env"
+    src.write_text(f"TOMTOM_API_KEY={SECRET}\n")
     monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
-    try:
-        out = providers.install_keys(
-            str(src), env_path=dest, restart=lambda: {"ok": True},
-            regen=lambda: {"ok": True, "fields": ["tomtom"]},
-            probe=lambda: [{"provider": "tomtom", "status": "ok"}],
-            invalidate=lambda: {"ok": True},
-        )
-        blob = json.dumps(out)
-        assert out["ok"] and out["installed"] == ["TOMTOM_API_KEY"] and out["skipped"] == ["NOT_A_KEY"]
-        assert out["mode"] == "0o600" and SECRET not in blob
-        assert "reload the pane" in blob
-        assert stat.S_IMODE(dest.stat().st_mode) == 0o600
-        assert os.environ["TOMTOM_API_KEY"] == SECRET
-        assert dest.read_text().count(SECRET) == 1
-    finally:
-        monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
-    refused = providers.install_keys("https://example.com/keys.env")
-    assert refused["error"] == "bad_path" and SECRET not in json.dumps(refused)
-    pasted = providers.install_keys("")
-    assert pasted["error"] == "bad_path"
+    assert not hasattr(providers, "install_keys")
+    assert "godseye_keys" not in router.BY_LEGACY
+    result = json.loads(hermes_tools.make_handler("godseye_keys")({"action": "install", "file": str(src)}))
+    assert result["ok"] is False and SECRET not in json.dumps(result)
+    assert "TOMTOM_API_KEY" not in os.environ
 
 
 def test_label_offsets_and_pane_shot(tmp_path):
@@ -351,7 +341,7 @@ global.document = {
   body: { appendChild() {} },
   head: { appendChild() {} },
   createElement() {
-    return { getContext() { return { drawImage() {}, fillRect() {}, fillText() {} } }, width: 0, height: 0, toDataURL() { return 'data:image/png;base64,' + 'A'.repeat(40) } }
+    return { getContext() { return { drawImage() {}, fillRect() {}, fillText() {} } }, width: 0, height: 0, toDataURL(mime = 'image/png') { return 'data:' + mime + ';base64,' + 'A'.repeat(40) } }
   },
   querySelector() { return { innerText: '$679,900\n29 Av' } },
   addEventListener(type, fn) { global.handler = fn },
@@ -374,7 +364,7 @@ for (let i = 0; i < 6; i++) crowded.push({ id: 'p' + i, lat: 45.5, lon: -73.5 + 
 const packed = window.__hermesPins.labelOffsets(crowded)
 if (packed.p4.show !== false) throw new Error('the fifth overlapping label should hide')
 eval(fs.readFileSync(root + '/gev/panel_live_agent.js', 'utf8'))
-const canvas = { width: 20, height: 10, toDataURL() { return 'data:image/png;base64,' + 'A'.repeat(40) } }
+const canvas = { width: 20, height: 10, toDataURL(mime = 'image/png') { return 'data:' + mime + ';base64,' + 'A'.repeat(40) } }
 const listeners = []
 global.__godsEyeView.viewer = {
   scene: {
@@ -386,7 +376,7 @@ global.__godsEyeView.viewer = {
 global.__godsEyeView.annotations = { list: () => [{ id: 'p1', type: 'pin', label: '29 Av', lat: 45.5, lon: -73.5 }] }
 ;(async () => {
   const shot = await window.__hermesPaneShot()
-  if (!shot.ok || shot.mime !== 'image/png' || !shot.includesDrawer) throw new Error('pane shot missing drawer')
+  if (!shot.ok || shot.mime !== 'image/jpeg' || !shot.includesDrawer) throw new Error('pane shot missing drawer')
   if (shot.capturedAt !== 'postRender') throw new Error('expected postRender capture')
   await global.handler({ source: window.parent, data: { type: 'hermes-gev:run', id: '1', name: 'hermes_scene_info' } })
   const info = messages.find((msg) => msg.id === '1')
@@ -405,6 +395,6 @@ global.__godsEyeView.annotations = { list: () => [{ id: 'p1', type: 'pin', label
 
 def test_catalog_stays_eleven_tools():
     assert len({item.composable for item in router.CATALOG}) == 11
-    for op in ("update", "street_level", "itinerary", "pane", "batch", "keys"):
+    for op in ("update", "street_level", "itinerary", "pane", "batch"):
         assert any(item.op == op for item in router.CATALOG)
     assert "TOMTOM_API_KEY" in providers.ALLOWED_KEYS
