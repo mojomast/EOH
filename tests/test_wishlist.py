@@ -341,7 +341,7 @@ global.document = {
   body: { appendChild() {} },
   head: { appendChild() {} },
   createElement() {
-    return { getContext() { return { drawImage() {}, fillRect() {}, fillText() {} } }, width: 0, height: 0, toDataURL() { return 'data:image/png;base64,' + 'A'.repeat(40) } }
+    return { getContext() { return { drawImage() {}, fillRect() {}, fillText() {} } }, width: 0, height: 0, toDataURL(mime = 'image/png') { return 'data:' + mime + ';base64,' + 'A'.repeat(40) } }
   },
   querySelector() { return { innerText: '$679,900\n29 Av' } },
   addEventListener(type, fn) { global.handler = fn },
@@ -364,7 +364,7 @@ for (let i = 0; i < 6; i++) crowded.push({ id: 'p' + i, lat: 45.5, lon: -73.5 + 
 const packed = window.__hermesPins.labelOffsets(crowded)
 if (packed.p4.show !== false) throw new Error('the fifth overlapping label should hide')
 eval(fs.readFileSync(root + '/gev/panel_live_agent.js', 'utf8'))
-const canvas = { width: 20, height: 10, toDataURL() { return 'data:image/png;base64,' + 'A'.repeat(40) } }
+const canvas = { width: 20, height: 10, toDataURL(mime = 'image/png') { return 'data:' + mime + ';base64,' + 'A'.repeat(40) } }
 const listeners = []
 global.__godsEyeView.viewer = {
   scene: {
@@ -376,7 +376,7 @@ global.__godsEyeView.viewer = {
 global.__godsEyeView.annotations = { list: () => [{ id: 'p1', type: 'pin', label: '29 Av', lat: 45.5, lon: -73.5 }] }
 ;(async () => {
   const shot = await window.__hermesPaneShot()
-  if (!shot.ok || shot.mime !== 'image/png' || !shot.includesDrawer) throw new Error('pane shot missing drawer')
+  if (!shot.ok || shot.mime !== 'image/jpeg' || !shot.includesDrawer) throw new Error('pane shot missing drawer')
   if (shot.capturedAt !== 'postRender') throw new Error('expected postRender capture')
   await global.handler({ source: window.parent, data: { type: 'hermes-gev:run', id: '1', name: 'hermes_scene_info' } })
   const info = messages.find((msg) => msg.id === '1')
