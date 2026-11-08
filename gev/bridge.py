@@ -22,7 +22,8 @@ MAX_TOKENS = 400
 
 
 def data_dir() -> Path:
-    home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
+    from hermes_constants import get_hermes_home
+    home = Path(get_hermes_home())
     path = home / "plugin-data" / "godseye"
     path.mkdir(parents=True, exist_ok=True)
     return path

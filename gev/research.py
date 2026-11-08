@@ -14,6 +14,7 @@ Never invent from the agent's memory; only pass what the search actually returne
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -51,7 +52,8 @@ _mem: dict[str, tuple[float, object]] = {}
 
 
 def data_dir() -> Path:
-    home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
+    from hermes_constants import get_hermes_home
+    home = Path(get_hermes_home())
     return home / "plugin-data" / "godseye"
 
 
@@ -169,7 +171,11 @@ def website_meta(url: str) -> dict:
     hit = cache_get(ck)
     if hit is not None:
         return hit
-    status, html = _http(u, accept="text/html")
+    from .public_http import get as public_get
+    try:
+        status, html = public_get(u, headers={"User-Agent": USER_AGENT, "Accept": "text/html"})
+    except (ValueError, OSError, http.client.HTTPException):
+        status, html = 0, ""
     if status != 200 or not html:
         out = {"ok": False, "unavailable": True, "url": u, "status": status or None}
         cache_set(ck, out)

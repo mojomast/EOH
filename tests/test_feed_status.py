@@ -85,7 +85,8 @@ def test_watch_check_reports_fallback_and_feed_fix(tmp_path, monkeypatch):
     assert report["ships"]["fix"] == "Retry AIS once."
 
 
-def test_probe_timeout_is_classified_and_carries_a_fix():
+def test_probe_timeout_is_classified_and_carries_a_fix(monkeypatch):
+    monkeypatch.setenv("AISSTREAM_API_KEY", "SECRET-AIS-KEY")
     def fetch(url, headers, timeout):
         if url.endswith("/api/vessels?limit=1"):
             raise TimeoutError("AIS stream timed out")

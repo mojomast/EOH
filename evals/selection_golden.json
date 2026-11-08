@@ -2124,16 +2124,6 @@
         "arguments": {"op": "batch", "calls": [{"tool": "godseye_admin", "args": {"op": "status"}}]},
         "shape": {"required": ["calls"]}
       }
-    },
-    {
-      "id": "admin-keys",
-      "task": "install keys from a file",
-      "expect": {
-        "tool": "godseye_admin",
-        "op": "keys",
-        "arguments": {"op": "keys", "action": "install", "file": "/tmp/godseye-keys.env"},
-        "shape": {"required": ["action", "file"]}
-      }
     }
   ]
 }

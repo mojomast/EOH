@@ -1,18 +1,14 @@
-"""Keyed-provider probes and env-file key install.
+"""Keyed-provider probes using Hermes-scoped credentials.
 
 A probe makes one cheap call and returns ok, invalid, quota, unreachable, or
 missing. Key values are never returned, logged, or copied into an error.
-``op=keys`` reads ``KEY=VALUE`` from a path and writes allowed names into the
-env file mode 0600.
+Users configure credentials through Hermes; the plugin cannot install keys.
 """
 from __future__ import annotations
 
-import os
-import stat
-from pathlib import Path
 from urllib.parse import urlencode
 
-from .composer import CLIENT_KEYS, SERVER_KEYS, env_file, read_env, scrub_text
+from .composer import CLIENT_KEYS, SERVER_KEYS, scrub_text
 
 TOMTOM_KEY = "TOMTOM_API_KEY"
 ALLOWED_KEYS = tuple(dict.fromkeys((*CLIENT_KEYS.keys(), *SERVER_KEYS.keys(), TOMTOM_KEY)))
@@ -45,7 +41,7 @@ def feed_fix(provider: str, status: str) -> str | None:
         return None
     if status == "missing":
         name = _PROVIDER_KEY.get(provider, "the provider key")
-        return f"Add {name} to the provider env file (mode 0600) and restart the app. Never print the value."
+        return f"Configure {name} through Hermes for the active profile. Never print the value."
     if status == "quota":
         return "The provider quota is exhausted. Wait for the quota window or use another configured provider, then retry once."
     if status == "invalid":
@@ -56,7 +52,8 @@ def feed_fix(provider: str, status: str) -> str | None:
 
 
 def _key(name: str, file_env: dict) -> str:
-    return str(file_env.get(name) or os.environ.get(name) or "")
+    from .security import secret
+    return secret(name)
 
 
 def classify_probe(status, body: str = "") -> str:
@@ -115,7 +112,7 @@ def _row(provider: str, status: str) -> dict:
 def probe_providers(fetch=None, file_env: dict | None = None, api_base: str | None = None) -> list[dict]:
     """One cheap call per keyed provider. The result has no key material."""
     from . import config
-    env = file_env if file_env is not None else read_env(env_file())
+    env = {}
     base = (api_base if api_base is not None else config.api_base()).rstrip("/")
     if fetch is None:
         fetch = _urllib_fetch
@@ -183,115 +180,3 @@ def _urllib_fetch(url: str, headers: dict, timeout: float):
         return None, b""
     except Exception:
         return None, b""
-
-
-def _parse_env_text(text: str) -> dict[str, str]:
-    found = {}
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        key = key.strip().removeprefix("export ").strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        if key:
-            found[key] = value
-    return found
-
-
-def install_keys(path: str, *, env_path: Path | None = None, restart=None, regen=None,
-                 probe=None, invalidate=None) -> dict:
-    """Read a KEY=VALUE file. Write allowed keys. Never echo values."""
-    raw = str(path or "").strip()
-    if not raw or "://" in raw:
-        return {"ok": False, "error": "bad_path",
-                "message": "Pass file as a path. Values are not accepted in the tool call.",
-                "fix": "Call godseye_admin op=keys with action=install and file set to a path."}
-    file = Path(raw).expanduser()
-    if not file.is_file():
-        return {"ok": False, "error": "not_found", "message": "Key file was not found.",
-                "fix": "Pass the path of a KEY=VALUE file. Do not paste the values."}
-    try:
-        if file.stat().st_size > 64_000:
-            return {"ok": False, "error": "too_large", "message": "Key file is too large.",
-                    "fix": "Keep the file to the provider keys only."}
-        parsed = _parse_env_text(file.read_text(encoding="utf-8"))
-    except OSError:
-        return {"ok": False, "error": "unreadable", "message": "Key file could not be read.",
-                "fix": "Check the path. Do not paste the values into the tool call."}
-    installed, skipped = [], []
-    chosen = {}
-    for key, value in parsed.items():
-        if key in ALLOWED_KEYS and value.strip():
-            chosen[key] = value
-            installed.append(key)
-        elif key:
-            skipped.append(key)
-    if not installed:
-        return {"ok": False, "error": "no_keys", "message": "The file had none of the provider key names.",
-                "fix": "Use names such as GOOGLE_MAPS_API_KEY, MAPILLARY_CLIENT_TOKEN, "
-                       "AISSTREAM_API_KEY, FIRMS_MAP_KEY, or TOMTOM_API_KEY. Do not paste values here.",
-                "skipped": skipped[:20]}
-    target = env_path or env_file()
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        current = read_env(target)
-        current.update(chosen)
-        lines = [f"{key}={current[key]}" for key in sorted(current)]
-        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, ("\n".join(lines) + "\n").encode())
-        finally:
-            os.close(fd)
-        os.chmod(target, 0o600)
-        mode = oct(stat.S_IMODE(target.stat().st_mode))
-    except OSError:
-        return {"ok": False, "error": "write_failed", "message": "The env file could not be written.",
-                "fix": "Check the directory of the env file. Nothing was echoed."}
-    for key, value in chosen.items():
-        os.environ[key] = value
-    regenerated = None
-    if regen is not None:
-        try:
-            regenerated = regen()
-        except Exception:
-            regenerated = {"ok": False, "error": "config_write_failed"}
-    restarted = None
-    if restart is not None:
-        try:
-            restarted = restart()
-        except Exception:
-            restarted = {"ok": False, "error": "restart_failed"}
-    if invalidate is not None:
-        try:
-            invalidate()
-        except Exception:
-            pass
-    probes = []
-    if probe is not None:
-        try:
-            probes = probe()
-        except Exception:
-            probes = []
-    result = {
-        "ok": True,
-        "action": "install",
-        "installed": installed,
-        "skipped": skipped[:20],
-        "env": str(target),
-        "mode": mode,
-        "probes": probes,
-        "cache": "reload the pane" if TOMTOM_KEY in installed else None,
-    }
-    if regenerated is not None:
-        result["config"] = {k: regenerated.get(k) for k in ("ok", "paths", "fields", "error") if isinstance(regenerated, dict)}
-    if isinstance(restarted, dict):
-        result["restarted"] = bool(restarted.get("ok"))
-    text = str(result)
-    for value in chosen.values():
-        if len(value) >= _SECRET_CHARS and value in text:
-            result = {"ok": False, "error": "redaction_failed", "message": "The result was dropped because it contained a secret."}
-            break
-    return result

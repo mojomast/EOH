@@ -43,7 +43,8 @@ def test_brief_caption_scope_in_brief_and_show():
 def test_provider_key_checks_never_leak_values(tmp_path, monkeypatch):
     envf = tmp_path / "e.env"
     envf.write_text("AISSTREAM_API_KEY=super-secret-ais-key-value\nFIRMS_MAP_KEY=firms-secret-zzz\n")
-    monkeypatch.setattr(composer, "env_file", lambda: envf)
+    monkeypatch.setenv("AISSTREAM_API_KEY", "super-secret-ais-key-value")
+    monkeypatch.setenv("FIRMS_MAP_KEY", "firms-secret-zzz")
     out = composer.provider_key_checks(envf)
     by = {c["check"]: c for c in out}
     assert by["key AISSTREAM_API_KEY"]["ok"] and by["key FIRMS_MAP_KEY"]["ok"]

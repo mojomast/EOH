@@ -45,7 +45,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "KEY_MISSING": {
         "message": "A provider key is missing from the env file or the panel bundle.",
-        "fix": "Add the named key to ~/.config/gods-eye-view.env (mode 0600). Never print the value. Client keys are written to dist/panel/config.json when the pane is served, so a current God's Eye View build does not need a rebuild. Older builds still need godseye_admin op=rebuild. godseye_admin op=doctor lists KEY_MISSING and PANEL_STALE.",
+        "fix": "Configure the named key through Hermes for the active profile. Never print the value. Client keys are written to dist/panel/config.json when the pane is served, so a current God's Eye View build does not need a rebuild. Older builds still need godseye_admin op=rebuild. godseye_admin op=doctor lists KEY_MISSING and PANEL_STALE.",
     },
     "PANEL_STALE": {
         "message": "The panel bundle is older than the env file, so client keys are not baked in.",
@@ -57,7 +57,7 @@ TABLE: dict[str, dict[str, str]] = {
     },
     "ION_SCOPES": {
         "message": "The Cesium ion token is shipped to the browser but claims more than read access.",
-        "fix": "Issue a Cesium ion token with only assets:read and assets:list, put it in ~/.config/gods-eye-view.env, call godseye_admin op=rebuild, and retry. Do not print the token.",
+        "fix": "Issue a Cesium ion token with only assets:read and assets:list, configure it through Hermes for the active profile, call godseye_admin op=rebuild, and retry. Do not print the token.",
     },
     "OVERPASS_NOT_CONFIGURED": {
         "message": "In-pane osm_query has no Overpass server configured.",

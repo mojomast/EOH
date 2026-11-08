@@ -181,7 +181,8 @@ def load_path(path: str) -> tuple[list[dict], str]:
     raw = str(path or "").strip()
     if not raw or "://" in raw:
         raise ValueError("source must be a file path, not a URL.")
-    file = Path(raw).expanduser()
+    from .security import import_file
+    file = import_file(raw)
     if file.name.startswith(".env") or file.suffix == ".env":
         raise ValueError("Refusing to read an env file as a dataset.")
     if not file.is_file():

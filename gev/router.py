@@ -229,8 +229,6 @@ CATALOG: tuple[Target, ...] = (
        "health check; probe=true or detail=full calls each keyed provider once"),
     _t("godseye_batch", "godseye_admin", "batch", "extra", "B",
        "calls is a list of {tool, args}; stop_on_error stops early"),
-    _t("godseye_keys", "godseye_admin", "keys", "extra", "B",
-       "action install reads a KEY=VALUE path; values are never echoed"),
     _t("godseye_rebuild_panel", "godseye_admin", "rebuild", "extra", "B", "rebuild dist/panel"),
     _t("godseye_live_reload_pane", "godseye_admin", "reload", "extra", "B", "reload the open pane"),
     _t("godseye_preview_swap", "godseye_admin", "preview", "extra", "B", "single desktop preview tab"),
@@ -1196,7 +1194,7 @@ _LEADS = {
     "godseye_annotate": (
         "Pins, routes, areas, drawings, filters, and the overlay sidebar. One op per call. "
         "op=overlays lists the tree (show, hide, delete, update, import, export). "
-        "source is a .jsonl, .csv, or .json path. records is a list of {lat, lon, label, description_md, images, links, tags, category, id}."
+        "source is a .jsonl, .csv, or .json path under plugin-data/godseye or the host-configured GODSEYE_IMPORT_ROOT. records is a list of {lat, lon, label, description_md, images, links, tags, category, id}."
     ),
     "godseye_nav": (
         "Measure, isochrone, fly a drawn route, walk it in Street View, step Street Level, build an itinerary, compare imagery, or scrub time. "
@@ -1213,7 +1211,7 @@ _LEADS = {
     ),
     "godseye_admin": (
         "Health check, control room, app start/stop/restart, batch, key install, panel rebuild, pane reload, or the desktop preview tab. "
-        "One op per call. Start, stop, and restart run only when you call them. keys takes a file path and never a secret value."
+        "One op per call. Start, stop, and restart run only when you call them. Configure provider credentials through Hermes for the active profile."
     ),
 }
 

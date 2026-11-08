@@ -93,7 +93,7 @@ That samples the line about every 75 m (`stepM`, clamped to 20–250), looks up 
 
 `op=street_level` opens one panorama. The sub-action is an argument named `street`: `at`, `next`, `prev`, or `route`. `op=itinerary` builds a `drive` or `walk` line through pin ids or coordinates, draws it as one mark, and can run the chunked dolly or street-level stops.
 
-`godseye_annotate` accepts `source` (a `.jsonl`, `.csv`, or `.json` path) or `records`. Each row is `lat`, `lon`, `label`, `description_md`, `images`, `links`, `tags`, `category`, and `id`. `replace: true` updates a pin with the same id or within 25 m. Exact duplicates are skipped. `op=update` patches one pin without a redraw. `op=delete` accepts `ids`. Labels that share a spot are stacked, and the fifth one at that spot is hidden. A bbox is `{south, west, north, east}` or `{place, radius_km}`. A four-number list that is only valid in the other order is converted. A list that is valid both ways keeps the tool's documented order and warns. `op=doctor` with `probe: true` calls each keyed provider once, including TomTom, and does not print key values. `op=keys` with `action: install` reads a path and never a secret. `op=batch` runs up to 16 composable calls. `op=pane` returns a PNG of the pane, including the drawer. `op=reload` reports `unsavedMarks`.
+`godseye_annotate` accepts `source` (a `.jsonl`, `.csv`, or `.json` path) or `records`. Each row is `lat`, `lon`, `label`, `description_md`, `images`, `links`, `tags`, `category`, and `id`. `replace: true` updates a pin with the same id or within 25 m. Exact duplicates are skipped. `op=update` patches one pin without a redraw. `op=delete` accepts `ids`. Labels that share a spot are stacked, and the fifth one at that spot is hidden. A bbox is `{south, west, north, east}` or `{place, radius_km}`. A four-number list that is only valid in the other order is converted. A list that is valid both ways keeps the tool's documented order and warns. `op=doctor` with `probe: true` calls each keyed provider once, including TomTom, and does not print key values. `op=keys` has been removed; configure credentials through Hermes. `op=batch` runs up to 16 composable calls. `op=pane` returns a PNG of the pane, including the drawer. `op=reload` reports `unsavedMarks`.
 
 If the pane reloads mid-walk, the saved scene comes back and the next turn hears that the walk was interrupted. `walk=resume` continues it.
 
@@ -153,7 +153,7 @@ Watches exist only when someone creates one. Hermes cron schedules model prompts
 | `gev:config` | Before the viewer starts (`?waitForConfig=1`), with the client keys and `perf` | Applies keys and the performance profile, then replies `gev:config-applied` |
 | `gev:visibility` | Page visibility and an intersection observer: hidden when the pane is covered or the tab is in the background | Pauses the render loop, HUD timers, and feed polls, then replies `gev:visibility-applied` |
 
-The same keys are written to `dist/panel/config.json` in the God's Eye View checkout (mode 0600, gitignored there) and injected as `GEV_RUNTIME_CONFIG` in the panel HTML. `perf` is sent on the query string and in the message. It is not written into `config.json`. Changing a client key on a build that understands this protocol does not need `npm run build:panel`. Older builds still bake the keys; `godseye_admin` `op=rebuild` is for those. Server keys (`AISSTREAM_API_KEY`, `FIRMS_MAP_KEY`) stay in the env file.
+The same keys are written to `dist/panel/config.json` in the God's Eye View checkout (mode 0600, gitignored there) and injected as `GEV_RUNTIME_CONFIG` in the panel HTML. `perf` is sent on the query string and in the message. It is not written into `config.json`. Changing a client key on a build that understands this protocol does not need `npm run build:panel`. Older builds still bake the keys; `godseye_admin` `op=rebuild` is for those. Server keys (`AISSTREAM_API_KEY`, `FIRMS_MAP_KEY`, `TOMTOM_API_KEY`) are resolved through Hermes and passed only to the app process that needs them, never to the pane.
 
 The pane frame is the Desktop SDK's `SandboxedFrame`: an opaque origin, scripts allowed, `allow-same-origin` never added. App files the panel needs are loaded through the plugin backend, and that backend allows only `panel_request` and `show_in_gods_eye_view` from the pane. The viewer then requests imagery from the providers configured in the app. A worker shim lets Cesium's workers run in the opaque frame. Branding (`gev/panel_brand.js`) replaces the app's header wordmark with **EOH** / **EYE OF HERMES** and leaves the provider credits alone.
 
@@ -196,9 +196,30 @@ On a checkout without patch 0002 the pane shows the globe and hides the full-UI 
 
 ### Environment
 
-No key is stored in this repository. **Street-level keys** (`GOOGLE_MAPS_API_KEY`, optional alternate `GOOGLE_API_KEY`, and `MAPILLARY_CLIENT_TOKEN`) are declared in `plugin.yaml` `requires_env` and read only through Hermes `agent.secret_scope.get_secret` (catalog rule 11). `hermes plugins install` prompts for them; you can skip and set them later in the active Hermes profile `.env`. Doctor reports where a key is set and never prints the value.
+No key is stored in this repository. **Every provider credential** is declared in
+`plugin.yaml` `requires_env` and resolved only through Hermes
+`agent.secret_scope.get_secret` (catalog rule 11), including Cesium, Google,
+Mapillary, FIRMS (and its legacy aliases), AISStream, and TomTom. Configure them
+through Hermes for the active profile. Existing single-profile installations
+using `~/.hermes/.env` continue to work: Hermes loads that file and its scoped
+secret API exposes the values. EOH does not read that file itself, read the app's
+`.env` or `~/.config/gods-eye-view.env`, or mutate process-wide credentials.
+Doctor reports presence and names, never values. `godseye_admin op=keys` is removed.
 
-God's Eye View's own pane/client keys for the upstream app (Cesium ion, basemap HUD labels, and the panel rebuild) may still live in `~/.config/gods-eye-view.env` (override with `GODSEYE_ENV_FILE`) mode 0600 for the Node app checkout — that file is **not** a credential source for this plugin's street-level server lookups.
+Node/npm children receive an exact-name minimal environment, not Hermes's full
+environment. HUD/share/MCP helpers get no provider credentials; panel builds get
+only client map keys, and the app process gets only declared app provider keys.
+Browser-visible map tokens are still written to the app's gitignored mode-0600
+runtime config and supplied to its pane; restrict their provider scopes.
+
+Pin/venue website fetches accept public HTTP(S) destinations only: all resolved
+addresses are vetted and connections are pinned to them, including every redirect.
+Dataset and overlay imports are restricted to `plugin-data/godseye/` by default.
+To import from another folder, the **user** may set `GODSEYE_IMPORT_ROOT` to that
+specific absolute folder in the host environment. The model cannot grant a folder
+via a tool argument. Traversal and symlinks escaping approved roots are rejected.
+Relative dataset paths start at plugin-data; relative overlay paths start at its
+`overlays/` folder. Inline `records`/`document` imports remain available.
 
 **Provider keys**
 
@@ -209,6 +230,7 @@ God's Eye View's own pane/client keys for the upstream app (Cesium ion, basemap 
 | `GOOGLE_API_KEY` | Optional. Hermes-declared alternate used only when `GOOGLE_MAPS_API_KEY` is unset. |
 | `MAPILLARY_CLIENT_TOKEN` | Optional. Hermes-declared. Mapillary street-level imagery when Google misses or has no key. Doctor allows it to be unset. |
 | `PHOTON_URL` | Photon geocoder. An empty value, or `off`, disables it. |
+| `TOMTOM_API_KEY` | Optional. Hermes-declared TomTom traffic flow credential. |
 | `AISSTREAM_API_KEY` | Live ships, server-side only. Doctor reports `KEY_MISSING` when it is unset. |
 | `FIRMS_MAP_KEY` | NASA FIRMS fires, server-side only. `FIRMS_API_KEY`, `FIRMS_KEY`, and `NASA_FIRMS_KEY` are accepted aliases. Doctor reports `KEY_MISSING` when it is unset. |
 
@@ -344,7 +366,7 @@ Every name in `plugin.yaml`, once.
 - `godseye_scene` — Save, list, load, delete (needs `confirm=true`), report, export (GeoJSON, KML, or `format=pack`), restore, tour, cinematic playback, and Director scenes (`director`, `director_update`, `director_list`, `director_play`, `director_stop`).
 - `godseye_watch` — Create, list (`check` runs one now), pause, or delete (needs `confirm=true`). Feeds: earthquakes, fires, flights, ships, places.
 - `godseye_capture` — HUD visibility and layout, a one-line caption from the Hermes model, and `op=pane` for a PNG of the pane.
-- `godseye_admin` — Doctor (read-only, or `probe: true`), `batch`, `keys` (a path, never a value), control room (`status`, `app_start`, `app_stop`, `app_restart`), rebuild `dist/panel`, reload the pane, or one desktop preview tab.
+- `godseye_admin` — Doctor (read-only, or `probe: true`), `batch`, control room (`status`, `app_start`, `app_stop`, `app_restart`), rebuild `dist/panel`, reload the pane, or one desktop preview tab.
 
 </details>
 
@@ -439,7 +461,7 @@ Start with `/gev doctor`. The fix under each failed check is the one to follow.
 | `relay_unavailable` | Restart the Hermes dashboard or gateway with the plugin enabled, so the relay starts. |
 | `timeout` | Retry once. If it happens again, run `godseye_view` `op=panes` and `godseye_admin` `op=doctor` before changing arguments. |
 | `upstream_down` | The app is not answering `GODSEYE_API_BASE`. Start it with `npm run dev`. |
-| `KEY_MISSING` / `PANEL_STALE` | Add the named key to the env file, mode 0600. On a current build, open the pane so `config.json` is rewritten. On an older build, run `godseye_admin` `op=rebuild`. |
+| `KEY_MISSING` / `PANEL_STALE` | Configure the named key through Hermes for the active profile. On a current build, open the pane so `config.json` is rewritten. On an older build, run `godseye_admin` `op=rebuild`. |
 | `ION_SCOPES` | Issue a Cesium ion token limited to `assets:read` and `assets:list`. |
 | Blank globe, or CesiumWidget / WebGL init failed | The browser is out of WebGL contexts. Close the tab (a reload may not free them) and open the pane again. A context lost later is recovered in the same pane. After 3 losses in 20 seconds, or when `GODSEYE_GL_RECOVER=0`, the pane shows **Click to reload the globe**. |
 | `routing_unavailable` | OSRM or Valhalla did not answer. Distance still works with `godseye_nav` `op=measure` and `measure=distance`. Set `GODSEYE_OSRM_URL` or `GODSEYE_VALHALLA_URL` to point at your own servers. |

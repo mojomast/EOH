@@ -96,6 +96,8 @@ def test_poi_details_no_invention(monkeypatch):
             return 200, "<p>Tonkotsu ramen $16.50</p>"
         return 200, '<a href="/menu">Menu</a>'
     monkeypatch.setattr(poi, "_http", http)
+    from gev import public_http
+    monkeypatch.setattr(public_http, "get", lambda url, **kw: http(url))
     r = poi.poi_details({"name": "Ramen 0", "city": "Montreal"})
     assert r["menu_url"] == "https://x.example/menu" and any("$16.50" in x for x in r["prices"])
 

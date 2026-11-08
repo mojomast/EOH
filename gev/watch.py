@@ -60,7 +60,8 @@ def _feed_failure(feed: str, error, status: str | None = None, fix: str | None =
 
 
 def default_path() -> Path:
-    home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
+    from hermes_constants import get_hermes_home
+    home = Path(get_hermes_home())
     return home / "plugin-data" / "godseye" / "watches.json"
 
 
@@ -179,13 +180,8 @@ def view_area(view: dict) -> dict:
 
 # ---- keys (presence and value; values never logged or returned) -------------------------------
 def key_value(name: str) -> str | None:
-    if os.environ.get(name):
-        return os.environ[name]
-    try:
-        from .composer import env_file, read_env
-        return read_env(env_file()).get(name) or None
-    except Exception:
-        return None
+    from .security import secret
+    return secret(name) or None
 
 
 # ---- feeds: each returns {"status": "OK"|"KEY_MISSING"|"ERROR", "items": [...], "error"?} ------
@@ -231,7 +227,7 @@ def feed_fires(area: dict, cond: dict) -> dict:
     key = key_value("FIRMS_MAP_KEY")
     if not key:
         return {"status": "KEY_MISSING", "items": [], "key": "FIRMS_MAP_KEY",
-                "error": "FIRMS_MAP_KEY is not set (env or ~/.config/gods-eye-view.env); fires are not checked. "
+                "error": "FIRMS_MAP_KEY is not set in the active Hermes profile; fires are not checked. "
                          "Get a free key at https://firms.modaps.eosdis.nasa.gov/api/map_key/"}
     s, w, n, e = area["bbox"]
     src = str(cond.get("source") or "VIIRS_SNPP_NRT")
@@ -369,8 +365,8 @@ def feed_flights(area: dict, cond: dict) -> dict:
 def feed_ships(area: dict, cond: dict) -> dict:
     if not key_value("AISSTREAM_API_KEY"):
         return {"status": "KEY_MISSING", "items": [], "state": "key_missing", "key": "AISSTREAM_API_KEY",
-                "error": "AISSTREAM_API_KEY is not set in the provider env file; ships are not checked.",
-                "fix": "Add AISSTREAM_API_KEY to the provider env file (mode 0600) and restart the app. Never print the value."}
+                "error": "AISSTREAM_API_KEY is not set in the active Hermes profile; ships are not checked.",
+                "fix": "Configure AISSTREAM_API_KEY through Hermes for the active profile and restart the app. Never print the value."}
     s, w, n, e = area["bbox"]
     try:  # the app holds the AIS stream; ask it (needs the God's Eye View MCP server)
         from . import composer

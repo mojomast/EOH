@@ -121,6 +121,7 @@ def test_alerts_queue_for_the_chat_turn_and_inject_when_asked(tmp_path):
 
 
 def test_pre_llm_call_hook_and_inject_binding(monkeypatch, tmp_path):
+    monkeypatch.setenv("GODSEYE_TURN_STATE", "0")  # isolate alert consumption from the map-line hook
     st, feed = mk(tmp_path, [])
     monkeypatch.setattr(watch, "_store", st)
 

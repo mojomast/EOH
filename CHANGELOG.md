@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.7 — Unreleased
+
+Catalog review hardening (NousResearch/hermes-agent#149691):
+
+- Vet all DNS results for untrusted pin/venue website fetches, pin connections to
+  public addresses, and revalidate every redirect.
+- Resolve every runtime provider credential through Hermes secret_scope; declare
+  Cesium, FIRMS (including aliases), AISStream and TomTom alongside existing keys.
+- Remove key-file installation and process-wide credential mutation.
+- Give Node/npm helpers minimal, exact-name child environments.
+- Replace private desktop imports with deferred public desktop_preview steps.
+- Resolve persistent paths through Hermes's profile-aware get_hermes_home().
+- Restrict dataset/overlay imports to plugin-data or a user-configured import folder,
+  including symlink/traversal checks.
+
 ## 0.2.6 — 2026-11-06
 
 ### Changed

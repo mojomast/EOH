@@ -12,7 +12,8 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,80}$")
 
 
 def data_dir() -> Path:
-    home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
+    from hermes_constants import get_hermes_home
+    home = Path(get_hermes_home())
     return home / "plugin-data" / "godseye"
 
 

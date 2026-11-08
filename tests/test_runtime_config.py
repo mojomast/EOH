@@ -66,14 +66,15 @@ def test_config_message_shape():
     assert len(runtime_config.revision({"cesiumIonToken": "a"}, "embed")) == 16
 
 
-def test_panel_checks_runtime_config_satisfies_key_without_a_rebuild(tmp_path):
+def test_panel_checks_runtime_config_satisfies_key_without_a_rebuild(tmp_path, monkeypatch):
     root = tmp_path / "gev"
     (root / "dist" / "panel" / "assets").mkdir(parents=True)
     bundle = root / "dist" / "panel" / "assets" / "index-x.js"
     bundle.write_text("gev:config GEV_RUNTIME_CONFIG waitForConfig")
     envf = tmp_path / "e.env"
     token = "ion-secret-value-not-for-logs"
-    envf.write_text(f"CESIUM_ION_TOKEN={token}\n")
+    envf.write_text("CESIUM_ION_TOKEN=ignored-file-value\n")
+    monkeypatch.setenv("CESIUM_ION_TOKEN", token)
     # Env is newer than the bundle, and the token is not baked. config.json matches.
     os.utime(bundle, (1000, 1000))
     runtime_config.write_files(root, {"CESIUM_ION_TOKEN": token})
@@ -85,14 +86,15 @@ def test_panel_checks_runtime_config_satisfies_key_without_a_rebuild(tmp_path):
     assert fresh["ok"] is True and "config.json" in fresh["detail"]
 
 
-def test_panel_checks_runtime_missing_file_names_config_json(tmp_path):
+def test_panel_checks_runtime_missing_file_names_config_json(tmp_path, monkeypatch):
     root = tmp_path / "gev"
     (root / "dist" / "panel" / "assets").mkdir(parents=True)
     bundle = root / "dist" / "panel" / "assets" / "index-x.js"
     bundle.write_text("waitForConfig")
     envf = tmp_path / "e.env"
     token = "ion-secret-value-not-for-logs"
-    envf.write_text(f"CESIUM_ION_TOKEN={token}\n")
+    envf.write_text("CESIUM_ION_TOKEN=ignored-file-value\n")
+    monkeypatch.setenv("CESIUM_ION_TOKEN", token)
     out = composer.panel_checks(root, envf)
     codes = {c.get("code") for c in out}
     assert "KEY_MISSING" in codes and "PANEL_STALE" in codes

@@ -1,7 +1,7 @@
 """Runtime client config for a God's Eye View build that reads it.
 
 ``dist/panel/config.json`` (and ``public/config.json`` in a dev checkout) is
-rewritten from the env file when the pane is served or the panel is rebuilt.
+rewritten from Hermes-scoped credentials when the pane is served or the panel is rebuilt.
 A key change does not need ``npm run build:panel`` on a build that fetches
 that file or accepts ``gev:config``. Values are never logged or returned.
 
@@ -61,16 +61,14 @@ def overlay_from_env(env: dict | None) -> dict:
 
 
 def merged_env(root: Path | None, envf: Path | None) -> dict:
-    """Repo ``.env``, then the env file, then process env. Values stay in this dict only."""
-    from .composer import read_env
-    out: dict = {}
-    if root is not None:
-        out.update(read_env(root / ".env"))
-    if envf is not None:
-        out.update(read_env(envf))
-    for env_key, _field in _FIELDS:
-        if os.environ.get(env_key):
-            out[env_key] = os.environ[env_key]
+    """Compatibility signature; paths are ignored. Only Hermes resolves secrets."""
+    from .security import secrets
+    out = secrets(("GOOGLE_MAPS_API_KEY", "GOOGLE_API_KEY", "MAPILLARY_CLIENT_TOKEN", "CESIUM_ION_TOKEN"))
+    if not out.get("GOOGLE_MAPS_API_KEY") and out.get("GOOGLE_API_KEY"):
+        out["GOOGLE_MAPS_API_KEY"] = out["GOOGLE_API_KEY"]
+    # PHOTON_URL is a non-credential application setting.
+    if "PHOTON_URL" in os.environ:
+        out["PHOTON_URL"] = os.environ["PHOTON_URL"]
     return out
 
 

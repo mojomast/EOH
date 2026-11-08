@@ -6,9 +6,8 @@ brief flows that want a single preview tab should call
 ``godseye_preview_swap`` (or :func:`swap`) which tracks the last URL this
 plugin opened and closes it before asking for a new one.
 
-When the desktop emitter is available the helper emits ``preview.close`` /
-``preview.open`` itself. Otherwise it returns structured close+open steps the
-agent can run through ``desktop_preview``.
+The helper returns structured close+open steps the agent runs through the
+public ``desktop_preview`` tool. It never imports private host modules.
 """
 from __future__ import annotations
 
@@ -45,18 +44,8 @@ def clear() -> str | None:
 
 
 def _try_desktop(event: str, payload: dict) -> dict | None:
-    """Emit via Hermes desktop_ui when running inside a desktop session."""
-    try:
-        from tools import desktop_ui  # type: ignore
-    except Exception:
-        return None
-    if not getattr(desktop_ui, "available", lambda: False)():
-        return None
-    try:
-        ok = desktop_ui.emit(event, payload)
-        return {"ok": bool(ok), "event": event, "payload": {k: payload[k] for k in payload if k != "url" or True}}
-    except Exception as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+    """No private host integration: the agent runs desktop_preview_steps."""
+    return None
 
 
 def swap(url: str, label: str = "", closer: Callable | None = None,

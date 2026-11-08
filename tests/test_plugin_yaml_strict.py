@@ -28,7 +28,7 @@ def test_plugin_yaml_strict_no_duplicate_keys():
     assert err is None, f"duplicate key in plugin.yaml: {err}"
     assert isinstance(data, dict)
     assert data.get("name") == "godseye"
-    assert data.get("version") == "0.2.6"
+    assert data.get("version") == "0.2.7"
     tools = data.get("provides_tools") or []
     assert len(tools) == 11
     assert len(tools) == len(set(tools))
