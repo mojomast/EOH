@@ -15,7 +15,7 @@ COMPOSABLE = {
     "godseye_annotate", "godseye_nav", "godseye_track", "godseye_scene",
     "godseye_watch", "godseye_capture", "godseye_admin",
 }
-BLOB = "data:image/png;base64," + "A" * 2400
+BLOB = "data:image/png;base64," + "A" * 24000
 
 
 class Ctx:

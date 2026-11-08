@@ -268,6 +268,10 @@ def make_live_handler(name: str):
         if name in detail.LARGE_LIVE:
             return detail.render_obj(out, mode)
         text = json.dumps(out, ensure_ascii=False)
+        # Capture is bounded in the pane and rendered by router._capture_detail.
+        # Never slice its JSON/base64 before concise/full serialization.
+        if name == "godseye_pane_shot":
+            return text
         return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
     return handler
 
@@ -1054,6 +1058,10 @@ def extra_handler(name: str):
         if name in detail.LARGE_EXTRA:
             return detail.render_obj(out, mode)
         text = json.dumps(out, ensure_ascii=False)
+        # Capture is bounded in the pane and rendered by router._capture_detail.
+        # Never slice its JSON/base64 before concise/full serialization.
+        if name == "godseye_pane_shot":
+            return text
         return text if len(text) <= 20000 else text[:20000] + "…(truncated)"
     return handler
 
