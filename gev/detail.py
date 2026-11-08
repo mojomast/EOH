@@ -224,6 +224,30 @@ def render_mcp(name: str, result: dict, mode: str) -> str:
         return json.dumps(annotate({"ok": False, "error": (text or "tool failed")[:2000]}, tool=name),
                           ensure_ascii=False)
     structured = (result or {}).get("structuredContent")
+    # These feeds emit a short prose block followed by JSON. Joining the two
+    # blocks is not JSON, even when the feed itself succeeded. Prefer the
+    # structured envelope, and fail closed for prose-only provider failures.
+    if name in {"get_active_fires", "vessels_in_area", "find_vessel", "get_vessel_track"}:
+        payload = structured if isinstance(structured, dict) and structured else None
+        if payload is None:
+            for block in (result or {}).get("content") or []:
+                parsed = _parse_json(block.get("text", "")) if isinstance(block, dict) else None
+                if isinstance(parsed, dict):
+                    payload = parsed
+                    break
+        if payload is None:
+            payload = {"ok": False, "code": "FEED_RESPONSE_ERROR",
+                       "error": (text or "Feed returned no structured response.")[:2000],
+                       "fix": "Check the provider credentials in the active Hermes profile and retry."}
+        elif payload.get("ok") is False or payload.get("error"):
+            payload = {**payload, "ok": False}
+        else:
+            payload = {"ok": True, **payload}
+        if payload.get("ok") is False:
+            payload = annotate(payload, tool=name)
+        if mode != "full" and payload.get("ok") is not False:
+            payload, _changed = shrink_tool(payload)
+        return json.dumps(payload, ensure_ascii=False)
     if mode == "full":
         if images or (structured not in (None, {}, []) and _parse_json(text) is None and text):
             payload: dict = {}
