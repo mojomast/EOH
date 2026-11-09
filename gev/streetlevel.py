@@ -38,12 +38,13 @@ def _clean(text: str) -> str:
 
 def _get(url: str, headers: dict | None = None, timeout: float = 8) -> tuple[int, str]:
     """GET that never raises and never returns a secret-bearing URL."""
-    req = urllib.request.Request(url, headers={
-        "User-Agent": USER_AGENT, "Accept": "application/json", **(headers or {})})
+    from .public_http import UnsafeURL, header_value, request as public_request
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return response.status, response.read(200_000).decode("utf-8", "replace")
-    except Exception:
+        return public_request(
+            url, timeout=timeout, limit=200_000,
+            headers={"User-Agent": header_value(USER_AGENT), "Accept": "application/json", **(headers or {})},
+        )
+    except (UnsafeURL, Exception):
         return 0, ""
 
 
