@@ -65,6 +65,18 @@ Pane chrome and the look of the globe. Needs the pane.
 | `stack` | `stack` | `photoreal`, `bing-aerial`, `bing-labels`, `esri-imagery`, `osm`. |
 | `post` | | `bloom` and `sharpen`. |
 
+## Public SDR receivers
+
+`sdr-receivers` is a directory layer, not a tuner. `godseye_layers` `op=visibility` with `layerId=sdr-receivers`, `enabled=true` shows public receivers on the globe. Default pins are the ~1,325 KiwiSDR/OpenWebRX receivers that can stream both audio and a waterfall; turn off `MAP: AUDIO + WATERFALL ONLY` in the PUBLIC SDR card to show all ~1,876 receivers, including WebSDR, UberSDR, SpyServer, and HTTPS-only sites.
+
+A pin click is the user's explicit play gesture: it selects the receiver in the PUBLIC SDR card, starts audio, and opens the floating spectrum/waterfall. Never start a stream without a click or an explicit request. One stream at a time. Stop on STOP, Radio-panel collapse, pane hide (`gev:visibility`), or selecting another receiver.
+
+Only `http://` KiwiSDR and OpenWebRX play natively in the pane. HTTPS receivers, WebSDR, UberSDR, and SpyServer do not; the card links out with `OPEN ↗`. Receiver pages are linked, never framed. Do not weaken the pane sandbox (`allow-same-origin` is forbidden) and do not claim audio is playing unless the card says `Playing`.
+
+Deep link: `?sdr=<id>&f=<MHz>&m=<mode>&wf=1&play=1`, for example `?sdr=kiwi%3A91.234.129.51%3A8888&f=7.14&m=lsb&wf=1&play=1`. The waterfall is a floating, movable, resizable window; the globe stays usable behind it. It exposes a dB scale, peak/SNR, S-meter, noise floor, FFT size, users, coverage, tuning step, mode, zoom/pan/full-band, pause, and a PNG snapshot.
+
+If the pane is down, say so: feeds still work, but the map, pins, and audio do not.
+
 ## godseye_feeds
 
 Public facts. Most ops work with the pane closed. One op per call. `detail: "full"` for rows or an image. A bbox is `{south, west, north, east}` or `{place, radius_km}`. A four-number list is accepted only when one order is a real box.
@@ -218,6 +230,9 @@ Read the `EOH pane=` line. `godseye_query` `{op:"context"}`. Answer from `focus`
 
 **"Any military activity near San Diego?"**
 `godseye_query` `{op:"brief_and_show", place:"San Diego", question:"military activity"}` or `{op:"military", location:{place:"San Diego"}}`.
+
+**"Show public SDR receivers."**
+`godseye_layers` `{op:"visibility", layerId:"sdr-receivers", enabled:true}`, then `godseye_query` to the place. A pin click is the play gesture; if the user names a receiver without clicking, open the PUBLIC SDR card or the deep link rather than starting audio silently.
 
 **"How many flights are in view?"**
 `godseye_query` `{op:"analyst", layers:["flights"], scope:{kind:"view"}}`.

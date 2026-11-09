@@ -2,6 +2,12 @@
 
 ## 0.2.7 — Unreleased
 
+Public SDR layer:
+
+- Add `sdr-receivers` to the live layer tools and document the PUBLIC SDR card,
+  floating waterfall, audio+waterfall filter, deep links, and native-audio
+  limits in the analyst skill.
+
 Catalog review hardening (NousResearch/hermes-agent#149691):
 
 - Vet all DNS results for untrusted pin/venue website fetches, pin connections to
