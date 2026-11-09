@@ -1,0 +1,11 @@
+{
+  "02": {"name":"EARTH / GLOBAL VIEW","reference":"EQUATOR / PRIME MERIDIAN","lat":0,"lon":0,"source":"https://en.wikipedia.org/wiki/Geographic_coordinate_system"},
+  "03": {"name":"TOKYO / JAPAN","reference":"TOKYO / REFERENCE POINT","lat":35.6762,"lon":139.6503,"source":"https://www.findlatlong.com/coordinates/japan/tokyo"},
+  "04": {"name":"SAN FRANCISCO / FERRY BUILDING","reference":"FERRY BUILDING / REFERENCE","lat":37.7955,"lon":-122.3937,"source":"https://en.wikipedia.org/wiki/San_Francisco_Ferry_Building"},
+  "05": {"name":"SYDNEY / OPERA HOUSE","reference":"OPERA HOUSE / REFERENCE","lat":-33.85681,"lon":151.21514,"source":"https://en.wikipedia.org/wiki/Sydney_Opera_House"},
+  "06": {"name":"TOKYO / TOWER","reference":"TOKYO TOWER / REFERENCE","lat":35.6586,"lon":139.7454,"source":"https://www.latlong.net/place/tokyo-tower-japan-22557.html"},
+  "07": {"name":"CALDOR FIRE / GRIZZLY FLATS","reference":"GRIZZLY FLATS / REFERENCE","lat":38.63639,"lon":-120.52750,"source":"https://en.wikipedia.org/wiki/Grizzly_Flats,_California"},
+  "08": {"name":"TORONTO / PEARSON","reference":"PEARSON AIRPORT / REFERENCE","lat":43.67611,"lon":-79.63056,"source":"https://en.wikipedia.org/wiki/Toronto_Pearson_International_Airport"},
+  "09": {"name":"HOLLYWOOD PARK / SOFI STADIUM","reference":"SOFI STADIUM / REFERENCE","lat":33.953587,"lon":-118.339630,"source":"https://www.latlong.net/place/sofi-stadium-ca-usa-31639.html"},
+  "10": {"name":"LONDON / RICHMOND","reference":"RICHMOND / REFERENCE POINT","lat":51.46134,"lon":-0.30352,"source":"https://maps.apple.com/place?auid=5238897891825915516"}
+}
