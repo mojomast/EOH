@@ -172,6 +172,7 @@ A second loopback, the HUD bridge on `127.0.0.1:18791`, lets the app's own SUMMA
 git clone https://github.com/mojomast/gods-eye-view.git ~/gods-eye-view
 cd ~/gods-eye-view && npm ci && npm run build:panel && npm run dev
 # serves http://localhost:4173
+# Public SDR receivers / waterfall need fork main at or after gods-eye-view#5.
 
 # 2. The plugin
 hermes plugins install mojomast/hermes-godseye

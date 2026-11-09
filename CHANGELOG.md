@@ -1,12 +1,16 @@
 # Changelog
 
-## 0.2.7 — Unreleased
+## 0.2.8 — Unreleased
 
 Public SDR layer:
 
 - Add `sdr-receivers` to the live layer tools and document the PUBLIC SDR card,
   floating waterfall, audio+waterfall filter, deep links, and native-audio
-  limits in the analyst skill.
+  limits in the analyst skill. The map layer and waterfall need
+  [mojomast/gods-eye-view](https://github.com/mojomast/gods-eye-view) `main`
+  at or after the merge of pull request #5 (public SDR receiver layer).
+
+## 0.2.7 — Unreleased
 
 Catalog review hardening (NousResearch/hermes-agent#149691):
 

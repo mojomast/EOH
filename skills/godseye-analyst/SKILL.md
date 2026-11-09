@@ -67,7 +67,7 @@ Pane chrome and the look of the globe. Needs the pane.
 
 ## Public SDR receivers
 
-`sdr-receivers` is a directory layer, not a tuner. `godseye_layers` `op=visibility` with `layerId=sdr-receivers`, `enabled=true` shows public receivers on the globe. Default pins are the ~1,325 KiwiSDR/OpenWebRX receivers that can stream both audio and a waterfall; turn off `MAP: AUDIO + WATERFALL ONLY` in the PUBLIC SDR card to show all ~1,876 receivers, including WebSDR, UberSDR, SpyServer, and HTTPS-only sites.
+`sdr-receivers` is a directory layer, not a tuner. Requires mojomast/gods-eye-view main at or after the merge of pull request #5. `godseye_layers` `op=visibility` with `layerId=sdr-receivers`, `enabled=true` shows public receivers on the globe. Default pins are the ~1,325 KiwiSDR/OpenWebRX receivers that can stream both audio and a waterfall; turn off `MAP: AUDIO + WATERFALL ONLY` in the PUBLIC SDR card to show all ~1,876 receivers, including WebSDR, UberSDR, SpyServer, and HTTPS-only sites.
 
 A pin click is the user's explicit play gesture: it selects the receiver in the PUBLIC SDR card, starts audio, and opens the floating spectrum/waterfall. Never start a stream without a click or an explicit request. One stream at a time. Stop on STOP, Radio-panel collapse, pane hide (`gev:visibility`), or selecting another receiver.
 
