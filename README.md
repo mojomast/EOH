@@ -31,7 +31,7 @@ Person search, face recognition, and tracking an individual are refused in `gev/
 
 ## A tour of the pane
 
-The pictures are the running pane. London, Tokyo, and Sydney are the Hermes Webapp in dark mode, with a narrow chat beside the globe. Measure and compare stay on Montreal. Public SDR shots are Berlin in God's Eye View **NOIR**. The names and coordinates are public places. Imagery credits in the corner (Cesium ion, Google Maps, Esri) belong to those providers, through God's Eye View.
+The pictures are the running pane. London, Tokyo, and Sydney are the Hermes Webapp in dark mode, with a narrow chat beside the globe. Measure and compare stay on Montreal. Public SDR shots are Northern Europe / Berlin in God's Eye View **NOIR**. The names and coordinates are public places. Imagery credits in the corner (Cesium ion, Google Maps, Esri) belong to those providers, through God's Eye View.
 
 ### New in recent builds
 
@@ -51,21 +51,25 @@ The pictures are the running pane. London, Tokyo, and Sydney are the Hermes Weba
 
 Turn on the public radio map and you can listen to live receivers right where they sit on the globe — KiwiSDR, OpenWebRX, SpyServer, UberSDR, and WebSDR directories from ReceiverBook, not a separate tuner app.
 
-`godseye_layers` `op=visibility` with `layerId=sdr-receivers` puts the directory on the map. Default pins are the audio+waterfall set (~1,325). Turn off **MAP: AUDIO + WATERFALL ONLY** in the PUBLIC SDR card to show the full catalog (~1,876), including HTTPS-only and SpyServer/UberSDR entries that link out instead of playing in-pane.
+`godseye_layers` `op=visibility` with `layerId=sdr-receivers` puts the directory on the map. Default pins are the audio+waterfall set. Turn off **MAP: AUDIO + WATERFALL ONLY** in the PUBLIC SDR card to show the full catalog, including HTTPS-only and SpyServer/UberSDR entries that link out instead of playing in-pane.
 
-<img src="docs/images/eoh-sdr-layers-berlin.jpg" alt="God's Eye View over Berlin in NOIR style. DATA LAYERS is open with Public SDR on, showing ReceiverBook · KiwiSDR · Airspy · UberSDR and a count of 968." width="100%">
+<img src="docs/images/eoh-sdr-layers-europe.jpg" alt="God's Eye View over Denmark and northern Germany in NOIR style. DATA LAYERS is open with Public SDR on (ReceiverBook · KiwiSDR · Airspy · UberSDR) and receiver pins across the region." width="100%">
 
-<sub>Berlin, <b>NOIR</b>. <b>Public SDR</b> is on in DATA LAYERS (ReceiverBook · KiwiSDR · Airspy · UberSDR). Hermes drives the same layer with <code>godseye_layers</code>.</sub>
+<sub>Northern Europe, <b>NOIR</b>. <b>Public SDR</b> is on in DATA LAYERS — receiver pins across Denmark and northern Germany. Hermes drives the same layer with <code>godseye_layers</code>.</sub>
 
-A pin click is the listen gesture: it selects the receiver in the Radio panel's PUBLIC SDR card, starts audio when the platform can play natively, and can open the floating spectrum/waterfall while the globe stays usable behind it. One stream at a time. Only <code>http://</code> KiwiSDR and OpenWebRX play inside the pane; other platforms get <b>OPEN ↗</b> to the operator's page (never framed).
+A pin click is the listen gesture: it selects the receiver in the Radio panel's PUBLIC SDR card, starts audio when the platform can play natively, and opens the floating spectrum/waterfall while the globe stays usable behind it. One stream at a time. Only <code>http://</code> KiwiSDR and OpenWebRX play inside the pane; other platforms get <b>OPEN ↗</b> to the operator's page (never framed).
 
-<img src="docs/images/eoh-sdr-radio-berlin.jpg" alt="Berlin in NOIR with Public SDR pins on the map and the PUBLIC SDR card open on a Berlin KiwiSDR, showing Listen, Waterfall, Map, and band presets." width="100%">
+<img src="docs/images/eoh-sdr-waterfall-berlin.jpg" alt="Floating SDR waterfall over God's Eye View showing a live OpenWebRX stream from Berlin JO62QJ with spectrum, waterfall, SNR and S-meter." width="100%">
 
-<sub>Berlin KiwiSDR selected in <b>PUBLIC SDR</b>: search the directory, pick a band preset, then <b>LISTEN</b> / <b>WATERFALL</b> / <b>MAP</b>. Deep links look like <code>?sdr=&lt;id&gt;&amp;f=&lt;MHz&gt;&amp;m=&lt;mode&gt;&amp;wf=1&amp;play=1</code>.</sub>
+<sub>Live floating waterfall: Berlin OpenWebRX (<b>2m/70cm · JO62QJ · DC7JZB</b>), spectrum + waterfall, SNR and S-meter — RF right on the globe, no separate tuner window.</sub>
 
-<img src="docs/images/eoh-sdr-map-berlin.jpg" alt="Wider NOIR view over the Berlin area with Public SDR receiver pins dotted on the globe." width="100%">
+<img src="docs/images/eoh-sdr-radio-berlin.jpg" alt="Berlin area in NOIR with the PUBLIC SDR card open on the Berlin OpenWebRX receiver, showing Listen, Waterfall, Map, and band presets." width="100%">
 
-<sub>Wider Berlin framing with receiver pins on the globe — useful when Hermes briefs a region and you want the RF picture next to flights, ships, or weather.</sub>
+<sub>Berlin OpenWebRX selected in <b>PUBLIC SDR</b>: search the directory, pick a band preset, then <b>LISTEN</b> / <b>WATERFALL</b> / <b>MAP</b>. Deep links look like <code>?sdr=&lt;id&gt;&amp;f=&lt;MHz&gt;&amp;m=&lt;mode&gt;&amp;wf=1&amp;play=1</code>.</sub>
+
+<img src="docs/images/eoh-sdr-map-europe.jpg" alt="Wider NOIR view over Denmark and northern Germany with Public SDR receiver pins dotted on the globe." width="100%">
+
+<sub>Wider Northern Europe framing with receiver pins on the globe — useful when Hermes briefs a region and you want the RF picture next to flights, ships, or weather.</sub>
 
 Needs [mojomast/gods-eye-view](https://github.com/mojomast/gods-eye-view) <code>main</code> at or after <b>b361a25</b> (merge of pull request #5). Without that checkout the tool enum still accepts <code>sdr-receivers</code>, but the map layer and waterfall are not there.
 
