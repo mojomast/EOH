@@ -6,7 +6,7 @@
 
 **A live 3D globe in the Hermes pane, which the agent can fly, measure, and watch.**
 
-Eye Of Hermes (EOH) is the Hermes plugin `godseye` (version 0.2.0). It runs a [fork of God's Eye View](https://github.com/mojomast/gods-eye-view) beside the chat and gives Hermes the tools to drive it. Answers come from your Hermes model.
+Eye Of Hermes (EOH) is the Hermes plugin `godseye` (version **0.2.8**). It runs a [fork of God's Eye View](https://github.com/mojomast/gods-eye-view) beside the chat and gives Hermes the tools to drive it. Answers come from your Hermes model.
 
 [Tour](#a-tour-of-the-pane) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Tools](#tools) · [Privacy](#privacy-and-responsible-use)
 
@@ -16,7 +16,7 @@ Eye Of Hermes (EOH) is the Hermes plugin `godseye` (version 0.2.0). It runs a [f
 
 ## What it is for
 
-Hermes can talk about a place. A list of coordinates is a poor way to show one. [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view), by Bilawal Sidhu, already has the globe: public aircraft, ships, satellites, earthquakes, fires, weather, and a photorealistic city. Eye Of Hermes puts that globe in a Hermes Desktop or Webapp pane and registers its actions as tools, so the same chat that answers a question can move the camera, pin what it found, and leave a watch running.
+Hermes can talk about a place. A list of coordinates is a poor way to show one. [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view), by Bilawal Sidhu, already has the globe: public aircraft, ships, satellites, earthquakes, fires, weather, public SDR receivers, and a photorealistic city. Eye Of Hermes puts that globe in a Hermes Desktop or Webapp pane and registers its actions as tools, so the same chat that answers a question can move the camera, pin what it found, and leave a watch running.
 
 The live commands go through God's Eye View's own voice-action runner. There is one globe. The agent drives the same path the app already uses for voice.
 
@@ -31,7 +31,7 @@ Person search, face recognition, and tracking an individual are refused in `gev/
 
 ## A tour of the pane
 
-The pictures are the running pane. London, Tokyo, and Sydney are the Hermes Webapp in dark mode, with a narrow chat beside the globe. Measure and compare stay on Montreal. The names and coordinates are public places. Imagery credits in the corner (Cesium ion, Google Maps, Esri) belong to those providers, through God's Eye View.
+The pictures are the running pane. London, Tokyo, and Sydney are the Hermes Webapp in dark mode, with a narrow chat beside the globe. Measure and compare stay on Montreal. Public SDR shots are Northern Europe / Berlin in God's Eye View **NOIR**. The names and coordinates are public places. Imagery credits in the corner (Cesium ion, Google Maps, Esri) belong to those providers, through God's Eye View.
 
 ### New in recent builds
 
@@ -46,6 +46,32 @@ The pictures are the running pane. London, Tokyo, and Sydney are the Hermes Weba
 <img src="docs/images/pin-drawer.png" alt="Sydney Opera House pin with the drawer open: visitor note, coordinates, and an Official site link." width="100%">
 
 <sub>Sydney Opera House, rooftop framing, <b>NORMAL</b> style. The pin drawer is open on <b>-33.85680, 151.21530</b>, with a short description, a visitor note (golden hour, the forecourt, Opera Bar), the position, and an <b>Official site</b> link. <b>Ask Hermes</b> is on the drawer.</sub>
+
+### Public SDR receivers (v0.2.8)
+
+Turn on the public radio map and you can listen to live receivers right where they sit on the globe — KiwiSDR, OpenWebRX, SpyServer, UberSDR, and WebSDR directories from ReceiverBook, not a separate tuner app.
+
+`godseye_layers` `op=visibility` with `layerId=sdr-receivers` puts the directory on the map. Default pins are the audio+waterfall set. Turn off **MAP: AUDIO + WATERFALL ONLY** in the PUBLIC SDR card to show the full catalog, including HTTPS-only and SpyServer/UberSDR entries that link out instead of playing in-pane.
+
+<img src="docs/images/eoh-sdr-layers-europe.jpg" alt="God's Eye View over Denmark and northern Germany in NOIR style. DATA LAYERS is open with Public SDR on (ReceiverBook · KiwiSDR · Airspy · UberSDR) and receiver pins across the region." width="100%">
+
+<sub>Northern Europe, <b>NOIR</b>. <b>Public SDR</b> is on in DATA LAYERS — receiver pins across Denmark and northern Germany. Hermes drives the same layer with <code>godseye_layers</code>.</sub>
+
+A pin click is the listen gesture: it selects the receiver in the Radio panel's PUBLIC SDR card, starts audio when the platform can play natively, and opens the floating spectrum/waterfall while the globe stays usable behind it. One stream at a time. Only <code>http://</code> KiwiSDR and OpenWebRX play inside the pane; other platforms get <b>OPEN ↗</b> to the operator's page (never framed).
+
+<img src="docs/images/eoh-sdr-waterfall-berlin.jpg" alt="Floating SDR waterfall over God's Eye View showing a live OpenWebRX stream from Berlin JO62QJ tuned to 145.500 MHz NBFM, with spectrum, waterfall history, SNR and S-meter." width="100%">
+
+<sub>Live floating waterfall: Berlin OpenWebRX (<b>2m/70cm · JO62QJ · DC7JZB</b>) at <b>145.500 MHz NBFM</b> — spectrum + waterfall history in-band, SNR and S-meter, RF right on the globe.</sub>
+
+<img src="docs/images/eoh-sdr-radio-berlin.jpg" alt="Northern Hesse in NOIR with the PUBLIC SDR card open on the Baunatal KiwiSDR, tuned to 14.074 MHz USB (20 m FT8), showing Listen, Waterfall, Map, and band presets." width="100%">
+
+<sub>Baunatal KiwiSDR selected in <b>PUBLIC SDR</b> at <b>14.074 MHz USB</b> (20 m FT8): search the directory, pick a band preset, then <b>LISTEN</b> / <b>WATERFALL</b> / <b>MAP</b>. Deep links look like <code>?sdr=&lt;id&gt;&amp;f=&lt;MHz&gt;&amp;m=&lt;mode&gt;&amp;wf=1&amp;play=1</code>.</sub>
+
+<img src="docs/images/eoh-sdr-map-europe.jpg" alt="Wider NOIR view over Denmark and northern Germany with Public SDR receiver pins dotted on the globe." width="100%">
+
+<sub>Wider Northern Europe framing with receiver pins on the globe — useful when Hermes briefs a region and you want the RF picture next to flights, ships, or weather.</sub>
+
+Needs [mojomast/gods-eye-view](https://github.com/mojomast/gods-eye-view) <code>main</code> at or after <b>b361a25</b> (merge of pull request #5). Without that checkout the tool enum still accepts <code>sdr-receivers</code>, but the map layer and waterfall are not there.
 
 ### What am I looking at
 
@@ -172,7 +198,7 @@ A second loopback, the HUD bridge on `127.0.0.1:18791`, lets the app's own SUMMA
 git clone https://github.com/mojomast/gods-eye-view.git ~/gods-eye-view
 cd ~/gods-eye-view && npm ci && npm run build:panel && npm run dev
 # serves http://localhost:4173
-# Public SDR receivers / waterfall need fork main at or after gods-eye-view#5.
+# Public SDR receivers / waterfall need fork main at or after b361a25 (gods-eye-view#5).
 
 # 2. The plugin
 hermes plugins install mojomast/hermes-godseye
@@ -257,7 +283,7 @@ You can open the globe without the ship and fire keys. Doctor will still list th
 | `GODSEYE_VALHALLA_URL` | `https://valhalla1.openstreetmap.de` | Isochrones |
 | `GODSEYE_OSRM_URL` | `https://routing.openstreetmap.de` | Routes, and the isochrone fallback |
 | `GODSEYE_WAYBACK_CONFIG` | Esri's Wayback config JSON | Historical imagery release list |
-| `GODSEYE_HTTP_USER_AGENT` | a `hermes-godseye/0.2.0` UA with this repo's URL | User-Agent for Nominatim, Overpass, and research |
+| `GODSEYE_HTTP_USER_AGENT` | a `hermes-godseye/0.2.8` UA with this repo's URL | User-Agent for Nominatim, Overpass, and research |
 | `GODSEYE_BIND` | `127.0.0.1` | Listen address for `install-service.sh` only |
 | `GODSEYE_NODE_DIR` | `~/.local/node24` | Node directory for `install-service.sh` only |
 
