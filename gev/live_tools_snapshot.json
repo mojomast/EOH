@@ -162,7 +162,7 @@
    "properties": {
     "layerId": {
      "type": "string",
-     "description": "Spoken names: navigation integrity\u2192gnss-integrity;nautical charts\u2192sea-marks;ski slopes/ski runs\u2192ski-pistes;my receiver\u2192local-adsb;ships\u2192ais-live-vessels;fires/wildfires\u2192local-firms;wildfire perimeters\u2192fire-perimeters;hurricanes\u2192weather-cyclones;clouds\u2192weather-satellite;lightning strikes\u2192weather-lightning;aqhi\u2192air-quality;buses/trains\u2192transit;traffic cameras/cameras\u2192cctv;flock cameras/license plate readers\u2192alpr-cameras;street-level imagery\u2192street-level;recent satellite imagery\u2192recent-imagery;military bases/bases\u2192military-installations;undersea cables\u2192telegeography-submarine-cables;map search results\u2192osm-places.",
+     "description": "Spoken names: navigation integrity\u2192gnss-integrity;nautical charts\u2192sea-marks;ski slopes/ski runs\u2192ski-pistes;my receiver\u2192local-adsb;ships\u2192ais-live-vessels;fires/wildfires\u2192local-firms;wildfire perimeters\u2192fire-perimeters;hurricanes\u2192weather-cyclones;clouds\u2192weather-satellite;lightning strikes\u2192weather-lightning;aqhi\u2192air-quality;buses/trains\u2192transit;traffic cameras/cameras\u2192cctv;flock cameras/license plate readers\u2192alpr-cameras;street-level imagery\u2192street-level;public SDR/SDR receivers\u2192sdr-receivers;recent satellite imagery\u2192recent-imagery;military bases/bases\u2192military-installations;undersea cables\u2192telegeography-submarine-cables;map search results\u2192osm-places.",
      "enum": [
       "gnss-integrity",
       "s2-ghostmaps",
@@ -189,6 +189,7 @@
       "cctv",
       "alpr-cameras",
       "radio",
+      "sdr-receivers",
       "street-level",
       "recent-imagery",
       "directions",
@@ -245,6 +246,7 @@
       "cctv",
       "alpr-cameras",
       "radio",
+      "sdr-receivers",
       "street-level",
       "recent-imagery",
       "directions",

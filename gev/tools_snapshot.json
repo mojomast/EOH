@@ -1531,6 +1531,7 @@
        "military-awareness",
        "military-installations",
        "radio",
+       "sdr-receivers",
        "recent-imagery",
        "rocket-launches",
        "s2-ghostmaps",
