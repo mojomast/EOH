@@ -59,13 +59,13 @@ Turn on the public radio map and you can listen to live receivers right where th
 
 A pin click is the listen gesture: it selects the receiver in the Radio panel's PUBLIC SDR card, starts audio when the platform can play natively, and opens the floating spectrum/waterfall while the globe stays usable behind it. One stream at a time. Only <code>http://</code> KiwiSDR and OpenWebRX play inside the pane; other platforms get <b>OPEN ↗</b> to the operator's page (never framed).
 
-<img src="docs/images/eoh-sdr-waterfall-berlin.jpg" alt="Floating SDR waterfall over God's Eye View showing a live OpenWebRX stream from Berlin JO62QJ with spectrum, waterfall, SNR and S-meter." width="100%">
+<img src="docs/images/eoh-sdr-waterfall-berlin.jpg" alt="Floating SDR waterfall over God's Eye View showing a live OpenWebRX stream from Berlin JO62QJ tuned to 145.500 MHz NBFM, with spectrum, waterfall history, SNR and S-meter." width="100%">
 
-<sub>Live floating waterfall: Berlin OpenWebRX (<b>2m/70cm · JO62QJ · DC7JZB</b>), spectrum + waterfall, SNR and S-meter — RF right on the globe, no separate tuner window.</sub>
+<sub>Live floating waterfall: Berlin OpenWebRX (<b>2m/70cm · JO62QJ · DC7JZB</b>) at <b>145.500 MHz NBFM</b> — spectrum + waterfall history in-band, SNR and S-meter, RF right on the globe.</sub>
 
-<img src="docs/images/eoh-sdr-radio-berlin.jpg" alt="Berlin area in NOIR with the PUBLIC SDR card open on the Berlin OpenWebRX receiver, showing Listen, Waterfall, Map, and band presets." width="100%">
+<img src="docs/images/eoh-sdr-radio-berlin.jpg" alt="Northern Hesse in NOIR with the PUBLIC SDR card open on the Baunatal KiwiSDR, tuned to 14.074 MHz USB (20 m FT8), showing Listen, Waterfall, Map, and band presets." width="100%">
 
-<sub>Berlin OpenWebRX selected in <b>PUBLIC SDR</b>: search the directory, pick a band preset, then <b>LISTEN</b> / <b>WATERFALL</b> / <b>MAP</b>. Deep links look like <code>?sdr=&lt;id&gt;&amp;f=&lt;MHz&gt;&amp;m=&lt;mode&gt;&amp;wf=1&amp;play=1</code>.</sub>
+<sub>Baunatal KiwiSDR selected in <b>PUBLIC SDR</b> at <b>14.074 MHz USB</b> (20 m FT8): search the directory, pick a band preset, then <b>LISTEN</b> / <b>WATERFALL</b> / <b>MAP</b>. Deep links look like <code>?sdr=&lt;id&gt;&amp;f=&lt;MHz&gt;&amp;m=&lt;mode&gt;&amp;wf=1&amp;play=1</code>.</sub>
 
 <img src="docs/images/eoh-sdr-map-europe.jpg" alt="Wider NOIR view over Denmark and northern Germany with Public SDR receiver pins dotted on the globe." width="100%">
 
