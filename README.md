@@ -189,24 +189,26 @@ A second loopback, the HUD bridge on `127.0.0.1:18791`, lets the app's own SUMMA
 
 **You need**
 
-- Hermes Agent, with Hermes Desktop or the Webapp for the pane.
+- Hermes Agent **0.23.0 or later**, with Hermes Desktop or the Webapp for the pane. The desktop pane uses the plugin SDK `ctx.rest` transport, which needs that floor.
 - Node.js. God's Eye View documents 24.14 or later, or 26.x, and recommends 24.22.1 or later. This plugin's doctor checks that the major version is 24 or higher.
-- A God's Eye View checkout. Use the [fork](https://github.com/mojomast/gods-eye-view) so the pane can send `gev:config`, `gev:visibility`, and `perf=embed`. The [upstream](https://github.com/bilawalsidhu/gods-eye-view) app still runs. Doctor reports when the HUD and full-UI patches below are missing.
+- A God's Eye View checkout of the [fork](https://github.com/mojomast/gods-eye-view) at `main` **at or after `b361a25`** (merge of pull request #5). That pin is required for public SDR receivers and the waterfall. The fork is also what lets the pane send `gev:config`, `gev:visibility`, and `perf=embed`. The [upstream](https://github.com/bilawalsidhu/gods-eye-view) app still runs, but it will not have those pane hooks or the SDR layer. Doctor reports when the HUD and full-UI patches below are missing, and when the checkout itself is absent.
 
 ```sh
-# 1. The globe
+# 1. The globe (fork main at or after b361a25)
 git clone https://github.com/mojomast/gods-eye-view.git ~/gods-eye-view
 cd ~/gods-eye-view && npm ci && npm run build:panel && npm run dev
 # serves http://localhost:4173
-# Public SDR receivers / waterfall need fork main at or after b361a25 (gods-eye-view#5).
 
-# 2. The plugin
-hermes plugins install mojomast/hermes-godseye
+# 2. The plugin (id: godseye). This repository is mojomast/EOH.
+#    The older name mojomast/hermes-godseye still redirects here.
+hermes plugins install mojomast/EOH
 hermes plugins enable godseye
 hermes plugins doctor godseye
 ```
 
-The one-click install link is `hermes://plugin/install?repo=mojomast/hermes-godseye`.
+Once Eye Of Hermes is listed in the Hermes plugin catalog, you can also install by catalog name: `hermes plugins install godseye`. That path installs the pinned catalog subdir (the repository root) at the reviewed commit. Until the catalog entry is merged, use the GitHub install above.
+
+The one-click install link is `hermes://plugin/install?repo=mojomast/EOH`.
 
 Then enable **godseye** in Hermes Desktop or the Webapp, open the Eye Of Hermes pane, and start a new chat so the globe note is in the system prompt.
 
@@ -283,7 +285,7 @@ You can open the globe without the ship and fire keys. Doctor will still list th
 | `GODSEYE_VALHALLA_URL` | `https://valhalla1.openstreetmap.de` | Isochrones |
 | `GODSEYE_OSRM_URL` | `https://routing.openstreetmap.de` | Routes, and the isochrone fallback |
 | `GODSEYE_WAYBACK_CONFIG` | Esri's Wayback config JSON | Historical imagery release list |
-| `GODSEYE_HTTP_USER_AGENT` | a `hermes-godseye/0.2.8` UA with this repo's URL | User-Agent for Nominatim, Overpass, and research |
+| `GODSEYE_HTTP_USER_AGENT` | the default in `gev/poi.py` (a `hermes-godseye` UA naming this plugin and its repository) | Override for Nominatim, Overpass, and research requests |
 | `GODSEYE_BIND` | `127.0.0.1` | Listen address for `install-service.sh` only |
 | `GODSEYE_NODE_DIR` | `~/.local/node24` | Node directory for `install-service.sh` only |
 
@@ -385,7 +387,7 @@ Every name in `plugin.yaml`, once.
 
 - `godseye_view` — Camera, composed view, camera read, home, share, and panes. `op`: `fly`, `move`, `zoom`, `globe`, `home`, `share`, `panes`, `show`, `state`.
 - `godseye_query` — Places, context, briefs, elevation, and named features. `op`: `find_places`, `osm`, `context`, `what_is_here`, `brief`, `brief_and_show`, `analyst`, `military`, `poi`, `resolve_area`, `entity`, `terrain`, `features`.
-- `godseye_layers` — One layer, the layers menu, a side panel, context mode, visual style, sonar, detection, the map stack, bloom and sharpen.
+- `godseye_layers` — One layer, the layers menu, a side panel, context mode, visual style, sonar, detection, the map stack, bloom and sharpen. Public SDR is `layerId=sdr-receivers` and needs the fork at or after `b361a25`.
 - `godseye_feeds` — Earthquakes, fires, launches, aircraft, ships, satellite passes, public cameras, ALPR, traffic, weather, imagery, cables, infrastructure, flood, cyclones, fire perimeters, military sites, and internet radio. `op=fire_check` runs FIRMS, the clearest recent image, then imagery before/after. CCTV and ALPR are mapped public cameras.
 - `godseye_annotate` — Pins (pass `intent` and `description_md`, or `source` / `records`), clear, draw, list, delete (`ids`), update, filter, one pin drawer, research, and `op=clip` for a YouTube or X clip on a pin.
 - `godseye_nav` — `measure` (`distance`, `area`, or `route`), `isochrone`, `fly_route`, `street_walk` (`start`, `pause`, `resume`, `step`, `stop`, `state`), `street_level` (`at`, `next`, `prev`, `route`), `itinerary`, `compare`, `timeline` (`set`, `play`, `step`, `stop`, `state`, `list_dates`).
@@ -478,16 +480,29 @@ Drawer content is escaped before it is shown. Only http(s) images and links are 
 
 ## Troubleshooting
 
-Start with `/gev doctor`. The fix under each failed check is the one to follow.
+Start with `/gev doctor` or `godseye_admin` `op=doctor`. The fix under each failed check is the one to follow.
+
+### First run
+
+1. Confirm Hermes is **0.23.0 or later** (`hermes --version`). Older hosts will not satisfy `requires_hermes` and the desktop pane's `ctx.rest` transport.
+2. Install the plugin from this repository (`hermes plugins install mojomast/EOH`) or, once listed, from the catalog (`hermes plugins install godseye`). The plugin id is `godseye` in both cases. Then `hermes plugins enable godseye`.
+3. Clone the [fork](https://github.com/mojomast/gods-eye-view) to `~/gods-eye-view` (or set `GODSEYE_HOME`), with `main` at or after `b361a25`. Run `npm ci && npm run build:panel && npm run dev` so the app answers on `http://localhost:4173`.
+4. Open the Eye Of Hermes pane in Desktop or the Webapp, keep it visible, and start a new chat.
+
+Doctor's "upstream checkout not found" fix is the clone step above. "app reachable" means port 4173 is not answering yet.
+
+### Common errors
 
 | What you see | What it means |
 | --- | --- |
 | `no_pane` | Open the Eye Of Hermes pane in Hermes Desktop or the Webapp and keep it visible, then retry the same call. Data tools still work. |
 | `pane_lost` | The pane was open and then stopped. Reopen it and keep it visible. The saved scene restores. If a street walk or dolly was running, it was interrupted; resume the walk with `godseye_nav` `op=street_walk` `walk=resume`. |
 | `pane_busy` | The pane is still on an earlier command. Wait a few seconds and retry that same call once. |
-| `relay_unavailable` | Restart the Hermes dashboard or gateway with the plugin enabled, so the relay starts. |
+| `relay_unavailable` | Restart the Hermes dashboard or gateway with the plugin enabled, so the live relay on `127.0.0.1:18792` (`GODSEYE_LIVE_PORT`) starts. If that port is already taken by a leftover process, stop it or set `GODSEYE_LIVE_PORT` to a free loopback port and restart Hermes. |
+| HUD SUMMARY overlay cannot reach Hermes | The HUD bridge listens on `127.0.0.1:18791` (`GODSEYE_BRIDGE_PORT`). `godseye_capture` `op=summary` does not need it. If 18791 is taken, set `GODSEYE_BRIDGE_PORT` or set `GODSEYE_HUD_BRIDGE=0`. |
 | `timeout` | Retry once. If it happens again, run `godseye_view` `op=panes` and `godseye_admin` `op=doctor` before changing arguments. |
-| `upstream_down` | The app is not answering `GODSEYE_API_BASE`. Start it with `npm run dev`. |
+| `upstream_down` | The app is not answering `GODSEYE_API_BASE` (default `http://localhost:4173`). Start it with `npm run dev` in the God's Eye View checkout. |
+| Checkout found, but no Public SDR / waterfall | The tool enum still accepts `sdr-receivers`, but the layer lives in the fork at or after `b361a25`. Update `~/gods-eye-view` (or `GODSEYE_HOME`) to that pin, rebuild the panel, and restart `npm run dev`. |
 | `KEY_MISSING` / `PANEL_STALE` | Configure the named key through Hermes for the active profile. On a current build, open the pane so `config.json` is rewritten. On an older build, run `godseye_admin` `op=rebuild`. |
 | `ION_SCOPES` | Issue a Cesium ion token limited to `assets:read` and `assets:list`. |
 | Blank globe, or CesiumWidget / WebGL init failed | The browser is out of WebGL contexts. Close the tab (a reload may not free them) and open the pane again. A context lost later is recovered in the same pane. After 3 losses in 20 seconds, or when `GODSEYE_GL_RECOVER=0`, the pane shows **Click to reload the globe**. |
@@ -496,6 +511,7 @@ Start with `/gev doctor`. The fix under each failed check is the one to follow.
 | **Open full app** opens localhost | Set `GODSEYE_PUBLIC_URL` to a URL the browser can reach, and add that host to the app's `GEV_ALLOWED_HOSTS`. |
 | Full UI toggle missing | Doctor will say patch 0002 is missing. Apply it and rebuild the panel. |
 | Plugin changes never appear | Rescan plugins in Hermes, toggle the pane, and hard-refresh the Webapp. |
+| `hermes plugins install mojomast/hermes-godseye` | That is the old repository name. It should redirect to `mojomast/EOH`. Prefer `hermes plugins install mojomast/EOH` (or `godseye` from the catalog). |
 
 Live control needs the pane open and loaded. Session binding needs a Hermes Desktop build that exposes session ids on `host.state`. Without them, commands go to the most recently active pane.
 
@@ -519,10 +535,26 @@ The time slider is `godseye_nav` `op=timeline`. `mode=wayback` scrubs Esri Wayba
 
 ## Development
 
+Verified against Hermes Agent **v0.23.0** (local checkout `2bd378ed1b8d`).
+
 ```sh
-python3 -m pytest -q tests
+python3 -m pip install -e '.[dev]'   # pytest, ruamel.yaml, tiktoken
+# Optional: point PYTHONPATH at a Hermes checkout so tests use the real
+# hermes_constants and agent.secret_scope (CI does this). Without it, tests
+# still pass: conftest.py stubs those imports.
+#   export PYTHONPATH=/path/to/hermes-agent
+python3 -m pytest -q tests           # includes the strict duplicate-key YAML test
+node --test gev/*.test.mjs
+# Same admission check as catalog CI, when Hermes is importable:
+#   PYTHONPATH=/path/to/hermes-agent python3 -m hermes_cli.main plugins validate .
+#   # or: hermes plugins validate .
+python3 scripts/secret_scan.py       # prints path:line:rule only; never secret values
 ```
+
+`.github/workflows/ci.yml` runs all of the above on every pull request and on `main`.
 
 The usual run blocks public network. Contract tests for measure, isochrones, place search, area watches, the time slider, and investigation export replay hand-written cassettes under `tests/fixtures/cassettes`: an OSRM route, a Valhalla isochrone, Overpass places, Nominatim search and reverse, USGS earthquakes, a FIRMS CSV, an Esri Wayback config, and OpenSky states. Those files contain no keys. `GODSEYE_E2E=1` is the only opt-in for a live call against `npm run dev`, and it is not for CI.
 
 WebGL recovery has its own checks: `node --test gev/gl_recover.test.mjs`, and `node scripts/gl_recover_harness.mjs` (it listens on port 4233). `scripts/timeline_harness.mjs` (port 4244) screenshots the time slider. `evals/measure_schemas.py` prints the schema byte and token counts.
+
+Bump the plugin version with `python3 scripts/bump_plugin_version.py X.Y.Z`. It rewrites the single `version:` line in `plugin.yaml` and the matching `version =` line in `pyproject.toml`, and it refuses a manifest with duplicate keys.

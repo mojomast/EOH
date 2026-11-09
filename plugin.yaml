@@ -2,18 +2,19 @@ name: godseye
 version: "0.2.8"
 description: >-
   Eye Of Hermes (EOH), built on God's Eye View: registers the God's Eye View public-data tools
-  (aircraft, ships, satellites, quakes, fires, weather, infrastructure) as
-  godseye_* tools backed by its MCP server, adds a live globe pane to Hermes
-  Desktop and the Webapp that Hermes can drive and read (godseye_live_* tools),
-  and generates HUD summaries with the Hermes model (ctx.llm) instead
-  of OpenAI. No named-person search, face recognition, or tracking of
-  individuals.
+  (aircraft, ships, satellites, quakes, fires, weather, infrastructure, public SDR) as
+  eleven composable godseye_* tools backed by its MCP server, adds a live globe pane to Hermes
+  Desktop and the Webapp that Hermes can drive and read, and generates HUD summaries
+  with the Hermes model (ctx.llm) instead of OpenAI. No named-person search, face
+  recognition, or tracking of individuals. Needs Hermes >= 0.23.0 (desktop ctx.rest)
+  and the mojomast/gods-eye-view fork at or after b361a25 for public SDR.
 author: mojomast
 license: MIT
-homepage: https://github.com/mojomast/hermes-godseye
+homepage: https://github.com/mojomast/EOH
 tags: [geospatial, osint, globe, mcp, desktop]
 manifest_version: 2
 api_version: 1
+requires_hermes: ">=0.23.0"
 provides_hooks:
   - pre_llm_call
 provides_tools:

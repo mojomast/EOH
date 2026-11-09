@@ -1,0 +1,65 @@
+# Fast PR/main gates for Eye Of Hermes.
+# Hermes itself is checked out outside this tree (RUNNER_TEMP) so its sources
+# are not mistaken for plugin files during validate or the secret scan.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pin matches the Hermes release this plugin declares (requires_hermes >= 0.23.0)
+  # and the version the audit was verified against.
+  HERMES_REF: v0.23.0
+
+jobs:
+  checks:
+    name: tests, validate, secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout EOH
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dev extras
+        run: python3 -m pip install -e ".[dev]"
+
+      - name: Checkout Hermes (outside the plugin tree)
+        run: |
+          set -euo pipefail
+          dest="${RUNNER_TEMP}/hermes-agent"
+          git clone --depth 1 --branch "${HERMES_REF}" https://github.com/NousResearch/hermes-agent.git "$dest"
+          echo "HERMES_SRC=$dest" >> "$GITHUB_ENV"
+
+      - name: Pytest (includes the duplicate-key YAML test)
+        run: PYTHONPATH="$HERMES_SRC" python3 -m pytest tests/
+
+      - name: Node unit tests
+        run: node --test gev/*.test.mjs
+
+      - name: hermes plugins validate
+        run: PYTHONPATH="$HERMES_SRC" python3 -m hermes_cli.main plugins validate .
+
+      - name: Secret scan
+        run: python3 scripts/secret_scan.py
