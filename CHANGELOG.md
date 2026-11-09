@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.8 — Unreleased
+## 0.2.8 — 2026-11-09
 
 Public SDR layer:
 
