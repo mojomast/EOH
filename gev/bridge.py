@@ -17,6 +17,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .httputil import BadBody, parse_content_length
+
 MAX_BODY = 64 * 1024
 MAX_TOKENS = 400
 
@@ -29,19 +31,32 @@ def data_dir() -> Path:
     return path
 
 
+def _chmod_private(path: Path) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def ensure_token(path: Path | None = None) -> str:
     """Token shared with God's Eye View through an 0600 env file, never logged."""
     path = path or data_dir() / "hud-bridge.env"
     if path.is_file():
+        _chmod_private(path)
         for line in path.read_text().splitlines():
             if line.startswith("GEV_HUD_SUMMARY_API_KEY="):
-                return line.split("=", 1)[1]
+                token = line.split("=", 1)[1].strip()
+                if token:
+                    return token
     token = secrets.token_urlsafe(32)
     port = os.environ.get("GODSEYE_BRIDGE_PORT", "18791")
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
         fh.write(f"GEV_HUD_SUMMARY_BASE_URL=http://127.0.0.1:{port}/v1\n"
                  f"GEV_HUD_SUMMARY_API_KEY={token}\nGEV_HUD_SUMMARY_MODEL=hermes\n")
+    os.replace(tmp, path)
+    _chmod_private(path)
     return token
 
 
@@ -77,8 +92,11 @@ def make_handler(complete, token: str):
                 return self._send(401, {"error": "unauthorized"})
             if self.path.rstrip("/") != "/v1/chat/completions":
                 return self._send(404, {"error": "not found"})
-            length = int(self.headers.get("Content-Length") or 0)
-            if length <= 0 or length > MAX_BODY:
+            try:
+                length = parse_content_length(self.headers.get("Content-Length"), MAX_BODY)
+            except BadBody:
+                return self._send(400, {"error": "bad body"})
+            if length <= 0:
                 return self._send(413, {"error": "body too large"})
             try:
                 body = json.loads(self.rfile.read(length))
@@ -88,8 +106,8 @@ def make_handler(complete, token: str):
                     return self._send(400, {"error": "messages required"})
                 text = complete(messages, min(int(body.get("max_tokens") or 200), MAX_TOKENS))
             except BaseException as exc:  # noqa: BLE001 - host may raise SystemExit-like errors
-                import traceback; traceback.print_exc()
-                print(f"inference failed: {type(exc).__name__}: {str(exc)[:200]}", file=sys.stderr, flush=True)
+                # Log the type only: the message may contain prompt or residual secrets.
+                print(f"inference failed: {type(exc).__name__}", file=sys.stderr, flush=True)
                 return self._send(502, {"error": f"inference failed: {type(exc).__name__}"})
             self._send(200, {"id": f"gev-{int(time.time()*1000)}", "object": "chat.completion",
                              "model": "hermes", "choices": [{"index": 0, "finish_reason": "stop",

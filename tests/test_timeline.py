@@ -234,7 +234,7 @@ def test_slider_is_in_the_pane_and_persists_from_the_host():
     api = (ROOT / "dashboard" / "plugin_api.py").read_text()
     agent = (ROOT / "gev" / "panel_live_agent.js").read_text()
     assert "hermes-gev:timeline" in host and "/live/timeline" in host
-    assert "/live/timeline" in api and 'self.path == "/timeline"' in (ROOT / "gev" / "live.py").read_text()
+    assert "/live/timeline" in api and 'path == "/timeline"' in (ROOT / "gev" / "live.py").read_text()
     assert "hermes_timeline" in agent and "paintRestored" in agent
 
 

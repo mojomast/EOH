@@ -90,7 +90,7 @@ def test_lookup_without_a_cassette_does_not_leak_the_key(monkeypatch):
     assert "test-google-key-not-real" not in json.dumps(out)
     def boom(*_a, **_k):
         raise NetworkBlocked("public network is disabled in tests (https://maps.googleapis.com/streetview/metadata)")
-    monkeypatch.setattr("urllib.request.urlopen", boom)
+    monkeypatch.setattr("gev.public_http.request", boom)
     again = streetlevel.nearest(45.5, -73.57)
     assert again["error"] == "no_pano"
     assert "test-google-key-not-real" not in json.dumps(again)

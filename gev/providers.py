@@ -161,9 +161,33 @@ def probe_providers(fetch=None, file_env: dict | None = None, api_base: str | No
 def _urllib_fetch(url: str, headers: dict, timeout: float):
     import urllib.error
     import urllib.request
+    from urllib.parse import urlsplit
+
+    # Official provider hosts whose probes put a key in the URL or Authorization
+    # header must use the public-address, redirect-pinning helper. The local
+    # God's Eye View app (GODSEYE_API_BASE) stays on urllib so a tailnet or
+    # LAN API base still works; redirects are disabled on that path.
+    host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    if host in {"maps.googleapis.com", "graph.mapillary.com"}:
+        from .public_http import UnsafeURL, request as public_request
+        try:
+            status, body = public_request(url, timeout=timeout, headers=headers, limit=400)
+        except UnsafeURL:
+            return None, b""
+        except TimeoutError:
+            return "timeout", b""
+        except Exception:
+            return None, b""
+        return status, body.encode("utf-8", "replace")[:400]
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: A003
+            return None
+
     request = urllib.request.Request(url, method="GET", headers=dict(headers or {}))
+    opener = urllib.request.build_opener(_NoRedirect)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as resp:
+        with opener.open(request, timeout=timeout) as resp:
             return getattr(resp, "status", 200), resp.read(400)
     except urllib.error.HTTPError as exc:
         raw = b""

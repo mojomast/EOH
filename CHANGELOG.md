@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+Security and correctness (mojomast/EOH#29):
+
+- Cap live-relay and HUD-bridge request bodies, and reject invalid lengths.
+- Route untrusted and keyed HTTP (places, research, street-level, FIRMS, USGS,
+  OSRM, Valhalla, Google/Mapillary probes) through the public-address fetch
+  helper with connection pinning and per-hop redirect checks. Private-LAN
+  Overpass, Nominatim, Valhalla, OSRM, and Wayback URLs are refused; public
+  HTTPS and explicit loopback still work.
+- Scrub secrets from tool errors, refuse credential-like import paths, lock
+  the MCP pending map, and tighten HUD token file mode, child environments,
+  and outbound header values.
+
 Tests, CI and install docs (mojomast/EOH#31):
 
 - Add GitHub Actions CI for pytest, Node unit tests, `hermes plugins validate`
