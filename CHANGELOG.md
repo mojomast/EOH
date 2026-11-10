@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.9 — 2026-11-10
+
+Catalog review follow-up (NousResearch/hermes-agent#149691, mojomast/EOH#32):
+
+- Watch-alert titles (USGS, AIS, OSM, callsigns) are stripped of newlines and
+  control characters, length-capped, and shown as quoted third-party data
+  (`title="…"`), not instructions. The system prompt no longer tells the model
+  to trust `[EOH watch alert]` lines. This applies on both `pre_llm_call` and
+  `deliver=inject`.
+- `godseye_admin` `app_start`, `app_stop`, `app_restart` and `rebuild` require
+  `confirm=true`, and those ops are refused inside `batch`. Pane Start/Stop
+  buttons are unchanged.
+- `ui/open-link` and `hermes-gev:ask` only act after a click on an Open/Copy
+  bar in the pane.
+- Runtime config re-posting stops once the app acknowledges `gev:config-applied`.
+
 ## 0.2.8 — 2026-11-09
 
 Public SDR layer:
