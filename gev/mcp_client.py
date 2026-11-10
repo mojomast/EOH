@@ -69,7 +69,7 @@ class StdioMcpClient:
                 env=child_env(config.node_bin()))
             threading.Thread(target=self._reader, args=(self._proc,), daemon=True).start()
             self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                     "clientInfo": {"name": "hermes-godseye", "version": "0.2.9"}})
+                                     "clientInfo": {"name": "hermes-godseye", "version": "0.2.10"}})
             self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
     def _send(self, msg: dict) -> None:

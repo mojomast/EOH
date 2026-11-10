@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.10 — 2026-11-10
 
 Tool capabilities (mojomast/EOH#30):
 
