@@ -2,3 +2,9 @@ __pycache__/
 .pytest_cache/
 *.pyc
 scripts/node_modules/
+.venv/
+.ci/
+*.egg-info/
+dist/
+build/
+venv/

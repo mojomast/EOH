@@ -304,9 +304,9 @@ _BLURB = {
     ("godseye_query", "terrain"): "Ground elevation. points is a list of {lat, lon}.",
     ("godseye_query", "features"): "Named OSM features. kind is administrative_areas, named_places, or monuments.",
     ("godseye_admin", "status"): "Control room: app, relay, panes, WebGL, and feeds. Read-only. Key names only.",
-    ("godseye_admin", "app_start"): "Start the God's Eye View app. User-triggered. Linux: systemd --user or a plugin-managed Node process.",
-    ("godseye_admin", "app_stop"): "Stop that app. Refuses when the port belongs to another process.",
-    ("godseye_admin", "app_restart"): "Restart that app. Waits for HTTP 200. An open socket is not ready.",
+    ("godseye_admin", "app_start"): "Start the God's Eye View app. Needs confirm=true. Refused inside batch. Linux: systemd --user or a plugin-managed Node process.",
+    ("godseye_admin", "app_stop"): "Stop that app. Needs confirm=true. Refused inside batch. Refuses when the port belongs to another process.",
+    ("godseye_admin", "app_restart"): "Restart that app. Needs confirm=true. Refused inside batch. Waits for HTTP 200. An open socket is not ready.",
 }
 
 
@@ -1210,8 +1210,9 @@ _LEADS = {
         "pane: detail=concise (default) omits the image; detail=full returns it."
     ),
     "godseye_admin": (
-        "Health check, control room, app start/stop/restart, batch, key install, panel rebuild, pane reload, or the desktop preview tab. "
-        "One op per call. Start, stop, and restart run only when you call them. Configure provider credentials through Hermes for the active profile."
+        "Health check, control room, app start/stop/restart, batch, panel rebuild, pane reload, or the desktop preview tab. "
+        "One op per call. op=app_start, app_stop, app_restart, and rebuild need confirm=true and cannot run inside batch. "
+        "Configure provider credentials through Hermes for the active profile."
     ),
 }
 

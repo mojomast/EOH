@@ -50,3 +50,31 @@ def _hermes_secret_scope_shim(monkeypatch):
     mod.get_secret = get_secret
     parent.secret_scope = mod
     monkeypatch.setitem(sys.modules, "agent.secret_scope", mod)
+
+
+def pytest_configure(config):
+    """If Hermes is not on PYTHONPATH, provide a minimal hermes_constants stub.
+
+    Production code calls hermes_constants.get_hermes_home() (never a raw
+    ~/.hermes path). CI and contract runs should set PYTHONPATH to a Hermes
+    checkout so the real module is used. This stub only fills the import gap
+    for a contributor who has installed the dev extras and is running pytest.
+    It honors HERMES_HOME and otherwise uses Path.home() / ".hermes".
+    """
+    try:
+        import hermes_constants  # noqa: F401
+        return
+    except ImportError:
+        pass
+
+    import sys
+    import types
+    from pathlib import Path
+
+    def get_hermes_home():
+        raw = os.environ.get("HERMES_HOME", "").strip()
+        return Path(raw).expanduser() if raw else Path.home() / ".hermes"
+
+    mod = types.ModuleType("hermes_constants")
+    mod.get_hermes_home = get_hermes_home
+    sys.modules["hermes_constants"] = mod

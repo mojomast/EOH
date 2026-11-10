@@ -78,6 +78,25 @@ export function forkConfigMessage(config, perf) {
 export function postForkMessage(frame, message) {
   try { (frame?.() || frame)?.postMessage(message, '*') } catch {}
 }
+
+// Frame messages are not a user gesture in the parent pane. ui/open-link and
+// hermes-gev:ask only run after a trusted click in this pane (usually the confirm bar).
+export const GESTURE_WINDOW_MS = 5000
+let lastTrustedGesture = 0
+export function recordUserGesture(event, now = Date.now()) {
+  if (event && event.isTrusted === false) return false
+  lastTrustedGesture = now
+  return true
+}
+export function hasRecentUserGesture(now = Date.now(), windowMs = GESTURE_WINDOW_MS) {
+  return lastTrustedGesture > 0 && (now - lastTrustedGesture) <= windowMs
+}
+export function consumeUserGesture(now = Date.now(), windowMs = GESTURE_WINDOW_MS) {
+  if (!hasRecentUserGesture(now, windowMs)) return false
+  lastTrustedGesture = 0
+  return true
+}
+export function resetUserGesture() { lastTrustedGesture = 0 }
 // Page Visibility plus IntersectionObserver. Hidden means the globe pane is covered or the tab is in the background.
 export function watchPaneVisibility(el, onChange) {
   if (typeof onChange !== 'function') return () => {}
@@ -109,7 +128,7 @@ export function watchPaneVisibility(el, onChange) {
 // Long-poll the plugin backend for Hermes tool calls aimed at the live globe, run them in the
 // frame, and post the results back. Each pane polls with its own id and session ids.
 // Returns { onMessage, stop }.
-export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null, label = null, onConfigApplied = null, onOverlays = null }) {
+export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = () => paneSessions(), onReload = null, label = null, onConfigApplied = null, onOverlays = null, consumeGesture = null, onNeedGesture = null }) {
   let stopped = false
   let fresh = true  // first poll of a new frame: the relay restores this session's scene
   let paneLabel = typeof label === 'function' ? label() : label
@@ -231,7 +250,14 @@ export function createLiveRelay({ ctx, frame, paneId = newPaneId(), sessions = (
         return true
       }
       if (event.data?.type === 'hermes-gev:ask') {  // "Ask Hermes" in the pane: see askHermes()
-        askHermes(ctx, event.data.prompt).then((r) => { try { win.postMessage({ type: 'hermes-gev:ask-result', ...r }, '*') } catch {} })
+        const prompt = event.data.prompt
+        const allowed = typeof consumeGesture === 'function' ? consumeGesture() : hasRecentUserGesture()
+        if (allowed) {
+          askHermes(ctx, prompt).then((r) => { try { win.postMessage({ type: 'hermes-gev:ask-result', ...r }, '*') } catch {} })
+        } else {
+          onNeedGesture?.({ kind: 'ask', prompt })
+          try { win.postMessage({ type: 'hermes-gev:ask-result', ok: false, error: 'needs_user_gesture', pending: true }, '*') } catch {}
+        }
         return true
       }
       if (event.data?.type !== 'hermes-gev:result') return false
@@ -304,16 +330,31 @@ export function loadPanel(ctx, fullUi) {
   })
 }
 
-// Repost gev:config until the app acknowledges it or the wait window ends.
+// Repost gev:config until the app acknowledges it (gev:config-applied) or the wait window ends.
 // The pane is a data document, so this has to land after embed-boot.js installs its queue.
-export function startEmbedConfig(frame, message) {
+// Do not keep posting with postMessage(..., '*') after the ack.
+export function startEmbedConfig(frame, message, { intervalMs = 100, timeoutMs = 2500, win = typeof window !== 'undefined' ? window : null } = {}) {
   if (!message) return () => {}
   let stopped = false
+  const target = () => (typeof frame === 'function' ? frame() : frame)
   const send = () => { if (!stopped) postForkMessage(frame, message) }
+  const onAck = (event) => {
+    if (stopped) return
+    const src = target()
+    if (src && event.source !== src) return
+    if (event.data?.type === 'gev:config-applied') finish()
+  }
   send()
-  const timer = setInterval(send, 100)
-  const killer = setTimeout(finish, 2500)
-  function finish() { stopped = true; clearInterval(timer); clearTimeout(killer) }
+  const timer = setInterval(send, intervalMs)
+  const killer = setTimeout(finish, timeoutMs)
+  if (win?.addEventListener) win.addEventListener('message', onAck)
+  function finish() {
+    if (stopped) return
+    stopped = true
+    clearInterval(timer)
+    clearTimeout(killer)
+    try { win?.removeEventListener?.('message', onAck) } catch {}
+  }
   return finish
 }
 
@@ -339,7 +380,7 @@ export function safeLink(url) {
   try { const u = new URL(String(url || '')); return u.protocol === 'https:' || u.protocol === 'http:' } catch { return false }
 }
 
-export function createPanelHost({ ctx, frame, initialView, status = () => null }) {
+export function createPanelHost({ ctx, frame, initialView, status = () => null, consumeGesture = null, onNeedGesture = null }) {
   const post = (msg) => frame()?.postMessage({ jsonrpc: '2.0', ...msg }, '*')
   const reply = (id, result) => post({ id, result })
   const fail = (id, message) => post({ id, error: { code: -32000, message } })
@@ -371,8 +412,14 @@ export function createPanelHost({ ctx, frame, initialView, status = () => null }
       }
       if (method === 'ui/open-link') {
         if (!safeLink(params?.url)) return fail(id, 'only http(s) links can be opened')
-        await ctx.os.openExternal(publicLink(String(params?.url || ''), status()))
-        return reply(id, {})
+        const url = publicLink(String(params?.url || ''), status())
+        const allowed = typeof consumeGesture === 'function' ? consumeGesture() : hasRecentUserGesture()
+        if (allowed) {
+          await ctx.os.openExternal(url)
+          return reply(id, {})
+        }
+        onNeedGesture?.({ kind: 'open-link', url })
+        return reply(id, { pending: true, reason: 'needs_user_gesture' })
       }
       if (method === 'ui/request-display-mode') return reply(id, { mode: 'inline' })
       if (id !== undefined) return reply(id, {})
@@ -569,6 +616,7 @@ function GlobePane({ ctx }) {
   const [roomErr, setRoomErr] = useState('')
   const [nonce, setNonce] = useState(0)
   const [epoch, setEpoch] = useState(0)
+  const [pending, setPending] = useState(null)
   const ref = useRef(null)
   const paneIdRef = useRef(null)
   if (!paneIdRef.current) paneIdRef.current = stablePaneId(paneSessions())
@@ -639,7 +687,7 @@ function GlobePane({ ctx }) {
     if (!src || homeView === undefined) return
     let lastWin = null  // refs are cleared before cleanup runs; keep the window to dispose it
     const frame = () => { const w = ref.current?.contentWindow; if (w) lastWin = w; return w || lastWin }
-    const onMessage = createPanelHost({ ctx, frame, initialView: homeView || undefined, status: () => statusRef.current })
+    const onMessage = createPanelHost({ ctx, frame, initialView: homeView || undefined, status: () => statusRef.current, consumeGesture: consumeUserGesture, onNeedGesture: setPending })
     // godseye_live_reload_pane / godseye_rebuild_panel: fetch a fresh panel, rebuild the frame.
     const onReload = () => { disposeFrame(frame()); clearPanelCache(); setSrc(null); setEpoch((n) => n + 1); setNonce((n) => n + 1) }
     let stopCfg = () => {}
@@ -647,6 +695,8 @@ function GlobePane({ ctx }) {
       ctx, frame, paneId: paneIdRef.current, onReload, label: () => labelRef.current,
       onConfigApplied: () => stopCfg(),
       onOverlays: () => setOverlaysOpen((v) => !v),
+      consumeGesture: consumeUserGesture,
+      onNeedGesture: setPending,
     })
     const onGl = (e) => {
       const kind = glEvent(e, frame())
@@ -681,6 +731,16 @@ function GlobePane({ ctx }) {
     return () => { stopCfg(); stopVis(); live.stop(); off?.(); disposeFrame(frame()) }
   }, [src, homeView, nonce])
   const reloadGraphics = () => { disposeFrame(ref.current?.contentWindow); setGl(null); setNonce((n) => n + 1) }
+  const approvePending = async () => {
+    const action = pending
+    setPending(null)
+    if (!action) return
+    if (action.kind === 'open-link' && action.url) {
+      try { await ctx.os.openExternal(action.url) } catch {}
+    } else if (action.kind === 'ask') {
+      await askHermes(ctx, action.prompt)
+    }
+  }
 
   const base = status?.frameUrl || status?.apiBase || 'http://localhost:4173'
   const askHud = async () => {
@@ -705,6 +765,21 @@ function GlobePane({ ctx }) {
           jsx('span', { className: 'truncate', children: hud || err })
         ]
       }),
+      pending ? jsxs('div', {
+        className: 'flex items-center gap-2 border-b border-(--ui-stroke-secondary) px-2 py-2 text-xs',
+        role: 'dialog', 'aria-label': 'Confirm pane action',
+        children: [
+          jsx('span', {
+            className: 'min-w-0 flex-1 truncate',
+            title: pending.kind === 'open-link' ? pending.url : String(pending.prompt || ''),
+            children: pending.kind === 'open-link'
+              ? ('Open this link? ' + pending.url)
+              : 'Copy this Ask Hermes prompt to the composer?'
+          }),
+          jsx(Button, { size: 'sm', onClick: approvePending, children: pending.kind === 'open-link' ? 'Open' : 'Copy' }),
+          jsx(Button, { size: 'sm', variant: 'ghost', onClick: () => setPending(null), children: 'Dismiss' })
+        ]
+      }) : null,
       roomOpen ? jsx(ControlRoom, {
         room, busy: roomBusy, error: roomErr, onClose: () => setRoomOpen(false), onAction: controlAction
       }) : null,
