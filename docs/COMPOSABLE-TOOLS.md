@@ -17,7 +17,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 | Tool | Ops |
 |---|---|
 | `godseye_view` | `fly`, `move`, `zoom`, `globe`, `home`, `share`, `panes`, `show`, `state` |
-| `godseye_query` | `find_places`, `osm`, `context`, `what_is_here`, `brief`, `brief_and_show`, `analyst`, `military`, `poi`, `resolve_area`, `entity`, `terrain`, `features` |
+| `godseye_query` | `find_places`, `osm`, `context`, `what_is_here`, `brief`, `brief_and_show`, `analyst`, `military`, `poi`, `resolve_area`, `entity`, `terrain`, `features`, `sdr_receivers` |
 | `godseye_layers` | `visibility`, `menu`, `panel`, `context_mode`, `style`, `sonar`, `detection`, `stack`, `post` |
 | `godseye_feeds` | `earthquakes`, `fires`, `launches`, `aircraft_in_area`, `find_aircraft`, `aircraft_track`, `aircraft_info`, `vessels_in_area`, `find_vessel`, `vessel_track`, `next_pass`, `overhead`, `find_cctv`, `cctv_snapshot`, `alpr`, `traffic`, `weather`, `imagery`, `cables`, `infrastructure`, `flood`, `cyclones`, `fire_perimeters`, `military_sites`, `imagery_live`, `iss_pass`, `satellite_pass`, `cctv_control`, `radio` |
 | `godseye_annotate` | `annotate`, `clear`, `draw`, `list`, `delete`, `update`, `filter`, `drawer`, `research`, `overlays` |
@@ -30,7 +30,7 @@ Plugin id stays `godseye`. Tool names keep the `godseye_` prefix.
 
 `op=fly` accepts `style`. `nvg`, `night`, `night vision`, and `night-vision` mean `surveillance`. `flir`, `ir`, and `infrared` mean `thermal`. After a successful fly the router calls the existing `set_visual_style` handler. A failed fly does not change the style. `godseye_layers` `op=style` is the same handler. The same aliases are accepted there.
 
-`here=true` on `find_places`, `brief`, `brief_and_show`, `military`, and `what_is_here` reads the open pane with `get_current_view_state` and then calls the original handler. A query or `near` value of `me`, `here`, or `this area` does the same. `find_places` then searches within 1500 m unless `radiusM` is set. `brief` uses the camera range (clamped to 1–100 km, or 25 km when the range is unknown) as `radius_km`.
+`here=true` on `find_places`, `brief`, `brief_and_show`, `military`, `what_is_here`, and `sdr_receivers` reads the open pane with `get_current_view_state` and then calls the original handler. A query or `near` value of `me`, `here`, or `this area` does the same. `find_places` then searches within 1500 m unless `radiusM` is set. `brief` uses the camera range (clamped to 1–100 km, or 25 km when the range is unknown) as `radius_km`.
 
 The composable entry applies the same person-tracking refusal as the rest of the plugin, including strings nested inside `area` or `location`. It refuses before any pane or network call. Feed ops keep that rule. CCTV and ALPR stay mapped public cameras: the feeds description says they are not a way to identify a person, and the handlers still run `policy.refuse_reason`.
 
@@ -233,6 +233,13 @@ Shipped extension ops stay on the eleven tools:
 | `godseye_scene` | `director_stop` | Stop Director playback. |
 | `godseye_annotate` | `clip` | Attach a YouTube or X clip to a pin drawer. List returns it. |
 | `godseye_feeds` | `fire_check` | FIRMS hotspot, clearest recent image, then imagery before/after. |
+| `godseye_query` | `sdr_receivers` | Nearest public SDR receivers from the app's `/api/sdr/receivers` directory (MCP has no SDR tool). Filter by platform, band, or frequency. Does not start audio. |
+| `godseye_layers` | `preset` | Named layer stacks. `preset=weather` enables wind, radar, clouds, and cyclones. |
+| `godseye_feeds` | `transit` | GTFS-RT transit vehicles (currently Rio de Janeiro). |
+| `godseye_nav` | `imagery_ab` | Earliest and latest clear recent-imagery days as a before/after. |
+| `godseye_track` | `follow_vehicle` | Follow one transit vehicle when the pane supports it. |
+| `godseye_annotate` | `fire_perimeters` | Pin WFIGS fire perimeters. |
+| `godseye_watch` | `fire_perimeters` | Watch WFIGS fire perimeters for new or grown fires. |
 
 `op=playback` is still the built-in `control_scene` list/play/stop/next/status.
 Director create uses `window.__godsEyeView.sceneDirector.importProjectFile` and

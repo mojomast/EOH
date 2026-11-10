@@ -58,7 +58,7 @@ _DETAIL_KEYS = ("index", "total", "label", "chunk", "chunks", "provider", "stepM
 # ``code`` / ``fix`` sit beside the original ``error`` string so older checks keep working.
 NO_PANE = {"ok": False, "error": "no_pane", "code": "no_pane",
            "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp. Ask the user to open the Eye Of Hermes (EOH) pane (and keep it visible), then retry.",
-           "fix": "Ask the user to open the Eye Of Hermes (EOH) pane and keep it visible, then retry this same call. Data tools (godseye_* without live_) work with no pane."}
+           "fix": "Ask the user to open the Eye Of Hermes (EOH) pane and keep it visible, then retry this same call. Lookups and feeds (godseye_query, godseye_feeds) still work with no pane."}
 PANE_BUSY = {"ok": False, "error": "pane_busy", "code": "pane_busy",
              "message": "The Eye Of Hermes (EOH) pane is open but still busy with an earlier command; retry in a few seconds.",
              "fix": "Wait a few seconds and retry this same call once. Do not send a different live command first, and do not open a second pane."}

@@ -13,7 +13,7 @@ import re
 TABLE: dict[str, dict[str, str]] = {
     "no_pane": {
         "message": "No Eye Of Hermes (EOH) pane is open in Hermes Desktop or the Webapp.",
-        "fix": "Ask the user to open the Eye Of Hermes (EOH) pane and keep it visible, then retry this same call. Data tools (godseye_* without live_) work with no pane.",
+        "fix": "Ask the user to open the Eye Of Hermes (EOH) pane and keep it visible, then retry this same call. Lookups and feeds (godseye_query, godseye_feeds) still work with no pane.",
     },
     "pane_lost": {
         "message": "The Eye Of Hermes (EOH) pane stopped responding.",
@@ -182,6 +182,50 @@ TABLE: dict[str, dict[str, str]] = {
     "invalid_kml": {
         "message": "The export did not validate as KML.",
         "fix": "Retry godseye_scene op=export. If it fails again, export format=geojson only and say the KML step failed.",
+    },
+    "unknown_op": {
+        "message": "That op is not registered on this tool.",
+        "fix": "Read the tool's op enum and retry with one of those values.",
+    },
+    "unknown_tool": {
+        "message": "That name is not a registered tool.",
+        "fix": "Use one of the eleven composable godseye_* tools and pass op.",
+    },
+    "sdr_unavailable": {
+        "message": "The God's Eye View public SDR directory did not answer.",
+        "fix": "Start the God's Eye View app (godseye_admin op=app_start or npm run dev) on a checkout at or after b361a25, then retry godseye_query op=sdr_receivers.",
+    },
+    "sdr_unsupported": {
+        "message": "This God's Eye View app has no public SDR directory.",
+        "fix": "Update the checkout to mojomast/gods-eye-view main at or after b361a25 (pull request #5), restart the app, then retry godseye_query op=sdr_receivers.",
+    },
+    "director_unavailable": {
+        "message": "The open pane has no Director Mode.",
+        "fix": "Say the pane cannot play a Director scene. Do not invent an endpoint. Offer a tour (godseye_scene op=tour) or a fly instead.",
+    },
+    "no_route": {
+        "message": "No matching route is drawn on the pane.",
+        "fix": "Draw or name a route first (godseye_annotate or godseye_nav op=itinerary), then retry with its id or label.",
+    },
+    "no_pano": {
+        "message": "No Street View or Mapillary panorama is available there.",
+        "fix": "Try a nearby point, a different provider (google or mapillary), or fly to a street and retry godseye_nav op=street_level.",
+    },
+    "no_walk": {
+        "message": "No street walk is in progress.",
+        "fix": "Start a walk with godseye_nav op=street_walk walk=start and a route, then use walk=resume or step.",
+    },
+    "result_too_large": {
+        "message": "The result was larger than the tool can return.",
+        "fix": "Retry with a smaller area, a lower limit, or detail=concise.",
+    },
+    "removed_operation": {
+        "message": "That operation was removed.",
+        "fix": "Use the replacement named in message. Do not retry the old name.",
+    },
+    "bad_dataset": {
+        "message": "The pin dataset could not be read.",
+        "fix": "Pass source as a .jsonl, .csv, or .json path, or records:[{lat, lon, label}].",
     },
 }
 

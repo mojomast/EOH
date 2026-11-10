@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Tool capabilities (mojomast/EOH#30):
+
+- Add `godseye_query` `op=sdr_receivers` to list nearest public SDR receivers
+  (filter by platform, band, or frequency; does not start audio).
+- Tighten tool-error `fix` text, document shipped extension ops, and drop the
+  retired "key install" mention from the admin schema lead.
+
 Security and correctness (mojomast/EOH#29):
 
 - Cap live-relay and HUD-bridge request bodies, and reject invalid lengths.

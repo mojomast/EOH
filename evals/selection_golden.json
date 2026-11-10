@@ -2124,6 +2124,54 @@
         "arguments": {"op": "batch", "calls": [{"tool": "godseye_admin", "args": {"op": "status"}}]},
         "shape": {"required": ["calls"]}
       }
+    },
+    {
+      "id": "sdr-berlin-vhf",
+      "task": "nearest public SDR receivers around Berlin on VHF",
+      "expect": {
+        "tool": "godseye_query",
+        "op": "sdr_receivers",
+        "arguments": {
+          "op": "sdr_receivers",
+          "place": "Berlin",
+          "band": "vhf"
+        },
+        "shape": {
+          "required": [
+            "op"
+          ],
+          "fields": {
+            "op": {
+              "enum": [
+                "sdr_receivers"
+              ]
+            },
+            "band": {
+              "enum": [
+                "vhf",
+                "2m"
+              ]
+            }
+          },
+          "one_of": [
+            {
+              "place": {
+                "type": "string"
+              }
+            },
+            {
+              "lat": {
+                "type": "number"
+              }
+            },
+            {
+              "here": {
+                "type": "boolean"
+              }
+            }
+          ]
+        }
+      }
     }
   ]
 }

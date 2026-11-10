@@ -1112,7 +1112,7 @@ def query_schema() -> dict:
     props = {
         "op": _prop("string", "Which lookup to run.", enum=ops),
         "here": _prop("boolean", "Use the open pane's camera. find_places searches around it (default 1500 m). "
-                     "brief, military, brief_and_show, and what_is_here fill lat/lon. "
+                     "brief, military, brief_and_show, what_is_here, and sdr_receivers fill lat/lon. "
                      "A query or near value of me/here/this area does the same."),
         "detail": dict(detail.DETAIL_PROP),
         "fanout": _prop("boolean", "osm, analyst, resolve_area, entity: send to every open pane. Default false."),
@@ -1181,8 +1181,8 @@ def query_schema() -> dict:
         props.setdefault(key, prop)
     return _schema("godseye_query", _tool_description(
         "godseye_query",
-        "Look up places, the open view, and situation briefs. One op per call. "
-        "Public aircraft, vessels, places, and hazards only. Do not search for a person."), props)
+        "Look up places, the open view, situation briefs, and public SDR receivers. One op per call. "
+        "Public aircraft, vessels, places, hazards, and receivers only. Do not search for a person."), props)
 
 
 _LEADS = {

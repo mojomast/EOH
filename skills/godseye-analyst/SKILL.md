@@ -46,6 +46,7 @@ Places, the open view, elevation, named features, and briefs. Data ops work with
 | `entity` | Selected or in-view record. `scope`: `auto`, `selected`, `in_view`, `pointer`. |
 | `terrain` | Ground elevation. `points` is a list of `{lat, lon}` (at most 20). |
 | `features` | Named OSM features. `location` plus `kind`: `administrative_areas`, `named_places`, or `monuments`. |
+| `sdr_receivers` | Nearest public SDR receivers to a point. Pass `here: true`, `place`, or `lat`/`lon`. Filter with `platform` (`kiwi`, `openwebrx`, `websdr`, `spyserver`, `ubersdr`), `band` (`hf`, `vhf`, `uhf`, or aliases such as `2m` / `70cm`), `frequency_mhz`, or a name `query`. Defaults to the audio+waterfall set; `waterfall: false` or `all: true` searches the full directory. Needs the God's Eye View app (`GET /api/sdr/receivers`; the MCP catalog has no SDR tool). Does not start audio. `pin: true` drops pins. Each row has a `deep_link` for an explicit listen request. |
 
 Large answers default to `detail: "concise"`. Pass `detail: "full"` for rows, geometry, or an image.
 
@@ -64,10 +65,13 @@ Pane chrome and the look of the globe. Needs the pane.
 | `detection` | | Overlay. `mode`: `sparse`, `balanced`, `dense`. |
 | `stack` | `stack` | `photoreal`, `bing-aerial`, `bing-labels`, `esri-imagery`, `osm`. |
 | `post` | | `bloom` and `sharpen`. |
+| `preset` | `preset` | Named layer stacks. `preset: "weather"` turns on wind, radar, clouds, and cyclones and returns a cyclone summary. Say which layers it would enable; do not restore a layer the user turned off unless they asked. |
 
 ## Public SDR receivers
 
 `sdr-receivers` is a directory layer, not a tuner. Requires mojomast/gods-eye-view main at or after the merge of pull request #5. `godseye_layers` `op=visibility` with `layerId=sdr-receivers`, `enabled=true` shows public receivers on the globe. Default pins are the ~1,325 KiwiSDR/OpenWebRX receivers that can stream both audio and a waterfall; turn off `MAP: AUDIO + WATERFALL ONLY` in the PUBLIC SDR card to show all ~1,876 receivers, including WebSDR, UberSDR, SpyServer, and HTTPS-only sites.
+
+To *list* nearest receivers (without starting audio), call `godseye_query` `op=sdr_receivers` with `place`, `here: true`, or `lat`/`lon`. That reads the app's public directory at `/api/sdr/receivers` (MCP has no SDR query tool). If the app is down or the checkout predates #5, the result has `code`, `message`, and `fix`.
 
 A pin click is the user's explicit play gesture: it selects the receiver in the PUBLIC SDR card, starts audio, and opens the floating spectrum/waterfall. Never start a stream without a click or an explicit request. One stream at a time. Stop on STOP, Radio-panel collapse, pane hide (`gev:visibility`), or selecting another receiver.
 
@@ -87,7 +91,7 @@ Ships: `vessels_in_area` (`area`), `find_vessel`, `vessel_track` (`mmsi`).
 Satellites: `next_pass` and `overhead` take `location` and do not need the pane. `iss_pass` and `satellite_pass` (`target`) use the pane catalog.
 Weather and imagery: `weather` (`map`: `radar`, `satellite`, `global_satellite`, `lightning`), `imagery` (`area`), `imagery_live`.
 Infrastructure: `cables`, `infrastructure` (`kind`: `datacenters` or `dams`, plus `area`), `military_sites` (`area`). The military brief is `godseye_query` `op=military`.
-Cameras and radio: `find_cctv` (`area`), `cctv_snapshot` (`camera_id`), `alpr` (`area`), `traffic` (`area`), `cctv_control` (`action`), `radio` (`action`).
+Cameras and radio: `find_cctv` (`area`), `cctv_snapshot` (`camera_id`), `alpr` (`area`), `traffic` (`area`), `cctv_control` (`action`), `radio` (`action`). `radio` is internet radio playback, not the public SDR directory; use `godseye_query` `op=sdr_receivers` for receivers. `transit` is GTFS-RT vehicles (currently Rio de Janeiro) in a place or bbox.
 
 CCTV and ALPR are public or mapped cameras, not a way to identify a person. ALPR search is OpenStreetMap cameras in the United States or Canada, at most 3° per side. A Street View fallback on a snapshot is historical. Do not read a plate, a face, or a person out of a camera image. The refusal still applies to every argument, including text nested in `area`.
 
@@ -120,6 +124,7 @@ Pins and drawings on the open pane.
 | `street_level` | Open one panorama. Argument `street` is `at`, `next`, `prev`, or `route` (not a second `op`). `at` takes `lat`/`lon`. `next` and `prev` step from the last panorama. `route` uses the same route resolution as `fly_route`. |
 | `itinerary` | Build a `drive` or `walk` route through `pins` (ids or `{lat, lon}`), draw it as one mark, and optionally set `dolly` or `streetStops`. |
 | `compare` | `op=compare`. Imagery swipe. `left` / `right`: `current`, `osm`, or `wayback:YYYY[-MM[-DD]]`. `action: "list_dates"` lists Wayback releases. `action: "stop"` ends it. Map stacks cannot be split. |
+| `imagery_ab` | Earliest and latest clear recent-imagery days for a place or bbox, shown as a before/after on the pane. |
 | `timeline` | Time slider. Argument `timeline` is `set`, `play`, `step`, `stop`, `state`, or `list_dates` (not a second `op`). `mode`: `wayback` (Esri Wayback releases over the current view, `transition` `swipe` or `fade`) or `events` (USGS quakes and NASA FIRMS fires, plus stored watch alerts, as pins that appear when the playhead reaches them). `from` / `to` / `date` are `YYYY-MM-DD`. Events default to the last 7 days. `area` is `{south, west, north, east}`, `[south, west, north, east]`, or `{place, radius_km}`. `feeds`: `earthquakes` and/or `fires`. `by` on `step` is `1` or `-1`. `state` reads the date and what is visible. Wayback tiles are for viewing only. Do not sample photorealistic 3D tiles. The slider is saved with the scene and with investigations. |
 
 ## godseye_track
@@ -133,6 +138,7 @@ Follow a public vehicle or satellite. Not a person.
 | `select_nearest` | `layerId` required. Fly, enable that layer, select the nearest. |
 | `frame` | `target`: `flights`, `military`, `satellites`, or `vessels`. This is not the street/rooftop/district framing on fly. |
 | `cockpit` | `action`: `enter`, `exit`, `previous`, `next`, `status`. |
+| `follow_vehicle` | Follow one transit vehicle when the live pane supports it. `vehicle_id` required. Otherwise the result is `unsupported` with a fix. Stop with `op=stop`. |
 
 ## godseye_scene
 
@@ -231,8 +237,8 @@ Read the `EOH pane=` line. `godseye_query` `{op:"context"}`. Answer from `focus`
 **"Any military activity near San Diego?"**
 `godseye_query` `{op:"brief_and_show", place:"San Diego", question:"military activity"}` or `{op:"military", location:{place:"San Diego"}}`.
 
-**"Show public SDR receivers."**
-`godseye_layers` `{op:"visibility", layerId:"sdr-receivers", enabled:true}`, then `godseye_query` to the place. A pin click is the play gesture; if the user names a receiver without clicking, open the PUBLIC SDR card or the deep link rather than starting audio silently.
+**"Show public SDR receivers." / "Nearest KiwiSDRs around Berlin on 2m."**
+`godseye_layers` `{op:"visibility", layerId:"sdr-receivers", enabled:true}` to show the layer. `godseye_query` `{op:"sdr_receivers", place:"Berlin", band:"vhf"}` (or `band:"2m"`, or `here:true`) lists the nearest public receivers. A pin click is the play gesture; if the user names a receiver without clicking, open the PUBLIC SDR card or the row's `deep_link` rather than starting audio silently.
 
 **"How many flights are in view?"**
 `godseye_query` `{op:"analyst", layers:["flights"], scope:{kind:"view"}}`.

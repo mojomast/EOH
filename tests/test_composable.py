@@ -14,7 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gev import hermes_tools, router  # noqa: E402
+from gev import ext_ops, hermes_tools, router  # noqa: E402
 from gev.selection_eval import load_golden, score  # noqa: E402
 
 ROW = re.compile(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| (A|B) \| (.*) \|$")
@@ -447,7 +447,11 @@ def test_golden_set_matches_schemas_and_the_router(monkeypatch):
         assert score(task, expect["tool"], expect["arguments"]) is None, task["id"]
         spec, forwarded, extra, err = router.prepare(expect["tool"], dict(expect["arguments"]), "s")
         assert err is None, (task["id"], err)
-        assert spec.op == expect["op"] and spec.phase in {"A", "B"}
+        assert spec.op == expect["op"]
+        if isinstance(spec, ext_ops.ExtOp):
+            assert spec.tool == expect["tool"]
+        else:
+            assert spec.phase in {"A", "B"}
         if expect["op"] == "measure":
             assert forwarded.get("op") == expect["arguments"]["measure"]
             assert "measure" not in forwarded
