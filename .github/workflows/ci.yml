@@ -35,7 +35,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # Hermes v0.23.0 pins core deps with python_version >= '3.14'.
+          # Installing the CLI on 3.12 would skip those packages and
+          # `hermes plugins validate` would fail on imports such as dotenv.
+          python-version: "3.14"
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -51,6 +54,9 @@ jobs:
           dest="${RUNNER_TEMP}/hermes-agent"
           git clone --depth 1 --branch "${HERMES_REF}" https://github.com/NousResearch/hermes-agent.git "$dest"
           echo "HERMES_SRC=$dest" >> "$GITHUB_ENV"
+
+      - name: Install Hermes CLI (for plugins validate)
+        run: python3 -m pip install -e "$HERMES_SRC"
 
       - name: Pytest (includes the duplicate-key YAML test)
         run: PYTHONPATH="$HERMES_SRC" python3 -m pytest tests/

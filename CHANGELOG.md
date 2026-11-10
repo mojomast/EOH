@@ -5,7 +5,9 @@
 Tests, CI and install docs (mojomast/EOH#31):
 
 - Add GitHub Actions CI for pytest, Node unit tests, `hermes plugins validate`
-  against Hermes v0.23.0, and `scripts/secret_scan.py`.
+  against Hermes v0.23.0, and `scripts/secret_scan.py`. The job runs on
+  Python 3.14, installs the Hermes CLI, and includes PyYAML in the dev extra
+  so collection and validate both succeed on a clean runner.
 - Add `pyproject.toml` with a `[dev]` extra (`pytest`, `ruamel.yaml`, `tiktoken`, `PyYAML`)
   and keep its version in lockstep with `plugin.yaml`.
 - YAML/schema tests skip with an install hint when dev extras are missing.
