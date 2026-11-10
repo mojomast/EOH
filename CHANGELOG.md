@@ -6,7 +6,7 @@ Tests, CI and install docs (mojomast/EOH#31):
 
 - Add GitHub Actions CI for pytest, Node unit tests, `hermes plugins validate`
   against Hermes v0.23.0, and `scripts/secret_scan.py`.
-- Add `pyproject.toml` with a `[dev]` extra (`pytest`, `ruamel.yaml`, `tiktoken`)
+- Add `pyproject.toml` with a `[dev]` extra (`pytest`, `ruamel.yaml`, `tiktoken`, `PyYAML`)
   and keep its version in lockstep with `plugin.yaml`.
 - YAML/schema tests skip with an install hint when dev extras are missing.
   `tests/conftest.py` stubs `hermes_constants` when Hermes is not on `PYTHONPATH`.

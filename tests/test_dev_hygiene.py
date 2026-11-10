@@ -26,3 +26,10 @@ def test_ci_workflow_covers_required_gates():
     assert "plugins validate" in text
     assert "secret_scan" in text
     assert "test_plugin_yaml_strict" in text or "tests/" in text
+
+
+def test_dev_extras_include_test_imports():
+    text = PYPROJECT.read_text(encoding="utf-8")
+    # CI installs only .[dev]. Collection imports these third-party modules.
+    for dep in ("pytest", "ruamel.yaml", "tiktoken", "PyYAML"):
+        assert dep in text, f"{dep} must be in the dev extra so CI can collect tests"

@@ -538,7 +538,7 @@ The time slider is `godseye_nav` `op=timeline`. `mode=wayback` scrubs Esri Wayba
 Verified against Hermes Agent **v0.23.0** (local checkout `2bd378ed1b8d`).
 
 ```sh
-python3 -m pip install -e '.[dev]'   # pytest, ruamel.yaml, tiktoken
+python3 -m pip install -e '.[dev]'   # pytest, ruamel.yaml, tiktoken, PyYAML
 # Optional: point PYTHONPATH at a Hermes checkout so tests use the real
 # hermes_constants and agent.secret_scope (CI does this). Without it, tests
 # still pass: conftest.py stubs those imports.
