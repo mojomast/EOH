@@ -1,5 +1,5 @@
 name: godseye
-version: "0.2.8"
+version: "0.2.9"
 description: >-
   Eye Of Hermes (EOH), built on God's Eye View: registers the God's Eye View public-data tools
   (aircraft, ships, satellites, quakes, fires, weather, infrastructure, public SDR) as

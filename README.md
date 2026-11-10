@@ -6,7 +6,7 @@
 
 **A live 3D globe in the Hermes pane, which the agent can fly, measure, and watch.**
 
-Eye Of Hermes (EOH) is the Hermes plugin `godseye` (version **0.2.8**). It runs a [fork of God's Eye View](https://github.com/mojomast/gods-eye-view) beside the chat and gives Hermes the tools to drive it. Answers come from your Hermes model.
+Eye Of Hermes (EOH) is the Hermes plugin `godseye` (version **0.2.9**). It runs a [fork of God's Eye View](https://github.com/mojomast/gods-eye-view) beside the chat and gives Hermes the tools to drive it. Answers come from your Hermes model.
 
 [Tour](#a-tour-of-the-pane) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Tools](#tools) · [Privacy](#privacy-and-responsible-use)
 
@@ -285,7 +285,7 @@ You can open the globe without the ship and fire keys. Doctor will still list th
 | `GODSEYE_VALHALLA_URL` | `https://valhalla1.openstreetmap.de` | Isochrones |
 | `GODSEYE_OSRM_URL` | `https://routing.openstreetmap.de` | Routes, and the isochrone fallback |
 | `GODSEYE_WAYBACK_CONFIG` | Esri's Wayback config JSON | Historical imagery release list |
-| `GODSEYE_HTTP_USER_AGENT` | the default in `gev/poi.py` (a `hermes-godseye` UA naming this plugin and its repository) | Override for Nominatim, Overpass, and research requests |
+| `GODSEYE_HTTP_USER_AGENT` | a `hermes-godseye/0.2.9` UA with this repo's URL | User-Agent for Nominatim, Overpass, and research |
 | `GODSEYE_BIND` | `127.0.0.1` | Listen address for `install-service.sh` only |
 | `GODSEYE_NODE_DIR` | `~/.local/node24` | Node directory for `install-service.sh` only |
 

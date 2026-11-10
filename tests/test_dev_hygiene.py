@@ -16,7 +16,7 @@ def test_pyproject_version_matches_plugin_yaml():
     plugin_version = re.search(r'(?m)^version:\s*"([^"]+)"\s*$', manifest)
     py_version = re.search(r'(?m)^version\s*=\s*"([^"]+)"\s*$', project)
     assert plugin_version and py_version
-    assert plugin_version.group(1) == py_version.group(1) == "0.2.8"
+    assert plugin_version.group(1) == py_version.group(1) == "0.2.9"
 
 
 def test_ci_workflow_covers_required_gates():

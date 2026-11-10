@@ -36,7 +36,7 @@ def test_plugin_yaml_strict_no_duplicate_keys():
     assert err is None, f"duplicate key in plugin.yaml: {err}"
     assert isinstance(data, dict)
     assert data.get("name") == "godseye"
-    assert data.get("version") == "0.2.8"
+    assert data.get("version") == "0.2.9"
     assert data.get("homepage") == "https://github.com/mojomast/EOH"
     assert data.get("requires_hermes") == ">=0.23.0"
     tools = data.get("provides_tools") or []

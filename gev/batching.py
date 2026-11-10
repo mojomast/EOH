@@ -11,6 +11,8 @@ TOOLS = (
     "godseye_nav", "godseye_track", "godseye_scene", "godseye_watch", "godseye_capture",
     "godseye_admin",
 )
+# Start, stop, restart, and rebuild must be a standalone confirmed call, never a batch step.
+PRIVILEGED_ADMIN_OPS = frozenset({"app_start", "app_stop", "app_restart", "rebuild"})
 
 
 def run(args: dict | None, session_id: str | None = None, **kw) -> dict:
@@ -48,6 +50,17 @@ def run(args: dict | None, session_id: str | None = None, **kw) -> dict:
                 elif tool == "godseye_admin" and str(inner.get("op") or "") == "batch":
                     results.append({"index": index, "ok": False, "error": "nested_batch",
                                     "message": "A batch cannot contain another batch."})
+                elif tool == "godseye_admin" and str(inner.get("op") or "") in PRIVILEGED_ADMIN_OPS:
+                    op = str(inner.get("op") or "")
+                    results.append({
+                        "index": index, "ok": False, "error": "refused_in_batch",
+                        "tool": tool, "op": op,
+                        "message": f"godseye_admin op={op} cannot run inside batch.",
+                        "fix": (
+                            f"Call godseye_admin op={op} with confirm=true on its own after the user agrees. "
+                            "app_start, app_stop, app_restart, and rebuild are refused inside batch."
+                        ),
+                    })
                 else:
                     try:
                         text = composable_handler(tool)(inner, session_id=session_id, **kw)
