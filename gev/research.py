@@ -28,7 +28,7 @@ from pathlib import Path
 
 USER_AGENT = os.environ.get(
     "GODSEYE_HTTP_USER_AGENT",
-    "hermes-godseye/0.2.0 (+https://github.com/mojomast/hermes-godseye; Eye Of Hermes research)")
+    "hermes-godseye/0.2.9 (+https://github.com/mojomast/hermes-godseye; Eye Of Hermes research)")
 TIMEOUT_S = 12.0
 GAP_S = 0.4
 # Wikipedia geosearch returns nearest-first. A pin beside a landmark often has a smaller
@@ -114,13 +114,15 @@ def _pace() -> None:
 
 
 def _http(url: str, timeout: float = TIMEOUT_S, accept: str = "application/json") -> tuple[int, str]:
+    from .public_http import UnsafeURL, header_value, request as public_request
     _pace()
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status, r.read(2_000_000).decode("utf-8", "replace")
-    except urllib.error.HTTPError as e:
-        return e.code, ""
+        return public_request(
+            url, timeout=timeout, limit=2_000_000,
+            headers={"User-Agent": header_value(USER_AGENT), "Accept": accept},
+        )
+    except UnsafeURL:
+        return 0, ""
     except Exception:
         return 0, ""
 

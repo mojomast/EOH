@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -505,6 +506,7 @@ def test_feeds_refuse_person_tracking_before_dispatch(monkeypatch):
 
 
 def test_measure_schemas_shrinks_the_catalog():
+    pytest.importorskip("tiktoken", reason="install dev extras: python3 -m pip install -e '.[dev]'")
     sys.path.insert(0, str(ROOT / "evals"))
     import measure_schemas
     report = measure_schemas.measure()

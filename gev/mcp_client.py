@@ -26,6 +26,7 @@ class StdioMcpClient:
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
         self._write = threading.Lock()
+        self._pending_lock = threading.Lock()
         self._pending: dict[int, Future] = {}
         self._next_id = 0
 
@@ -44,13 +45,19 @@ class StdioMcpClient:
                 msg = json.loads(line)
             except ValueError:
                 continue
-            fut = self._pending.pop(msg.get("id"), None) if "id" in msg else None
+            with self._pending_lock:
+                fut = self._pending.pop(msg.get("id"), None) if "id" in msg else None
             if fut and not fut.done():
                 fut.set_result(msg)
-        for fut in list(self._pending.values()):
+        # A replaced process has its own reader; do not cancel its in-flight calls.
+        if self._proc is not proc:
+            return
+        with self._pending_lock:
+            pending = list(self._pending.values())
+            self._pending.clear()
+        for fut in pending:
             if not fut.done():
                 fut.set_exception(McpError("the MCP server exited"))
-        self._pending.clear()
 
     def _ensure(self) -> None:
         with self._lock:
@@ -62,7 +69,7 @@ class StdioMcpClient:
                 env=child_env(config.node_bin()))
             threading.Thread(target=self._reader, args=(self._proc,), daemon=True).start()
             self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                     "clientInfo": {"name": "hermes-godseye", "version": "0.2.0"}})
+                                     "clientInfo": {"name": "hermes-godseye", "version": "0.2.9"}})
             self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
     def _send(self, msg: dict) -> None:
@@ -76,12 +83,19 @@ class StdioMcpClient:
             self._next_id += 1
             rid = self._next_id
         fut: Future = Future()
-        self._pending[rid] = fut
-        self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}})
+        with self._pending_lock:
+            self._pending[rid] = fut
+        try:
+            self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}})
+        except Exception:
+            with self._pending_lock:
+                self._pending.pop(rid, None)
+            raise
         try:
             msg = fut.result(self._timeout)
         except TimeoutError:
-            self._pending.pop(rid, None)
+            with self._pending_lock:
+                self._pending.pop(rid, None)
             raise McpError(f"{method} timed out") from None
         if "error" in msg:
             raise McpError(str(msg["error"].get("message", "MCP error")))
@@ -98,9 +112,28 @@ class StdioMcpClient:
         return self.request("resources/read", {"uri": uri})
 
     def close(self) -> None:
-        if self._proc:
-            self._proc.kill()
-            self._proc = None
+        proc = self._proc
+        self._proc = None
+        if proc is not None:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
+        with self._pending_lock:
+            pending = list(self._pending.values())
+            self._pending.clear()
+        for fut in pending:
+            if not fut.done():
+                fut.set_exception(McpError("the MCP client closed"))
 
 
 _client: StdioMcpClient | None = None

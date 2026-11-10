@@ -15,7 +15,7 @@ import urllib.request
 
 USER_AGENT = os.environ.get(
     "GODSEYE_HTTP_USER_AGENT",
-    "hermes-godseye/0.2.0 (+https://github.com/mojomast/hermes-godseye; Hermes God's Eye View plugin)")
+    "hermes-godseye/0.2.9 (+https://github.com/mojomast/hermes-godseye; Hermes God's Eye View plugin)")
 PUBLIC_OVERPASS = [
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
@@ -37,12 +37,21 @@ _last_nominatim = [0.0]
 
 
 def _http(url: str, data: bytes | None = None, timeout: float = TIMEOUT_S) -> tuple[int, str]:
-    req = urllib.request.Request(url, data=data, headers={
-        "User-Agent": USER_AGENT, "Accept": "application/json",
-        **({"Content-Type": "application/x-www-form-urlencoded"} if data else {})})
+    from .public_http import UnsafeURL, header_value, loopback_host, request as public_request
+    from urllib.parse import urlsplit
+    headers = {
+        "User-Agent": header_value(USER_AGENT),
+        "Accept": "application/json",
+    }
+    if data:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status, r.read(4_000_000).decode("utf-8", "replace")
+        return public_request(
+            url, data=data, timeout=timeout, headers=headers, limit=4_000_000,
+            allow_loopback=loopback_host(urlsplit(url).hostname),
+        )
+    except UnsafeURL:
+        return 0, ""
     except urllib.error.HTTPError as e:
         return e.code, ""
 

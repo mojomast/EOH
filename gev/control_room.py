@@ -494,7 +494,7 @@ def checkout_rev(root: Path | None) -> tuple[str | None, str | None]:
         try:
             proc = subprocess.run(
                 ["git", "-C", str(root), "rev-parse", "--short=12", "HEAD"],
-                capture_output=True, text=True, timeout=3,
+                capture_output=True, text=True, timeout=3, env=child_env(),
             )
             text = (proc.stdout or "").strip()
             if proc.returncode == 0 and _HEX.fullmatch(text):

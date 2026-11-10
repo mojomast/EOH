@@ -35,7 +35,9 @@ REQUIRED = (
 _active: contextvars.ContextVar[frozenset] = contextvars.ContextVar("godseye_cassettes", default=frozenset())
 _REAL = None
 _REAL_CONNECT = None
+_REAL_PUBLIC = None
 _loaded: dict[str, list] = {}
+_FIXTURE_SUFFIXES = (".example", ".invalid", ".test")
 
 
 class NetworkBlocked(OSError):
@@ -167,14 +169,55 @@ def _guard_connect(address, *args, **kwargs):
     return _REAL_CONNECT(address, *args, **kwargs)
 
 
+def _is_fixture_url(url: str) -> bool:
+    """RFC 2606 names used by unit tests of the SSRF guard itself."""
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return any(host.endswith(suffix) for suffix in _FIXTURE_SUFFIXES)
+
+
+def _is_literal_nonpublic(url: str) -> bool:
+    """Let the real guard raise UnsafeURL for literal private/metadata addresses."""
+    try:
+        host = urllib.parse.urlsplit(url).hostname
+        ip = ipaddress.ip_address(host)
+    except (ValueError, TypeError):
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return (not ip.is_global or ip.is_multicast or ip.is_unspecified
+            or ip.is_reserved or ip.is_loopback or ip.is_private or ip.is_link_local)
+
+
+def public_http_guard(url: str, *args, **kwargs):
+    """Replay cassettes for production fetches; fall through for SSRF unit tests."""
+    target = str(url)
+    if _is_local_url(target) or _is_fixture_url(target) or _is_literal_nonpublic(target):
+        return _REAL_PUBLIC(url, *args, **kwargs)
+    method = "POST" if kwargs.get("data") is not None else "GET"
+    req = urllib.request.Request(target, data=kwargs.get("data"), method=method)
+    hit = _lookup(req)
+    if hit is not None:
+        body = hit.read()
+        text = body.decode("utf-8", "replace") if isinstance(body, (bytes, bytearray)) else str(body or "")
+        return hit.status, text
+    raise NetworkBlocked(
+        f"public network is disabled in tests ({_safe(target)}). Play a cassette or use loopback.")
+
+
 def install(monkeypatch) -> None:
-    """Replace urlopen and socket connections for the current test."""
-    global _REAL, _REAL_CONNECT
+    """Replace urlopen, public_http.request, and socket connections for the current test."""
+    global _REAL, _REAL_CONNECT, _REAL_PUBLIC
+    from gev import public_http
     if _REAL is None:
         _REAL = urllib.request.urlopen
         _REAL_CONNECT = socket.create_connection
+        _REAL_PUBLIC = public_http.request
     monkeypatch.setattr(urllib.request, "urlopen", guarded)
     monkeypatch.setattr(socket, "create_connection", _guard_connect)
+    monkeypatch.setattr(public_http, "request", public_http_guard)
 
 
 def deactivate() -> None:

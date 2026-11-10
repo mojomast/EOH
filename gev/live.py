@@ -33,6 +33,8 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .httputil import BadBody, parse_content_length
+
 PANE_STALE_S = 30.0
 # desktop/plugin.js keeps its own per-command ceiling (PANE_COMMAND_MS, 150s) for the frame.
 # The relay does not wait that long: a hidden or stale pane would block the caller for two and
@@ -954,10 +956,8 @@ def make_handler(relay: Relay, token: str):
             self.end_headers()
             self.wfile.write(raw)
 
-        def _body(self) -> dict:
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
-                raise ValueError("too large")
+        def _body(self, size: int | None = None) -> dict:
+            n = parse_content_length(self.headers.get("Content-Length") or 0, MAX_BODY) if size is None else size
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
         def _authed(self) -> bool:
@@ -983,10 +983,14 @@ def make_handler(relay: Relay, token: str):
         def do_POST(self):
             if not self._authed():
                 return self._send(401, {"error": "unauthorized"})
-            size = int(self.headers.get("Content-Length") or 0)
-            if self.path == "/result":
+            try:
+                size = parse_content_length(self.headers.get("Content-Length") or 0)
+            except BadBody:
+                return self._send(400, {"error": "bad body"})
+            path = urllib.parse.urlsplit(self.path).path
+            if path == "/result":
                 logging.getLogger(__name__).info("EOH result bytes=%d", size)
-            if size > MAX_BODY and self.path == "/result":
+            if size > MAX_BODY and path == "/result":
                 # Drain a bounded upload before replying, avoiding a broken pipe at the sender.
                 self.connection.settimeout(5)
                 try:
@@ -1003,38 +1007,40 @@ def make_handler(relay: Relay, token: str):
                     pass
                 self.close_connection = True
                 return self._send(413, error)
+            if size > MAX_BODY:
+                return self._send(413, {"error": "body too large", "limitBytes": MAX_BODY})
             try:
-                body = self._body()
+                body = self._body(size)
             except Exception:
                 return self._send(400, {"error": "bad body"})
-            if self.path == "/cmd":
+            if path == "/cmd":
                 return self._send(200, relay.submit(
                     str(body.get("name", "")), body.get("args") or {}, session_id=body.get("session_id"),
                     pane_id=body.get("pane_id"), fanout=bool(body.get("fanout")),
                     record=body.get("record") is not False))
-            if self.path == "/heartbeat":
+            if path == "/heartbeat":
                 return self._send(200, relay.heartbeat(body.get("pane"), body))
-            if self.path == "/scene":
+            if path == "/scene":
                 return self._send(200, relay.scene_op(body))
-            if self.path == "/tour":
+            if path == "/tour":
                 return self._send(200, relay.tour_op(body))
-            if self.path == "/panes":
+            if path == "/panes":
                 return self._send(200, relay.panes_op(body))
-            if self.path == "/filters":
+            if path == "/filters":
                 return self._send(200, relay.filters_event(body))
-            if self.path == "/overlays":
+            if path == "/overlays":
                 return self._send(200, relay.overlays_op(body))
-            if self.path == "/timeline":
+            if path == "/timeline":
                 return self._send(200, relay.timeline_event(body))
-            if self.path == "/drawer":
+            if path == "/drawer":
                 return self._send(200, relay.drawer_event(body))
-            if self.path == "/state":
+            if path == "/state":
                 return self._send(200, relay.note_state(body.get("pane"), body.get("state") if isinstance(body.get("state"), dict) else body))
-            if self.path == "/gl":
+            if path == "/gl":
                 return self._send(200, relay.gl_event(body))
-            if self.path == "/mapstate":
+            if path == "/mapstate":
                 return self._send(200, {"ok": True, "line": relay.map_line(body.get("session_id"))})
-            if self.path == "/result":
+            if path == "/result":
                 relay.result(body.get("id", 0), body.get("payload") or {})
                 return self._send(200, {"ok": True})
             self._send(404, {"error": "not found"})

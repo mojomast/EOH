@@ -11,7 +11,15 @@ ROOT = Path(__file__).parents[1]
 PLUGIN = ROOT / "plugin.yaml"
 
 
+_DEV_EXTRAS = "install dev extras: python3 -m pip install -e '.[dev]'"
+
+
+def _need_ruamel():
+    pytest.importorskip("ruamel.yaml", reason=_DEV_EXTRAS)
+
+
 def _strict_load(text: str):
+    _need_ruamel()
     from ruamel.yaml import YAML
     from ruamel.yaml.constructor import DuplicateKeyError
 
@@ -28,7 +36,9 @@ def test_plugin_yaml_strict_no_duplicate_keys():
     assert err is None, f"duplicate key in plugin.yaml: {err}"
     assert isinstance(data, dict)
     assert data.get("name") == "godseye"
-    assert data.get("version") == "0.2.8"
+    assert data.get("version") == "0.2.9"
+    assert data.get("homepage") == "https://github.com/mojomast/EOH"
+    assert data.get("requires_hermes") == ">=0.23.0"
     tools = data.get("provides_tools") or []
     assert len(tools) == 11
     assert len(tools) == len(set(tools))
@@ -54,6 +64,7 @@ def test_strict_loader_rejects_duplicate_name():
 
 
 def test_bump_script_only_changes_version(tmp_path, monkeypatch):
+    _need_ruamel()
     script = ROOT / "scripts" / "bump_plugin_version.py"
     # Copy a clean manifest into tmp and bump there by monkeypatching PLUGIN path via cwd copy
     # Run against repo file only after restoring — use a subprocess on a temp copy by
@@ -85,16 +96,21 @@ def test_bump_script_only_changes_version(tmp_path, monkeypatch):
     target = tmp_path / "plugin.yaml"
     target.write_text(sample, encoding="utf-8")
     spec.loader.exec_module(mod)
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "godseye"\nversion = "0.2.4"\n', encoding="utf-8")
     monkeypatch.setattr(mod, "PLUGIN", target)
+    monkeypatch.setattr(mod, "PYPROJECT", pyproject)
     mod.bump("0.2.5")
     text = target.read_text(encoding="utf-8")
     assert 'version: "0.2.5"' in text
     assert text.count("name: godseye") == 1
     data, err = _strict_load(text)
     assert err is None and data["version"] == "0.2.5"
+    assert 'version = "0.2.5"' in pyproject.read_text(encoding="utf-8")
 
 
 def test_bump_script_refuses_duplicate_manifest(tmp_path, monkeypatch):
+    _need_ruamel()
     import importlib.util
 
     script = ROOT / "scripts" / "bump_plugin_version.py"

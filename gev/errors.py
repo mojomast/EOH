@@ -353,4 +353,35 @@ def annotate(out: dict, tool: str | None = None) -> dict:
         out["error"] = err or (message if code == "refused" else code)
     if code == "refused" and isinstance(out.get("error"), str) and "Refused" not in out["error"]:
         out["error"] = message if message.startswith("Refused") else f"Refused: {message}"
+    return _scrub_fields(out)
+
+
+def _secret_values() -> list[str]:
+    try:
+        from .security import secrets
+        return [v for v in secrets().values() if isinstance(v, str) and len(v) >= 8]
+    except Exception:
+        return []
+
+
+def _scrub_fields(out: dict) -> dict:
+    """Strip credential-shaped text and known secret values from error fields."""
+    from .composer import scrub_text
+    values = _secret_values()
+
+    def clean(text):
+        if not isinstance(text, str):
+            return text
+        for value in values:
+            text = text.replace(value, "***")
+        return scrub_text(text)
+
+    for key in ("message", "error", "fix", "detail", "log"):
+        if key in out:
+            out[key] = clean(out[key])
+    res = out.get("result")
+    if isinstance(res, dict):
+        for key in ("message", "error", "fix", "detail", "log"):
+            if key in res:
+                res[key] = clean(res[key])
     return out

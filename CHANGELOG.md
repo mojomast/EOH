@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased
+
+Tool capabilities (mojomast/EOH#30):
+
+- Add `godseye_query` `op=sdr_receivers` to list nearest public SDR receivers
+  (filter by platform, band, or frequency; does not start audio).
+- Tighten tool-error `fix` text, document shipped extension ops, and drop the
+  retired "key install" mention from the admin schema lead.
+
+Security and correctness (mojomast/EOH#29):
+
+- Cap live-relay and HUD-bridge request bodies, and reject invalid lengths.
+- Route untrusted and keyed HTTP (places, research, street-level, FIRMS, USGS,
+  OSRM, Valhalla, Google/Mapillary probes) through the public-address fetch
+  helper with connection pinning and per-hop redirect checks. Private-LAN
+  Overpass, Nominatim, Valhalla, OSRM, and Wayback URLs are refused; public
+  HTTPS and explicit loopback still work.
+- Scrub secrets from tool errors, refuse credential-like import paths, lock
+  the MCP pending map, and tighten HUD token file mode, child environments,
+  and outbound header values.
+
+Tests, CI and install docs (mojomast/EOH#31):
+
+- Add GitHub Actions CI for pytest, Node unit tests, `hermes plugins validate`
+  against Hermes v0.23.0, and `scripts/secret_scan.py`. The job runs on
+  Python 3.14, uses the official Hermes plugin-validate action, and includes
+  PyYAML in the dev extra so collection and validate both succeed on a clean runner.
+- Add `pyproject.toml` with a `[dev]` extra (`pytest`, `ruamel.yaml`, `tiktoken`, `PyYAML`)
+  and keep its version in lockstep with `plugin.yaml`.
+- YAML/schema tests skip with an install hint when dev extras are missing.
+  `tests/conftest.py` stubs `hermes_constants` when Hermes is not on `PYTHONPATH`.
+- README and doctor now install from `mojomast/EOH`, declare `requires_hermes: ">=0.23.0"`,
+  and call out the God's Eye View fork SHA needed for public SDR.
+
+## 0.2.9 — 2026-11-10
+
+Catalog review follow-up (NousResearch/hermes-agent#149691, mojomast/EOH#32):
+
+- Watch-alert titles (USGS, AIS, OSM, callsigns) are stripped of newlines and
+  control characters, length-capped, and shown as quoted third-party data
+  (`title="…"`), not instructions. The system prompt no longer tells the model
+  to trust `[EOH watch alert]` lines. This applies on both `pre_llm_call` and
+  `deliver=inject`.
+- `godseye_admin` `app_start`, `app_stop`, `app_restart` and `rebuild` require
+  `confirm=true`, and those ops are refused inside `batch`. Pane Start/Stop
+  buttons are unchanged.
+- `ui/open-link` and `hermes-gev:ask` only act after a click on an Open/Copy
+  bar in the pane.
+- Runtime config re-posting stops once the app acknowledges `gev:config-applied`.
+
 ## 0.2.8 — 2026-11-09
 
 Public SDR layer:

@@ -58,11 +58,25 @@ def child_env(node: str | None = None, *, app_keys=()) -> dict[str, str]:
     return env
 
 
+def credential_name(path: Path) -> bool:
+    """True for env, key, and token files that tool imports must not read."""
+    name = path.name.lower()
+    if name.startswith(".env") or name.endswith((".env", ".pem", ".key")):
+        return True
+    if name in {"hud-bridge.env", "auth.json", "credentials.json", "secrets.json"}:
+        return True
+    if name.startswith(("id_rsa", "id_ed25519", "id_ecdsa", "id_dsa")):
+        return True
+    return False
+
+
 def import_file(source: str, *, default_root: Path | None = None) -> Path:
     """Resolve symlinks before enforcing plugin-data or a host-approved folder.
 
     GODSEYE_IMPORT_ROOT is set by the user in the host environment, never from
     a tool argument. Relative sources are relative to default_root/plugin-data.
+    Credential-like names (``.env``, ``hud-bridge.env``, key files) are refused
+    even when they sit inside an approved folder.
     """
     raw = str(source or "").strip()
     if not raw or "://" in raw:
@@ -79,4 +93,6 @@ def import_file(source: str, *, default_root: Path | None = None) -> Path:
         roots.append(folder.resolve())
     if not any(path.is_relative_to(folder) for folder in roots):
         raise ValueError("Import source must stay under plugin-data/godseye or the user-configured GODSEYE_IMPORT_ROOT.")
+    if credential_name(path):
+        raise ValueError("Refusing to import a credential file.")
     return path
