@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Tests, CI and install docs (mojomast/EOH#31):
+
+- Add GitHub Actions CI for pytest, Node unit tests, `hermes plugins validate`
+  against Hermes v0.23.0, and `scripts/secret_scan.py`. The job runs on
+  Python 3.14, uses the official Hermes plugin-validate action, and includes
+  PyYAML in the dev extra so collection and validate both succeed on a clean runner.
+- Add `pyproject.toml` with a `[dev]` extra (`pytest`, `ruamel.yaml`, `tiktoken`, `PyYAML`)
+  and keep its version in lockstep with `plugin.yaml`.
+- YAML/schema tests skip with an install hint when dev extras are missing.
+  `tests/conftest.py` stubs `hermes_constants` when Hermes is not on `PYTHONPATH`.
+- README and doctor now install from `mojomast/EOH`, declare `requires_hermes: ">=0.23.0"`,
+  and call out the God's Eye View fork SHA needed for public SDR.
+
 ## 0.2.9 — 2026-11-10
 
 Catalog review follow-up (NousResearch/hermes-agent#149691, mojomast/EOH#32):

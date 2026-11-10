@@ -5,6 +5,7 @@ Usage: python3 scripts/bump_plugin_version.py 0.2.5
 
 Refuses to run if plugin.yaml has duplicate keys (strict YAML) or if more than
 one ``version:`` line would change. Never rewrites ``name:`` or other keys.
+Also rewrites the single ``version =`` line in pyproject.toml when that file exists.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugin.yaml"
+PYPROJECT = ROOT / "pyproject.toml"
 
 
 def load_strict(path: Path) -> dict:
@@ -58,6 +60,26 @@ def bump(new_version: str) -> None:
     if set(after) != set(before):
         raise SystemExit(f"bump changed key set: {set(after) ^ set(before)}")
     print(f"bumped plugin.yaml {before.get('version')} -> {new_version}")
+    bump_pyproject(new_version)
+
+
+def bump_pyproject(new_version: str) -> None:
+    """Keep pyproject.toml [project] version in lockstep with plugin.yaml."""
+    if not PYPROJECT.is_file():
+        return
+    text = PYPROJECT.read_text(encoding="utf-8")
+    pattern = re.compile(r'(?m)^version\s*=\s*"[^"]+"\s*$')
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        raise SystemExit(
+            f"expected exactly one version = line in pyproject.toml, found {len(matches)}"
+        )
+    updated = pattern.sub(f'version = "{new_version}"', text, count=1)
+    if updated == text:
+        print(f"pyproject.toml already at {new_version}")
+        return
+    PYPROJECT.write_text(updated, encoding="utf-8")
+    print(f"bumped pyproject.toml to {new_version}")
 
 
 def main(argv: list[str]) -> None:

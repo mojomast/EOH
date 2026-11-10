@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "godseye"
+version = "0.2.9"
+description = "Eye Of Hermes (EOH): a live globe pane and composable godseye_* tools for Hermes Agent."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "mojomast" }]
+requires-python = ">=3.10"
+# Runtime Python deps are provided by the Hermes host. Test/dev tools live in [dev].
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/mojomast/EOH"
+Repository = "https://github.com/mojomast/EOH"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<10",
+    "ruamel.yaml>=0.18,<0.20",
+    "tiktoken>=0.7,<1",
+    "PyYAML>=6,<7",
+]
+
+[tool.setuptools.packages.find]
+include = ["gev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

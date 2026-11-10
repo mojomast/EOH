@@ -454,7 +454,7 @@ def doctor(now=None) -> dict:
         "Install Node 24 (e.g. into ~/.local/node24) or set GODSEYE_NODE to a Node 24 binary.")
     root = config.checkout()
     add("upstream checkout", root is not None, "found" if root else "not found",
-        "Clone God's Eye View to ~/gods-eye-view (or set GODSEYE_HOME) and run `npm install` there.")
+        "Clone https://github.com/mojomast/gods-eye-view to ~/gods-eye-view (main at or after b361a25 for public SDR) or set GODSEYE_HOME, then run `npm ci`.")
     up = False
     try:
         with urllib.request.urlopen(config.api_base() + "/", timeout=3) as r:
