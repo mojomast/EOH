@@ -35,9 +35,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          # Hermes v0.23.0 pins core deps with python_version >= '3.14'.
-          # Installing the CLI on 3.12 would skip those packages and
-          # `hermes plugins validate` would fail on imports such as dotenv.
+          # Align with Hermes v0.23.0, which targets Python 3.14.
           python-version: "3.14"
 
       - name: Set up Node
@@ -55,9 +53,6 @@ jobs:
           git clone --depth 1 --branch "${HERMES_REF}" https://github.com/NousResearch/hermes-agent.git "$dest"
           echo "HERMES_SRC=$dest" >> "$GITHUB_ENV"
 
-      - name: Install Hermes CLI (for plugins validate)
-        run: python3 -m pip install -e "$HERMES_SRC"
-
       - name: Pytest (includes the duplicate-key YAML test)
         run: PYTHONPATH="$HERMES_SRC" python3 -m pytest tests/
 
@@ -65,7 +60,10 @@ jobs:
         run: node --test gev/*.test.mjs
 
       - name: hermes plugins validate
-        run: PYTHONPATH="$HERMES_SRC" python3 -m hermes_cli.main plugins validate .
+        uses: NousResearch/hermes-agent/.github/actions/plugin-validate@v0.23.0
+        with:
+          path: .
+          hermes-ref: ${{ env.HERMES_REF }}
 
       - name: Secret scan
         run: python3 scripts/secret_scan.py
